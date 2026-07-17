@@ -19,7 +19,7 @@ import LegalPage from "@/components/site/LegalPage";
 const Landing = () => (
   <>
     <Navbar />
-    <main>
+    <main className="relative">
       <Hero />
       <EditorialMarquee />
       <ComingSoon />
