@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Menu, X } from "lucide-react";
+import { useNavigate, useLocation } from "react-router-dom";
 import { scrollToId } from "./SmoothScroll";
 
 const LOGO = "https://customer-assets-agu9un31.emergentagent.net/job_systematic-alpha-1/artifacts/oys5xiox_SAC%20Logo%202.1.png";
@@ -8,6 +9,7 @@ const LOGO = "https://customer-assets-agu9un31.emergentagent.net/job_systematic-
 const links = [
   { label: "About", id: "about" },
   { label: "Research", id: "research" },
+  { label: "Alpha Terminal", to: "/alpha-terminal" },
   { label: "Insights", id: "insights" },
   { label: "Investing", id: "investing" },
   { label: "Contact", id: "contact" },
@@ -16,6 +18,8 @@ const links = [
 export const Navbar = () => {
   const [scrolled, setScrolled] = useState(false);
   const [open, setOpen] = useState(false);
+  const navigate = useNavigate();
+  const location = useLocation();
 
   useEffect(() => {
     const onScroll = () => setScrolled(window.scrollY > 24);
@@ -23,9 +27,20 @@ export const Navbar = () => {
     return () => window.removeEventListener("scroll", onScroll);
   }, []);
 
-  const go = (id) => {
+  const goSection = (id) => {
     setOpen(false);
-    scrollToId(id);
+    if (location.pathname !== "/") {
+      navigate("/");
+      setTimeout(() => scrollToId(id), 550);
+    } else {
+      scrollToId(id);
+    }
+  };
+
+  const handleLink = (l) => {
+    setOpen(false);
+    if (l.to) navigate(l.to);
+    else goSection(l.id);
   };
 
   return (
@@ -40,7 +55,7 @@ export const Navbar = () => {
     >
       <nav className="container-x flex items-center justify-between h-20">
         <button
-          onClick={() => go("home")}
+          onClick={() => goSection("home")}
           className="flex items-center gap-3 group"
           data-testid="nav-logo"
         >
@@ -60,10 +75,10 @@ export const Navbar = () => {
         <div className="hidden md:flex items-center gap-9">
           {links.map((l) => (
             <button
-              key={l.id}
-              onClick={() => go(l.id)}
+              key={l.id || l.to}
+              onClick={() => handleLink(l)}
               className="relative text-sm text-slate-300 hover:text-white transition-colors duration-300 group"
-              data-testid={`nav-${l.id}-link`}
+              data-testid={`nav-${l.id || l.to.slice(1)}-link`}
             >
               {l.label}
               <span className="absolute -bottom-1.5 left-0 h-px w-0 bg-sapphire-light transition-all duration-300 group-hover:w-full" />
@@ -73,7 +88,7 @@ export const Navbar = () => {
 
         <div className="flex items-center gap-3">
           <button
-            onClick={() => go("waitlist")}
+            onClick={() => goSection("waitlist")}
             className="btn-sapphire hidden sm:inline-flex !px-5 !py-2.5"
             data-testid="nav-get-notified-btn"
           >
@@ -103,15 +118,15 @@ export const Navbar = () => {
             <div className="container-x py-6 flex flex-col gap-4">
               {links.map((l) => (
                 <button
-                  key={l.id}
-                  onClick={() => go(l.id)}
+                  key={l.id || l.to}
+                  onClick={() => handleLink(l)}
                   className="text-left text-base text-slate-200 py-1"
-                  data-testid={`nav-mobile-${l.id}-link`}
+                  data-testid={`nav-mobile-${l.id || l.to.slice(1)}-link`}
                 >
                   {l.label}
                 </button>
               ))}
-              <button onClick={() => go("waitlist")} className="btn-sapphire mt-2 w-full">
+              <button onClick={() => goSection("waitlist")} className="btn-sapphire mt-2 w-full">
                 Get Notified
               </button>
             </div>

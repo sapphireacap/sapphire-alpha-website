@@ -15,6 +15,8 @@ import Investing from "@/components/site/Investing";
 import Contact from "@/components/site/Contact";
 import Footer from "@/components/site/Footer";
 import LegalPage from "@/components/site/LegalPage";
+import AlphaTerminal from "@/pages/AlphaTerminal";
+import Admin from "@/pages/Admin";
 
 const Landing = () => (
   <>
@@ -42,6 +44,8 @@ function App() {
         <SmoothScroll>
           <Routes>
             <Route path="/" element={<Landing />} />
+            <Route path="/alpha-terminal" element={<AlphaTerminal />} />
+            <Route path="/admin" element={<Admin />} />
             <Route path="/privacy" element={<LegalPage page="privacy" />} />
             <Route path="/terms" element={<LegalPage page="terms" />} />
             <Route path="/disclaimer" element={<LegalPage page="disclaimer" />} />

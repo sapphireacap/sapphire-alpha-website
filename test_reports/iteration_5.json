@@ -1,0 +1,26 @@
+{
+  "summary": "Full backend + frontend testing of the new Alpha Terminal feature (public page + admin CRUD) plus regression on landing. All 20 backend pytest tests pass and all Playwright UI flows (nav, hero static timestamp, momentum table, coming-soon cards, admin login incl. wrong-password rejection, add/persist/delete round-trip, seed rows intact, drag handles present) succeed.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "/admin dashboard", "issues": ["Scanner select ([data-testid=admin-scanner-select]) renders with near-white background and white text -> option label 'Momentum Leaders' is nearly unreadable in the closed state. Give it explicit dark bg (e.g. bg-void / bg-[#0A0D18]) with white text, matching the rest of the form fields."]}
+    ]
+  },
+  "test_report_links": ["/app/backend/tests/test_terminal.py", "/app/backend/tests/backend_test.py", "/app/test_reports/pytest/pytest_results.xml"],
+  "action_items": ["Fix contrast on /admin scanner select (white-on-white). Purely cosmetic; does not block functionality."],
+  "critical_code_review_comments": [
+    "server.py Admin CRUD: update_stock does not preserve existing 'order' field explicitly (spread merge covers it, but StockCreate has no order field). Verified working, but consider adding an explicit reorder-safety unit test if update is called between reorders.",
+    "server.py: On unknown scanner in reorder_stocks the 'ordered_ids' updates silently no-op when ids don't match -- acceptable, but consider returning updated count for observability.",
+    "Admin.jsx save() runs sequential awaits inside a for-loop; fine for small lists but could be Promise.all for larger scanners in future."
+  ],
+  "updated_files": ["/app/backend/tests/test_terminal.py"],
+  "success_rate": {"backend": "100% (20/20)", "frontend": "100% of tested flows"},
+  "test_credentials": "sapphirealphacapital@gmail.com / Vcxgfdtre@!0 (from /app/memory/test_credentials.md)",
+  "seed_data_creation": "Ephemeral: TEST123 stock added and then deleted during UI test; TEST<uuid> added/deleted during backend test. Seed NVDA/CRWD/PLTR verified intact at end.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Static timestamp verified as fixed string 'Today, 09:30 AM IST' (hard-coded in AlphaTerminal.jsx and returned by GET /api/terminal/scanners). Nav ordering (Research < Alpha Terminal < Insights) confirmed via bounding-rect x positions. Drag-drop reorder not automated in UI (HTML5 native DnD is hard to fire from Playwright) but backend reorder endpoint tested end-to-end and drag handle testids exist.",
+  "rca of the issue": "N/A — no bugs found in feature scope."
+}
