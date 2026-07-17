@@ -54,7 +54,16 @@ export const Hero = () => {
         <h1 className="font-display font-black tracking-tighter leading-[0.95] text-white text-5xl sm:text-7xl lg:text-8xl xl:text-[8.5rem]">
           <Line delay={0.35}>Built on Research.</Line>
           <Line delay={0.5}>
-            <span className="text-transparent bg-clip-text bg-gradient-to-r from-sapphire-light via-sapphire-light to-sapphire">
+            <span
+              className="inline-block"
+              style={{
+                backgroundImage: "linear-gradient(90deg, #5B92F5 0%, #437EEB 45%, #1F5FD0 100%)",
+                WebkitBackgroundClip: "text",
+                backgroundClip: "text",
+                WebkitTextFillColor: "transparent",
+                color: "transparent",
+              }}
+            >
               Driven by Alpha.
             </span>
           </Line>
