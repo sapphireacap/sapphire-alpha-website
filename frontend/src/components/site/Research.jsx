@@ -2,9 +2,9 @@ import { motion } from "framer-motion";
 import Reveal from "./Reveal";
 
 const NODES = [
-  { label: "QUANT ANALYSIS", x: 200, y: 46 },
-  { label: "MARKET RESEARCH", x: 44, y: 300 },
-  { label: "SYSTEMATIC", x: 356, y: 300 },
+  { label: "QUANT ANALYSIS", x: 200, y: 46, anchor: "middle", lx: 200, ly: 30 },
+  { label: "MARKET RESEARCH", x: 44, y: 300, anchor: "start", lx: 12, ly: 328 },
+  { label: "SYSTEMATIC", x: 356, y: 300, anchor: "end", lx: 388, ly: 328 },
 ];
 
 const CARDS = [
@@ -80,9 +80,9 @@ const HexDiagram = () => {
         <g key={`n-${i}`}>
           <circle cx={n.x} cy={n.y} r="5" fill="#437EEB" />
           <text
-            x={n.x}
-            y={n.y < 100 ? n.y - 16 : n.y + 26}
-            textAnchor="middle"
+            x={n.lx}
+            y={n.ly}
+            textAnchor={n.anchor}
             className="font-mono-ui"
             fill="rgba(148,163,184,0.9)"
             fontSize="10"

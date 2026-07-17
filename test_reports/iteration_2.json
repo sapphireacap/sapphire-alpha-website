@@ -1,0 +1,19 @@
+{
+  "summary": "Verified bug fix in Research section HexDiagram: all three SVG text labels (QUANT ANALYSIS, MARKET RESEARCH, SYSTEMATIC) are fully within the SVG viewBox (0 0 400 400) and visible on screen. Regression: heading 'Understanding markets through research.' and research-card-0/1/2 all render correctly.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [],
+  "action_items": [],
+  "critical_code_review_comments": [],
+  "updated_files": [],
+  "success_rate": {"backend": "N/A", "frontend": "100%"},
+  "seed_data_creation": "None",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "HexDiagram labels measured via getBBox — QUANT ANALYSIS bbox x=145.7..254.3, MARKET RESEARCH x=12..128.3, SYSTEMATIC x=310.5..388.0. All within viewBox 0..400. Screen rects also within SVG bounds. Bug fix confirmed.",
+  "rca of the issue": "Previously 'MARKET RESEARCH' text with textAnchor=middle at x=44 caused half of the label to be clipped left of the SVG viewBox (extending to x ~ -14). Fix: per-node anchor (middle/start/end) with adjusted lx/ly (start at x=12, end at x=388) keeps text fully inside viewBox."
+}
