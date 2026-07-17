@@ -22,17 +22,20 @@ const CHAPTERS = [
 ];
 
 const MaskedTitle = ({ children }) => (
-  <span className="block overflow-hidden">
+  <motion.span
+    className="block overflow-hidden"
+    initial="hidden"
+    whileInView="show"
+    viewport={{ once: true, amount: 0.15 }}
+  >
     <motion.span
       className="block"
-      initial={{ y: "110%" }}
-      whileInView={{ y: 0 }}
-      viewport={{ once: true, margin: "-100px" }}
+      variants={{ hidden: { y: "110%" }, show: { y: 0 } }}
       transition={{ duration: 1, ease: EASE }}
     >
       {children}
     </motion.span>
-  </span>
+  </motion.span>
 );
 
 export const Manifesto = () => {
