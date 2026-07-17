@@ -1,0 +1,117 @@
+{
+  "brand": {
+    "name": "Sapphire Alpha Capital",
+    "logo_url": "https://customer-assets-agu9un31.emergentagent.net/job_systematic-alpha-1/artifacts/oys5xiox_SAC%20Logo%202.1.png",
+    "theme": "dark_only"
+  },
+  "typography": {
+    "font_families": {
+      "headings": "'Cabinet Grotesk', sans-serif",
+      "body": "'Satoshi', 'Inter', sans-serif",
+      "mono": "'JetBrains Mono', monospace"
+    },
+    "rules": {
+      "hero_h1": "text-6xl md:text-8xl font-black tracking-tighter leading-[1.05] text-white",
+      "h2": "text-4xl md:text-5xl font-bold tracking-tight text-white",
+      "h3": "text-2xl md:text-3xl font-medium tracking-tight text-slate-200",
+      "overline": "font-mono text-xs uppercase tracking-[0.2em] text-[#1F5FD0] font-bold",
+      "body": "text-base md:text-lg font-light text-slate-400 leading-relaxed",
+      "data_readout": "font-mono text-sm tracking-wider text-green-400"
+    }
+  },
+  "colors": {
+    "background": {
+      "void": "#030408",
+      "surface": "#0A0D18",
+      "surface_elevated": "#12182B"
+    },
+    "brand": {
+      "sapphire": "#1F5FD0",
+      "sapphire_light": "#437EEB",
+      "sapphire_glow": "rgba(31, 95, 208, 0.4)"
+    },
+    "text": {
+      "primary": "#FFFFFF",
+      "secondary": "#94A3B8",
+      "muted": "#64748B",
+      "accent": "#1F5FD0"
+    },
+    "borders": {
+      "subtle": "rgba(255, 255, 255, 0.06)",
+      "medium": "rgba(255, 255, 255, 0.12)",
+      "active": "rgba(31, 95, 208, 0.5)"
+    }
+  },
+  "motion": {
+    "libraries": ["framer-motion", "@studio-freight/lenis"],
+    "specs": {
+      "hero_reveal": "Masked line-by-line reveal using framer-motion. Wrapper has `overflow: hidden`. Inner text animates from `y: '100%'` to `y: 0` with `duration: 1.2`, `ease: [0.16, 1, 0.3, 1]`, and `staggerChildren: 0.15`.",
+      "scroll_reveal": "Fade up with blur. `initial={{ y: 40, opacity: 0, filter: 'blur(10px)' }}`, `whileInView={{ y: 0, opacity: 1, filter: 'blur(0px)' }}`, `viewport={{ once: true, margin: '-100px' }}`.",
+      "marquee": "Use `react-fast-marquee`. Extremely slow drift. Text uses outline style (`WebkitTextStroke: '1px rgba(255,255,255,0.1)'`, `color: 'transparent'`), uppercase, mono font.",
+      "hover_states": "Buttons use subtle scale (`scale: 0.98` on tap) and inner glow transitions. Cards use 1px border illumination on hover."
+    }
+  },
+  "layouts": {
+    "spacing": {
+      "section_padding": "py-24 md:py-40",
+      "grid_gap": "gap-8 md:gap-16",
+      "container": "w-full max-w-7xl mx-auto px-6 md:px-12"
+    },
+    "bento_grid": "12-column CSS grid. Asymmetrical spans. Example: 'col-span-12 md:col-span-8' next to 'col-span-12 md:col-span-4'. Strict 1px borders to separate cells."
+  },
+  "components": {
+    "hero": "100vh height. Absolute positioned `react-tsparticles` canvas in background rendering slow-moving network/hexagons. Center aligned massive text: 'Built on Research. Driven by Alpha.'",
+    "waitlist_module": "Glassmorphic container. Input: `bg-transparent border-b border-white/20 focus:border-[#1F5FD0] outline-none text-white font-mono`. Button: Pill-shaped, `bg-[#1F5FD0] text-white hover:shadow-[0_0_24px_rgba(31,95,208,0.5)]` transition.",
+    "hexagonal_nodes": "Drawn using SVG + Framer Motion. Three nodes: Quantitative Analysis, Market Research, Systematic Investing. Connected by dashed paths with a 'drawing' animation (`strokeDashoffset` transition).",
+    "data_readout": "Terminal-style micro-component in the 'Disciplined Framework' section. Black background, mono font, glowing green/blue text for 'SIGNAL STRENGTH: 0.847 / REGIME: RISK_ON'.",
+    "navigation": "Fixed top. Glassmorphism: `backdrop-blur-xl bg-[#030408]/60 border-b border-white/5`. Logo left, links center, CTA right.",
+    "footer": "Deep padding `py-32`. Top border `border-t border-white/10`. Massive 'SAPPHIRE ALPHA' wordmark at the bottom (`text-[12vw] font-black text-white/5`). Grid layout for legal/social links."
+  },
+  "visual_enhancers": {
+    "textures": "Include a fixed fullscreen `pointer-events-none` div with a static noise/grain SVG background, set to `opacity-5 mix-blend-overlay` to eliminate flat digital gradients.",
+    "glassmorphism": "Standard formula: `backdrop-blur-2xl bg-white/[0.02] border border-white/10 shadow-2xl shadow-black/50`.",
+    "glows": "Use soft radial gradients behind key UI elements. E.g., `radial-gradient(circle at center, rgba(31,95,208,0.15) 0%, transparent 70%)`."
+  },
+  "images": {
+    "strategy": "No human photos, no cheesy stock charts. Purely abstract geometric, architectural, or code-based textures. Rely primarily on UI, typography, and canvas particle motion for aesthetics.",
+    "image_urls": []
+  },
+  "3d_libraries": [
+    {
+      "name": "react-tsparticles",
+      "purpose": "Network background. Command: `yarn add react-tsparticles tsparticles`"
+    },
+    {
+      "name": "framer-motion",
+      "purpose": "Complex scroll animations and line reveals. Command: `yarn add framer-motion`"
+    },
+    {
+      "name": "@studio-freight/lenis",
+      "purpose": "Momentum smooth scrolling. Command: `yarn add @studio-freight/lenis`"
+    },
+    {
+      "name": "lucide-react",
+      "purpose": "Feather-light icons for UI interactions."
+    },
+    {
+      "name": "react-fast-marquee",
+      "purpose": "Slow editorial marquee. Command: `yarn add react-fast-marquee`"
+    }
+  ],
+  "accessibility": {
+    "contrast": "Strict APCA/WCAG AA contrast. Never use pure #000000; use #030408 to reduce eye strain. Text on void background must be at least #94A3B8.",
+    "focus": "Custom focus rings: `focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1F5FD0] focus-visible:ring-offset-2 focus-visible:ring-offset-[#030408]`.",
+    "testing": "All interactive elements MUST have `data-testid` (e.g., `data-testid='waitlist-input'`, `data-testid='nav-about-link'`)."
+  },
+  "UNIVERSAL_GUIDELINES_FOR_MAIN_AGENT": [
+    "NO LIGHT MODE. This is a dark-theme exclusive UI. Hardcode dark hex codes or use the generic Tailwind palette strictly in a dark context.",
+    "Avoid standard 'Bootstrap' centering. Prioritize asymmetrical grids and strong left-alignments.",
+    "Create depth entirely through layered design elements with z-index, glassmorphism filters, and 1px borders. Do not use flat muddy grays.",
+    "Never apply universal transitions (`transition: all`). Target explicit properties (`transition-colors duration-300`).",
+    "Install and configure Lenis in a top-level `SmoothScroll` provider component to ensure the entire page feels physically weighty and premium.",
+    "Use 2-3x more spacing than feels comfortable. If you think `p-8` is enough, use `p-16`.",
+    "DO NOT use generic HTML inputs. Build a custom Waitlist component using Shadcn or raw Tailwind that matches the elite institutional aesthetic.",
+    "Make sure the `SAC` logo is rendered appropriately, ensuring any bright backgrounds from the image are handled or it is used inside a dedicated light pill/container if it's not transparent/dark-friendly."
+  ],
+  "instructions_to_main_agent": "1. Initialize the app with Tailwind CSS and install all specified libraries (Framer Motion, Lenis, ts-particles, react-fast-marquee). 2. Setup the custom fonts (Cabinet Grotesk, JetBrains Mono, Satoshi) in the global CSS. 3. Build the 'Kinetic Hero' with a masked line-by-line typography reveal, layered over a ts-particles hexagonal network canvas. 4. Implement the 'Coming Soon' waitlist module with high-end glassmorphism and validation. 5. Construct the 'Manifesto' using the Bento grid and asymmetric layouts. 6. Build the custom 'Understanding Markets' SVG/Framer node diagram. 7. Assemble the 'Disciplined Framework' with the retro-terminal data readout. 8. Finalize with the ultra-padded professional Footer and slow Marquee. 9. Verify every interaction has a `data-testid`."
+}
