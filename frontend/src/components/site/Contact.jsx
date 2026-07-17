@@ -52,11 +52,11 @@ export const Contact = () => {
               initiatives, we&apos;d love to hear from you.
             </p>
             <a
-              href="mailto:contact@sapphirealphacapital.com"
+              href="mailto:sapphirealphacapital@gmail.com"
               className="mt-10 inline-flex items-center gap-3 text-sapphire-light hover:text-white transition-colors font-mono-ui text-sm"
               data-testid="contact-email-link"
             >
-              <Mail size={16} /> contact@sapphirealphacapital.com
+              <Mail size={16} /> sapphirealphacapital@gmail.com
             </a>
           </Reveal>
 

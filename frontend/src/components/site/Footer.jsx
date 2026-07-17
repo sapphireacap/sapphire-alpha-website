@@ -1,5 +1,5 @@
 import { Link } from "react-router-dom";
-import { Linkedin, Twitter, Github, Send } from "lucide-react";
+import { Linkedin, Twitter, Instagram, Send } from "lucide-react";
 import { scrollToId } from "./SmoothScroll";
 
 const LOGO = "https://customer-assets-agu9un31.emergentagent.net/job_systematic-alpha-1/artifacts/oys5xiox_SAC%20Logo%202.1.png";
@@ -19,10 +19,10 @@ const LEGAL = [
 ];
 
 const SOCIAL = [
-  { icon: Linkedin, label: "LinkedIn", href: "" },
-  { icon: Twitter, label: "X / Twitter", href: "" },
-  { icon: Github, label: "GitHub", href: "" },
-  { icon: Send, label: "Telegram", href: "" },
+  { icon: Linkedin, label: "LinkedIn", href: "https://www.linkedin.com/company/sapphirealphacapital" },
+  { icon: Twitter, label: "X / Twitter", href: "https://x.com/sapphireacap" },
+  { icon: Instagram, label: "Instagram", href: "https://www.instagram.com/sapphireacap/" },
+  { icon: Send, label: "Telegram", href: "https://t.me/sapphireacap" },
 ];
 
 export const Footer = () => {
@@ -48,6 +48,8 @@ export const Footer = () => {
                   <a
                     key={s.label}
                     href={s.href || "#"}
+                    target={s.href ? "_blank" : undefined}
+                    rel={s.href ? "noopener noreferrer" : undefined}
                     aria-label={s.label}
                     className="h-10 w-10 rounded-full border border-white/10 flex items-center justify-center text-slate-400 hover:text-white hover:border-sapphire-light hover:bg-sapphire/10 transition-colors duration-300"
                     data-testid={`social-${s.label.split(" ")[0].toLowerCase()}`}
@@ -96,9 +98,6 @@ export const Footer = () => {
 
         <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 py-8 border-t border-white/10">
           <p className="font-mono-ui text-xs text-slate-500">© 2026 Sapphire Alpha Capital. All rights reserved.</p>
-          <p className="font-mono-ui text-xs text-slate-600 max-w-md">
-            Information provided for informational purposes only. Not investment advice.
-          </p>
         </div>
       </div>
 
