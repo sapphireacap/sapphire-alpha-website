@@ -202,7 +202,8 @@ const Dashboard = ({ onLogout }) => {
           <select
             value={scanner}
             onChange={(e) => setScanner(e.target.value)}
-            className="bg-surface border border-white/15 rounded-lg px-4 py-2.5 text-sm text-white outline-none focus:border-sapphire-light"
+            style={{ colorScheme: "dark" }}
+            className="bg-[#0A0D18] border border-white/15 rounded-lg px-4 py-2.5 text-sm text-white outline-none focus:border-sapphire-light"
             data-testid="admin-scanner-select"
           >
             {SCANNERS.map((s) => <option key={s.key} value={s.key} className="bg-surface">{s.label}</option>)}
@@ -244,7 +245,7 @@ const Dashboard = ({ onLogout }) => {
                         <td className="px-3 py-3"><input value={r.momentum_score} onChange={(e) => updateRow(r.id, "momentum_score", e.target.value)} className={inputCls} placeholder="98.4" data-testid={`admin-score-${i}`} /></td>
                         <td className="px-3 py-3"><input value={r.volume} onChange={(e) => updateRow(r.id, "volume", e.target.value)} className={inputCls} placeholder="3.2x avg" data-testid={`admin-volume-${i}`} /></td>
                         <td className="px-3 py-3">
-                          <select value={r.bias} onChange={(e) => updateRow(r.id, "bias", e.target.value)} className={inputCls} data-testid={`admin-bias-${i}`}>
+                          <select value={r.bias} onChange={(e) => updateRow(r.id, "bias", e.target.value)} style={{ colorScheme: "dark" }} className={inputCls} data-testid={`admin-bias-${i}`}>
                             {BIAS.map((b) => <option key={b} value={b} className="bg-surface">{b}</option>)}
                           </select>
                         </td>

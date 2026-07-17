@@ -25,3 +25,11 @@ Premium, minimal, modern coming-soon website for Sapphire Alpha Capital, a quant
 - P1: Real social URLs, favicon/OG image, actual research/blog content hub
 - P2: Analytics events on waitlist/contact conversion; admin view for signups
 - P2: SEO metadata + sitemap
+
+## Update (2026-01) — Alpha Terminal + Admin
+- New nav item "Alpha Terminal" (between Research & Insights) -> /alpha-terminal
+- Alpha Terminal page: hero (LIVE ALPHA TERMINAL, static "Updated: Today, 09:30 AM IST"), Momentum Leaders table (Ticker, Company, Momentum Score, Volume, Bias badges) seeded NVDA/CRWD/PLTR; 3 "Coming Soon" scanner placeholders (Relative Strength, Breakout, Positional); proprietary disclaimer below table.
+- Admin at /admin (not in nav): JWT Bearer auth (single admin seeded from env), CRUD + drag-drop reorder + Save/Cancel; changes persist to MongoDB and reflect on public page instantly.
+- Backend: /api/auth/login, /api/auth/me, /api/terminal/scanners, /api/terminal/stocks (GET/POST/PUT/DELETE), /api/terminal/stocks/reorder/apply. Brute-force lockout. Future scanners activate by adding data via admin.
+- Tested: 20/20 backend + all frontend flows pass (iteration_5).
+- Also added: favicons (from SAC logo, transparent), title "Sapphire Alpha Capital", meta description "Built on Research. Driven by Alpha", OG/Twitter cards + og-image.png.
