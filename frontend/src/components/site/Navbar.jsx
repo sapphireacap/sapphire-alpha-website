@@ -80,12 +80,12 @@ export const Navbar = () => {
                 key={l.id || l.to}
                 onClick={() => handleLink(l)}
                 className={`relative text-sm transition-colors duration-300 group ${
-                  isAlpha ? "text-sapphire-light font-semibold alpha-glow flex items-center gap-1.5" : "text-slate-300 hover:text-white"
+                  isAlpha ? "text-sapphire-light font-semibold alpha-glow" : "text-slate-300 hover:text-white"
                 }`}
                 data-testid={`nav-${l.id || l.to.slice(1)}-link`}
               >
                 {isAlpha && (
-                  <span className="relative flex h-1.5 w-1.5">
+                  <span className="absolute -right-2.5 -top-1 flex h-1.5 w-1.5">
                     <span className="absolute inline-flex h-full w-full rounded-full bg-sapphire-light opacity-75 animate-ping" />
                     <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-sapphire-light" />
                   </span>
