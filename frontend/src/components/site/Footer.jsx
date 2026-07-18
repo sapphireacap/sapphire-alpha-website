@@ -101,7 +101,7 @@ export const Footer = () => {
         </div>
       </div>
 
-      <div className="relative select-none pointer-events-none -mb-[2vw]">
+      <div className="relative select-none pointer-events-none -mb-[2vw] overflow-hidden">
         <p className="marquee-text text-center text-[15vw] leading-none whitespace-nowrap">SAPPHIRE ALPHA</p>
       </div>
     </footer>

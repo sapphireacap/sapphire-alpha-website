@@ -53,17 +53,17 @@ export const Navbar = () => {
       }`}
       data-testid="site-navbar"
     >
-      <nav className="container-x flex items-center justify-between h-20">
+      <nav className="container-x flex items-center justify-between gap-3 h-20">
         <button
           onClick={() => goSection("home")}
-          className="flex items-center gap-3 group"
+          className="flex items-center gap-3 group min-w-0"
           data-testid="nav-logo"
         >
-          <span className="logo-pill p-1.5 flex items-center justify-center">
+          <span className="logo-pill p-1.5 flex items-center justify-center shrink-0">
             <img src={LOGO} alt="Sapphire Alpha Capital" className="h-7 w-7 object-contain" />
           </span>
-          <span className="hidden sm:flex flex-col leading-none text-left">
-            <span className="font-display font-extrabold text-white text-[15px] tracking-tight">
+          <span className="flex flex-col leading-none text-left">
+            <span className="font-display font-extrabold text-white text-[13px] sm:text-[15px] tracking-tight whitespace-nowrap">
               SAPPHIRE ALPHA
             </span>
             <span className="font-mono-ui text-[9px] tracking-[0.3em] text-sapphire-light uppercase mt-0.5">
@@ -101,7 +101,7 @@ export const Navbar = () => {
           })}
         </div>
 
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-3 shrink-0">
           <button
             onClick={() => goSection("waitlist")}
             className="btn-sapphire hidden sm:inline-flex !px-5 !py-2.5"

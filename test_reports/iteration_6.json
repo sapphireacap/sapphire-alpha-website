@@ -1,0 +1,25 @@
+{
+  "summary": "Verified mobile navbar bug fix on Sapphire Alpha Capital site. Tested at 390x780 (primary), 360x780, and 1440x900 desktop. All four required assertions pass: (1) mobile wordmark 'SAPPHIRE ALPHA / CAPITAL' visible via [data-testid=nav-logo]; (2) hamburger [data-testid=nav-mobile-toggle] fully inside viewport (right edge 366 of 390, and 336 of 360); (3) document.documentElement.scrollWidth === window.innerWidth on both '/' and '/alpha-terminal' (390 == 390) — no horizontal overflow; (4) mobile menu opens on tap, showing Alpha Terminal link and Get Notified button; (5) desktop regression clean — logo visible, 6 nav links, pulse dot on Alpha Terminal, Get Notified visible.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Mobile navbar (390px)", "issues": ["Wordmark renders visually as 'SAPPHIREALPHA' (words appear glued together due to tight letter-spacing / lack of space width at 13px). DOM text contains a space but it's not perceptible. Minor polish — consider slightly increased gap or word-spacing at <sm breakpoint."]}
+    ]
+  },
+  "test_report_links": [],
+  "action_items": [
+    "Optional polish: increase visible gap in mobile wordmark so 'SAPPHIRE ALPHA' does not read as one word."
+  ],
+  "critical_code_review_comments": [
+    "Fix is minimal and targeted: removing 'hidden sm:flex' on wordmark + overflow-hidden on footer decorative wordmark + .App overflow-x:hidden correctly resolves the horizontal-scroll root cause without side effects.",
+    "Lenis smooth scroll still emits a benign console warning about container position — pre-existing, not related to this fix."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "N/A", "frontend": "100%"},
+  "seed_data_creation": "None",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Mobile navbar fix verified end-to-end via Playwright at 390 and 360 widths and desktop at 1440. No functional issues. Only cosmetic note about wordmark letter-spacing at mobile."
+}
