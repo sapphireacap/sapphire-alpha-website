@@ -73,17 +73,32 @@ export const Navbar = () => {
         </button>
 
         <div className="hidden md:flex items-center gap-9">
-          {links.map((l) => (
-            <button
-              key={l.id || l.to}
-              onClick={() => handleLink(l)}
-              className="relative text-sm text-slate-300 hover:text-white transition-colors duration-300 group"
-              data-testid={`nav-${l.id || l.to.slice(1)}-link`}
-            >
-              {l.label}
-              <span className="absolute -bottom-1.5 left-0 h-px w-0 bg-sapphire-light transition-all duration-300 group-hover:w-full" />
-            </button>
-          ))}
+          {links.map((l) => {
+            const isAlpha = l.to === "/alpha-terminal";
+            return (
+              <button
+                key={l.id || l.to}
+                onClick={() => handleLink(l)}
+                className={`relative text-sm transition-colors duration-300 group ${
+                  isAlpha ? "text-sapphire-light font-semibold alpha-glow flex items-center gap-1.5" : "text-slate-300 hover:text-white"
+                }`}
+                data-testid={`nav-${l.id || l.to.slice(1)}-link`}
+              >
+                {isAlpha && (
+                  <span className="relative flex h-1.5 w-1.5">
+                    <span className="absolute inline-flex h-full w-full rounded-full bg-sapphire-light opacity-75 animate-ping" />
+                    <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-sapphire-light" />
+                  </span>
+                )}
+                {l.label}
+                <span
+                  className={`absolute -bottom-1.5 left-0 h-px bg-sapphire-light transition-all duration-300 ${
+                    isAlpha ? "w-full opacity-60" : "w-0 group-hover:w-full"
+                  }`}
+                />
+              </button>
+            );
+          })}
         </div>
 
         <div className="flex items-center gap-3">
@@ -116,16 +131,27 @@ export const Navbar = () => {
             data-testid="nav-mobile-menu"
           >
             <div className="container-x py-6 flex flex-col gap-4">
-              {links.map((l) => (
-                <button
-                  key={l.id || l.to}
-                  onClick={() => handleLink(l)}
-                  className="text-left text-base text-slate-200 py-1"
-                  data-testid={`nav-mobile-${l.id || l.to.slice(1)}-link`}
-                >
-                  {l.label}
-                </button>
-              ))}
+              {links.map((l) => {
+                const isAlpha = l.to === "/alpha-terminal";
+                return (
+                  <button
+                    key={l.id || l.to}
+                    onClick={() => handleLink(l)}
+                    className={`text-left text-base py-1 flex items-center gap-2 ${
+                      isAlpha ? "text-sapphire-light font-semibold alpha-glow" : "text-slate-200"
+                    }`}
+                    data-testid={`nav-mobile-${l.id || l.to.slice(1)}-link`}
+                  >
+                    {isAlpha && (
+                      <span className="relative flex h-1.5 w-1.5">
+                        <span className="absolute inline-flex h-full w-full rounded-full bg-sapphire-light opacity-75 animate-ping" />
+                        <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-sapphire-light" />
+                      </span>
+                    )}
+                    {l.label}
+                  </button>
+                );
+              })}
               <button onClick={() => goSection("waitlist")} className="btn-sapphire mt-2 w-full">
                 Get Notified
               </button>

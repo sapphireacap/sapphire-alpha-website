@@ -125,7 +125,7 @@ export default function AlphaTerminal() {
       <Navbar />
       <main className="relative bg-void min-h-screen">
         {/* Hero */}
-        <section className="relative pt-36 pb-16 md:pt-44 md:pb-20 overflow-hidden grid-bg" data-testid="terminal-hero">
+        <section className="relative pt-36 pb-16 md:pt-44 md:pb-20 overflow-hidden" data-testid="terminal-hero">
           <ParticleField density={0.00006} />
           <div className="absolute inset-0 radial-glow" />
           <div className="absolute inset-0 bg-gradient-to-b from-void/0 to-void pointer-events-none" />

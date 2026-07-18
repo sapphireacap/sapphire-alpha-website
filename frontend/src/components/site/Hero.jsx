@@ -29,7 +29,7 @@ export const Hero = () => {
     <section
       id="home"
       ref={ref}
-      className="relative min-h-screen flex items-center overflow-hidden grid-bg"
+      className="relative min-h-screen flex items-center overflow-hidden"
       data-testid="hero-section"
     >
       <ParticleField />

@@ -146,3 +146,16 @@ body {
     background: #f4f6fb;
     border-radius: 10px;
 }
+
+/* Alpha Terminal nav link — attention-grabbing glow pulse */
+@keyframes alphaGlow {
+    0%, 100% {
+        text-shadow: 0 0 6px rgba(67, 126, 235, 0.5);
+    }
+    50% {
+        text-shadow: 0 0 16px rgba(67, 126, 235, 0.95), 0 0 28px rgba(67, 126, 235, 0.55);
+    }
+}
+.alpha-glow {
+    animation: alphaGlow 2s ease-in-out infinite;
+}
