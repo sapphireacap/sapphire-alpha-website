@@ -63,7 +63,7 @@ export const Navbar = () => {
             <img src={LOGO} alt="Sapphire Alpha Capital" className="h-7 w-7 object-contain" />
           </span>
           <span className="flex flex-col leading-none text-left">
-            <span className="font-display font-extrabold text-white text-[13px] sm:text-[15px] tracking-tight whitespace-nowrap">
+            <span className="font-display font-extrabold text-white text-[13px] sm:text-[15px] tracking-normal sm:tracking-tight whitespace-nowrap">
               SAPPHIRE ALPHA
             </span>
             <span className="font-mono-ui text-[9px] tracking-[0.3em] text-sapphire-light uppercase mt-0.5">
