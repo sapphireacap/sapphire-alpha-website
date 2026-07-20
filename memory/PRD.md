@@ -33,3 +33,11 @@ Premium, minimal, modern coming-soon website for Sapphire Alpha Capital, a quant
 - Backend: /api/auth/login, /api/auth/me, /api/terminal/scanners, /api/terminal/stocks (GET/POST/PUT/DELETE), /api/terminal/stocks/reorder/apply. Brute-force lockout. Future scanners activate by adding data via admin.
 - Tested: 20/20 backend + all frontend flows pass (iteration_5).
 - Also added: favicons (from SAC logo, transparent), title "Sapphire Alpha Capital", meta description "Built on Research. Driven by Alpha", OG/Twitter cards + og-image.png.
+
+## Update (2026-01) — Straddle Compass (Nifty bias) + Accordion
+- New indicator "Straddle Compass" on /alpha-terminal: shows Nifty BULLISH/BEARISH/NEUTRAL derived from ATM+200 & ATM-200 straddle P&F trends (falling +200 & rising -200 => Bullish; opposite => Bearish). Box 0.5% / 3-box reversal labels.
+- Backend: db.nifty_signal (id=current); GET /api/terminal/signal (public), PUT /api/terminal/signal (admin, auto-derives bias when Neutral). Seeded default.
+- Admin: SignalPanel to set spot/atm/legs/trend/note manually (Phase 1). Live immediately.
+- Scanner sections converted to shadcn Accordion (Momentum open by default; others collapse to Coming Soon on click).
+- Tested iteration_9: 8/8 backend + all frontend pass.
+- PENDING Phase 2: live Definedge Integrate API automation (needs API creds). API notes: auth api_token+api_secret; historical 1-min OHLC at https://data.definedgesecurities.com/sds/history/NFO/{token}/minute/{from}/{to}; must map ATM CE/PE tokens from master file, compute straddle=CE+PE, build P&F (0.5% box, 3-box=~3% reversal), derive bias. Needs scheduler during market hours.
