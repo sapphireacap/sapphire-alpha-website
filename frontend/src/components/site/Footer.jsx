@@ -1,4 +1,5 @@
 import { Link } from "react-router-dom";
+import Marquee from "react-fast-marquee";
 import { Linkedin, Twitter, Instagram, Send } from "lucide-react";
 import { scrollToId } from "./SmoothScroll";
 
@@ -101,8 +102,13 @@ export const Footer = () => {
         </div>
       </div>
 
-      <div className="relative select-none pointer-events-none -mb-[2vw] overflow-hidden">
-        <p className="marquee-text text-center text-[15vw] leading-none whitespace-nowrap">SAPPHIRE ALPHA</p>
+      <div className="relative select-none pointer-events-none py-4 md:py-6 border-t border-white/5">
+        <Marquee speed={32} gradient={false} autoFill>
+          <span className="marquee-text text-[16vw] md:text-[13vw] leading-none whitespace-nowrap">
+            SAPPHIRE ALPHA CAPITAL
+          </span>
+          <span className="text-sapphire text-[10vw] md:text-[8vw] px-6 md:px-10">✦</span>
+        </Marquee>
       </div>
     </footer>
   );
