@@ -383,6 +383,71 @@ async def reorder_stocks(payload: ReorderRequest, admin: dict = Depends(get_curr
 
 
 # ---------------------------------------------------------------------------
+# Straddle Compass — Nifty directional bias indicator
+# ---------------------------------------------------------------------------
+class SignalUpdate(BaseModel):
+    bias: str = "Neutral"          # Bullish | Bearish | Neutral
+    spot: str = ""                 # e.g. "24,000"
+    atm: str = ""                  # e.g. "24000"
+    up_strike: str = ""            # ATM + 200
+    up_trend: str = "Neutral"      # Bullish (rising) | Bearish (falling) | Neutral
+    down_strike: str = ""          # ATM - 200
+    down_trend: str = "Neutral"
+    note: str = ""
+    source: str = "manual"         # manual | definedge
+
+
+DEFAULT_SIGNAL = {
+    "id": "current",
+    "bias": "Neutral",
+    "spot": "",
+    "atm": "",
+    "up_strike": "",
+    "up_trend": "Neutral",
+    "down_strike": "",
+    "down_trend": "Neutral",
+    "note": "Awaiting live straddle data.",
+    "source": "manual",
+    "box_size": "0.5%",
+    "reversal": "3 box",
+    "updated_at": datetime.now(timezone.utc).isoformat(),
+    "updated_label": "Today, 09:30 AM IST",
+}
+
+
+def _derive_bias(up_trend: str, down_trend: str) -> str:
+    # Per strategy: falling straddle marks the direction Nifty is heading.
+    if up_trend == "Bearish" and down_trend == "Bullish":
+        return "Bullish"
+    if up_trend == "Bullish" and down_trend == "Bearish":
+        return "Bearish"
+    return "Neutral"
+
+
+@api_router.get("/terminal/signal")
+async def get_signal():
+    doc = await db.nifty_signal.find_one({"id": "current"}, {"_id": 0})
+    return doc or DEFAULT_SIGNAL
+
+
+@api_router.put("/terminal/signal")
+async def update_signal(payload: SignalUpdate, admin: dict = Depends(get_current_admin)):
+    data = payload.model_dump()
+    # If admin leaves bias on Neutral but legs imply a direction, derive it.
+    if data["bias"] == "Neutral":
+        data["bias"] = _derive_bias(data["up_trend"], data["down_trend"])
+    data.update({
+        "id": "current",
+        "box_size": "0.5%",
+        "reversal": "3 box",
+        "updated_at": datetime.now(timezone.utc).isoformat(),
+        "updated_label": "Today, 09:30 AM IST",
+    })
+    await db.nifty_signal.update_one({"id": "current"}, {"$set": data}, upsert=True)
+    return data
+
+
+# ---------------------------------------------------------------------------
 # Startup: seed admin, momentum data, indexes
 # ---------------------------------------------------------------------------
 @app.on_event("startup")
@@ -416,6 +481,11 @@ async def on_startup():
             stock = Stock(scanner="momentum", order=i, **row)
             await db.terminal_stocks.insert_one(stock.model_dump())
         logger.info("Seeded momentum leaders.")
+
+    # Seed default Nifty signal once
+    if await db.nifty_signal.find_one({"id": "current"}) is None:
+        await db.nifty_signal.insert_one(dict(DEFAULT_SIGNAL))
+        logger.info("Seeded default nifty signal.")
 
     try:
         await db.users.create_index("email", unique=True)

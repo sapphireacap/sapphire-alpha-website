@@ -79,6 +79,97 @@ const Login = ({ onSuccess }) => {
   );
 };
 
+/* ------------------------ Straddle Compass panel ------------------------ */
+const BIAS_OPTS = ["Neutral", "Bullish", "Bearish"];
+const TREND_OPTS = ["Neutral", "Bullish", "Bearish"];
+
+const SignalPanel = ({ onAuthError }) => {
+  const empty = { bias: "Neutral", spot: "", atm: "", up_strike: "", up_trend: "Neutral", down_strike: "", down_trend: "Neutral", note: "", source: "manual" };
+  const [sig, setSig] = useState(empty);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    axios.get(`${API}/terminal/signal`).then((r) => setSig({ ...empty, ...r.data })).catch(() => {});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const set = (k) => (e) => setSig((s) => ({ ...s, [k]: e.target.value }));
+
+  const save = async () => {
+    setSaving(true);
+    try {
+      const { data } = await axios.put(`${API}/terminal/signal`, sig, authHeaders());
+      setSig((s) => ({ ...s, ...data }));
+      toast.success("Straddle Compass updated. Live on the terminal.");
+    } catch (err) {
+      if (err?.response?.status === 401) { toast.error("Session expired."); onAuthError(); return; }
+      toast.error("Failed to save signal.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const fld = "w-full bg-white/5 border border-white/10 rounded-md px-3 py-2 text-sm text-white outline-none focus:border-sapphire-light transition-colors";
+  const sel = fld + " [color-scheme:dark]";
+
+  return (
+    <div className="glass rounded-2xl p-6 md:p-8 mb-10" data-testid="admin-signal-panel">
+      <div className="flex items-center gap-3 mb-2">
+        <h2 className="font-display text-xl font-bold text-white">Straddle Compass</h2>
+        <span className="font-mono-ui text-[10px] uppercase tracking-[0.2em] text-sapphire-light">Nifty Bias</span>
+      </div>
+      <p className="text-sm text-slate-500 mb-6">
+        Set the ATM ±200 straddle trends. Leave Bias on <em>Neutral</em> to auto-derive it from the two legs
+        (falling +200 &amp; rising −200 ⇒ Bullish).
+      </p>
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-5">
+        <div>
+          <label className="font-mono-ui text-[10px] uppercase tracking-[0.18em] text-slate-500 block mb-1.5">Bias</label>
+          <select value={sig.bias} onChange={set("bias")} style={{ colorScheme: "dark" }} className={sel} data-testid="signal-bias">
+            {BIAS_OPTS.map((b) => <option key={b} value={b} className="bg-surface">{b === "Neutral" ? "Neutral (auto)" : b}</option>)}
+          </select>
+        </div>
+        <div>
+          <label className="font-mono-ui text-[10px] uppercase tracking-[0.18em] text-slate-500 block mb-1.5">Spot</label>
+          <input value={sig.spot} onChange={set("spot")} className={fld} placeholder="24,000" data-testid="signal-spot" />
+        </div>
+        <div>
+          <label className="font-mono-ui text-[10px] uppercase tracking-[0.18em] text-slate-500 block mb-1.5">ATM</label>
+          <input value={sig.atm} onChange={set("atm")} className={fld} placeholder="24000" data-testid="signal-atm" />
+        </div>
+        <div className="hidden md:block" />
+        <div>
+          <label className="font-mono-ui text-[10px] uppercase tracking-[0.18em] text-slate-500 block mb-1.5">ATM +200 strike</label>
+          <input value={sig.up_strike} onChange={set("up_strike")} className={fld} placeholder="24200" data-testid="signal-up-strike" />
+        </div>
+        <div>
+          <label className="font-mono-ui text-[10px] uppercase tracking-[0.18em] text-slate-500 block mb-1.5">+200 straddle trend</label>
+          <select value={sig.up_trend} onChange={set("up_trend")} style={{ colorScheme: "dark" }} className={sel} data-testid="signal-up-trend">
+            {TREND_OPTS.map((t) => <option key={t} value={t} className="bg-surface">{t === "Bullish" ? "Rising" : t === "Bearish" ? "Falling" : "Flat"}</option>)}
+          </select>
+        </div>
+        <div>
+          <label className="font-mono-ui text-[10px] uppercase tracking-[0.18em] text-slate-500 block mb-1.5">ATM −200 strike</label>
+          <input value={sig.down_strike} onChange={set("down_strike")} className={fld} placeholder="23800" data-testid="signal-down-strike" />
+        </div>
+        <div>
+          <label className="font-mono-ui text-[10px] uppercase tracking-[0.18em] text-slate-500 block mb-1.5">−200 straddle trend</label>
+          <select value={sig.down_trend} onChange={set("down_trend")} style={{ colorScheme: "dark" }} className={sel} data-testid="signal-down-trend">
+            {TREND_OPTS.map((t) => <option key={t} value={t} className="bg-surface">{t === "Bullish" ? "Rising" : t === "Bearish" ? "Falling" : "Flat"}</option>)}
+          </select>
+        </div>
+      </div>
+      <div className="mt-5">
+        <label className="font-mono-ui text-[10px] uppercase tracking-[0.18em] text-slate-500 block mb-1.5">Note (optional)</label>
+        <input value={sig.note} onChange={set("note")} className={fld} placeholder="Context shown under the bias" data-testid="signal-note" />
+      </div>
+      <button onClick={save} disabled={saving} className="btn-sapphire mt-6 disabled:opacity-70" data-testid="signal-save-btn">
+        {saving ? <><Loader2 size={16} className="animate-spin" /> Saving</> : <><Save size={15} /> Update Compass</>}
+      </button>
+    </div>
+  );
+};
+
 /* --------------------------- Dashboard --------------------------- */
 const Dashboard = ({ onLogout }) => {
   const [scanner, setScanner] = useState("momentum");
@@ -194,6 +285,8 @@ const Dashboard = ({ onLogout }) => {
       </div>
 
       <div className="container-x py-10">
+        <SignalPanel onAuthError={onLogout} />
+
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-8">
           <div>
             <h2 className="font-display text-2xl font-bold text-white">Manage Scanners</h2>

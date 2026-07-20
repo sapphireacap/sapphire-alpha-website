@@ -2,13 +2,16 @@ import { useEffect, useState } from "react";
 import axios from "axios";
 import { motion } from "framer-motion";
 import { useNavigate } from "react-router-dom";
-import { ArrowUpRight, TrendingUp } from "lucide-react";
+import { ArrowUpRight, TrendingUp, TrendingDown, Minus, Compass } from "lucide-react";
 import Navbar from "../components/site/Navbar";
 import Footer from "../components/site/Footer";
 import ParticleField from "../components/site/ParticleField";
 import Reveal from "../components/site/Reveal";
 import BiasBadge from "../components/site/BiasBadge";
 import { scrollToId } from "../components/site/SmoothScroll";
+import {
+  Accordion, AccordionItem, AccordionTrigger, AccordionContent,
+} from "../components/ui/accordion";
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 const EASE = [0.16, 1, 0.3, 1];
@@ -125,34 +128,112 @@ const ComingSoonCard = ({ scannerKey }) => (
   </div>
 );
 
-const ScannerSection = ({ label, scannerKey, rows, index }) => (
-  <Reveal delay={0.05} className="mb-16 md:mb-24" data-testid={`scanner-${scannerKey}`}>
-    <div className="flex items-center gap-4 mb-6">
-      <span className="font-mono-ui text-xs text-sapphire-light">{String(index + 1).padStart(2, "0")}</span>
-      <h3 className="font-display text-2xl md:text-3xl font-bold text-white tracking-tight">{label}</h3>
-      <span className="h-px flex-1 bg-white/10" />
+const BIAS_STYLE = {
+  Bullish: { color: "text-emerald-300", ring: "border-emerald-400/30", glow: "rgba(52,211,153,0.18)", Icon: TrendingUp, dot: "bg-emerald-400" },
+  Bearish: { color: "text-red-300", ring: "border-red-400/30", glow: "rgba(248,113,113,0.18)", Icon: TrendingDown, dot: "bg-red-400" },
+  Neutral: { color: "text-slate-300", ring: "border-white/15", glow: "rgba(148,163,184,0.12)", Icon: Minus, dot: "bg-slate-400" },
+};
+
+const Leg = ({ label, strike, trend }) => {
+  const isBull = trend === "Bullish";
+  const isBear = trend === "Bearish";
+  const Icon = isBull ? TrendingUp : isBear ? TrendingDown : Minus;
+  const color = isBull ? "text-emerald-300" : isBear ? "text-red-300" : "text-slate-400";
+  return (
+    <div className="flex-1 rounded-xl border border-white/10 bg-white/[0.02] p-4">
+      <p className="font-mono-ui text-[10px] uppercase tracking-[0.18em] text-slate-500 mb-2">{label}</p>
+      <div className="flex items-center justify-between">
+        <span className="font-display text-lg font-bold text-white">{strike || "—"}</span>
+        <span className={`inline-flex items-center gap-1.5 text-sm font-medium ${color}`}>
+          <Icon size={15} /> {trend === "Bullish" ? "Rising" : trend === "Bearish" ? "Falling" : "Flat"}
+        </span>
+      </div>
     </div>
-    {rows && rows.length > 0 ? <MomentumTable rows={rows} /> : <ComingSoonCard scannerKey={scannerKey} />}
-  </Reveal>
-);
+  );
+};
+
+const StraddleCompass = ({ signal }) => {
+  const s = signal || {};
+  const bias = s.bias || "Neutral";
+  const style = BIAS_STYLE[bias] || BIAS_STYLE.Neutral;
+  const { Icon } = style;
+  return (
+    <Reveal className="mb-16 md:mb-20" data-testid="straddle-compass">
+      <div className="flex items-center gap-4 mb-6">
+        <Compass size={18} className="text-sapphire-light" />
+        <h3 className="font-display text-2xl md:text-3xl font-bold text-white tracking-tight">Straddle Compass</h3>
+        <span className="h-px flex-1 bg-white/10" />
+        <span className="font-mono-ui text-[10px] uppercase tracking-[0.18em] text-slate-500 hidden sm:block">Nifty Bias</span>
+      </div>
+
+      <div
+        className={`relative glass rounded-2xl border ${style.ring} overflow-hidden`}
+        style={{ boxShadow: `0 0 60px ${style.glow} inset` }}
+      >
+        <div className="grid grid-cols-1 lg:grid-cols-5 gap-6 p-6 md:p-8">
+          {/* Bias */}
+          <div className="lg:col-span-2 flex flex-col justify-center">
+            <p className="font-mono-ui text-[10px] uppercase tracking-[0.22em] text-slate-500 mb-3">Nifty Directional Bias</p>
+            <div className="flex items-center gap-3">
+              <span className={`inline-flex h-12 w-12 items-center justify-center rounded-xl border ${style.ring} ${style.color}`}>
+                <Icon size={26} />
+              </span>
+              <span className={`font-display text-4xl md:text-5xl font-black tracking-tighter ${style.color}`} data-testid="compass-bias">
+                {bias.toUpperCase()}
+              </span>
+            </div>
+            <p className="mt-4 text-sm font-light text-slate-400 leading-relaxed max-w-sm">
+              {s.note || "Directional read from the ATM ±200 straddle Point & Figure trend."}
+            </p>
+          </div>
+
+          {/* Legs */}
+          <div className="lg:col-span-3 flex flex-col justify-center gap-4">
+            <div className="flex flex-col sm:flex-row gap-4">
+              <Leg label="ATM + 200 Straddle" strike={s.up_strike} trend={s.up_trend} />
+              <Leg label="ATM − 200 Straddle" strike={s.down_strike} trend={s.down_trend} />
+            </div>
+            <div className="flex flex-wrap items-center gap-x-6 gap-y-2 font-mono-ui text-[11px] text-slate-500">
+              <span>SPOT: <span className="text-slate-300">{s.spot || "—"}</span></span>
+              <span>ATM: <span className="text-slate-300">{s.atm || "—"}</span></span>
+              <span>BOX: <span className="text-slate-300">{s.box_size || "0.5%"}</span></span>
+              <span>REVERSAL: <span className="text-slate-300">{s.reversal || "3 box"}</span></span>
+            </div>
+          </div>
+        </div>
+        <div className="px-6 md:px-8 py-4 border-t border-white/10 flex flex-wrap items-center justify-between gap-3">
+          <p className="font-mono-ui text-[11px] text-slate-500">
+            <span className={`inline-block h-2 w-2 rounded-full ${style.dot} mr-2 align-middle`} />
+            Updated: <span className="text-slate-300">{s.updated_label || "Today, 09:30 AM IST"}</span>
+          </p>
+          <p className="text-[11px] font-light text-slate-600 max-w-md">
+            A directional confirmation tool — pair it with your own Nifty strategy. Not investment advice.
+          </p>
+        </div>
+      </div>
+    </Reveal>
+  );
+};
 
 export default function AlphaTerminal() {
   const [data, setData] = useState({});
+  const [signal, setSignal] = useState(null);
   const [loading, setLoading] = useState(true);
   const navigate = useNavigate();
 
   useEffect(() => {
     window.scrollTo(0, 0);
-    axios
-      .get(`${API}/terminal/stocks`)
-      .then((r) => {
+    Promise.all([
+      axios.get(`${API}/terminal/stocks`).then((r) => {
         const grouped = {};
         r.data.forEach((s) => {
           grouped[s.scanner] = grouped[s.scanner] || [];
           grouped[s.scanner].push(s);
         });
         setData(grouped);
-      })
+      }),
+      axios.get(`${API}/terminal/signal`).then((r) => setSignal(r.data)),
+    ])
       .catch(() => {})
       .finally(() => setLoading(false));
   }, []);
@@ -227,18 +308,49 @@ export default function AlphaTerminal() {
                 <span className="h-2 w-2 rounded-full bg-sapphire-light animate-ping" /> Loading terminal…
               </div>
             ) : (
-              SCANNER_ORDER.map((s, i) => (
-                <ScannerSection
-                  key={s.key}
-                  label={s.label}
-                  scannerKey={s.key}
-                  rows={data[s.key]}
-                  index={i}
-                />
-              ))
+              <>
+                <StraddleCompass signal={signal} />
+
+                <Accordion type="single" collapsible defaultValue="momentum" className="space-y-4" data-testid="scanner-accordion">
+                  {SCANNER_ORDER.map((s, i) => {
+                    const rows = data[s.key];
+                    const hasData = rows && rows.length > 0;
+                    return (
+                      <AccordionItem
+                        key={s.key}
+                        value={s.key}
+                        className="border border-white/10 rounded-2xl overflow-hidden bg-white/[0.015]"
+                        data-testid={`scanner-${s.key}`}
+                      >
+                        <AccordionTrigger
+                          className="px-5 md:px-6 py-5 hover:no-underline hover:bg-white/[0.03] transition-colors [&>svg]:text-sapphire-light"
+                          data-testid={`scanner-trigger-${s.key}`}
+                        >
+                          <span className="flex items-center gap-4 text-left">
+                            <span className="font-mono-ui text-xs text-sapphire-light">{String(i + 1).padStart(2, "0")}</span>
+                            <span className="font-display text-xl md:text-2xl font-bold text-white tracking-tight">{s.label}</span>
+                            {hasData ? (
+                              <span className="hidden sm:inline-flex items-center gap-1.5 rounded-full border border-emerald-400/25 bg-emerald-400/10 px-2.5 py-0.5 font-mono-ui text-[10px] uppercase tracking-wider text-emerald-300">
+                                <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" /> Live
+                              </span>
+                            ) : (
+                              <span className="hidden sm:inline-flex rounded-full border border-white/15 px-2.5 py-0.5 font-mono-ui text-[10px] uppercase tracking-wider text-slate-500">
+                                Soon
+                              </span>
+                            )}
+                          </span>
+                        </AccordionTrigger>
+                        <AccordionContent className="px-5 md:px-6 pb-6 pt-1">
+                          {hasData ? <MomentumTable rows={rows} /> : <ComingSoonCard scannerKey={s.key} />}
+                        </AccordionContent>
+                      </AccordionItem>
+                    );
+                  })}
+                </Accordion>
+              </>
             )}
 
-            <Reveal className="mt-8">
+            <Reveal className="mt-10">
               <a
                 href="/#waitlist"
                 onClick={(e) => { e.preventDefault(); navigate("/"); setTimeout(() => scrollToId("waitlist"), 550); }}
