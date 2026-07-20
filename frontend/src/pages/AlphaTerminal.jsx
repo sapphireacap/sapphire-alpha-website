@@ -161,7 +161,7 @@ const StraddleCompass = ({ signal }) => {
     <Reveal className="mb-16 md:mb-20" data-testid="straddle-compass">
       <div className="flex items-center gap-4 mb-6">
         <Compass size={18} className="text-sapphire-light" />
-        <h3 className="font-display text-2xl md:text-3xl font-bold text-white tracking-tight">Straddle Compass</h3>
+        <h3 className="font-display text-2xl md:text-3xl font-bold text-white tracking-tight">Sapphire Nifty Vector</h3>
         <span className="h-px flex-1 bg-white/10" />
         <span className="font-mono-ui text-[10px] uppercase tracking-[0.18em] text-slate-500 hidden sm:block">Nifty Bias</span>
       </div>

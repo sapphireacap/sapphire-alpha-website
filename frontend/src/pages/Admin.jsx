@@ -100,7 +100,7 @@ const SignalPanel = ({ onAuthError }) => {
     try {
       const { data } = await axios.put(`${API}/terminal/signal`, sig, authHeaders());
       setSig((s) => ({ ...s, ...data }));
-      toast.success("Straddle Compass updated. Live on the terminal.");
+      toast.success("Sapphire Nifty Vector updated. Live on the terminal.");
     } catch (err) {
       if (err?.response?.status === 401) { toast.error("Session expired."); onAuthError(); return; }
       toast.error("Failed to save signal.");
@@ -115,7 +115,7 @@ const SignalPanel = ({ onAuthError }) => {
   return (
     <div className="glass rounded-2xl p-6 md:p-8 mb-10" data-testid="admin-signal-panel">
       <div className="flex items-center gap-3 mb-2">
-        <h2 className="font-display text-xl font-bold text-white">Straddle Compass</h2>
+        <h2 className="font-display text-xl font-bold text-white">Sapphire Nifty Vector</h2>
         <span className="font-mono-ui text-[10px] uppercase tracking-[0.2em] text-sapphire-light">Nifty Bias</span>
       </div>
       <p className="text-sm text-slate-500 mb-6">
