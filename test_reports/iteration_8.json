@@ -1,0 +1,45 @@
+{
+  "summary": "Verified Alpha Terminal Momentum Leaders responsive fix. Mobile (390 & 360) renders stacked cards with no horizontal overflow; Desktop (1440) renders the full table. All regression elements present (coming-soon sections, terminal-updated pill, momentum-disclaimer).",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_results": {
+    "mobile_390": {
+      "momentum_table_scrollWidth_eq_clientWidth": true,
+      "mt_scrollWidth": 340, "mt_clientWidth": 340,
+      "doc_scrollWidth": 390, "innerWidth": 390,
+      "cards_present": [true, true, true],
+      "biases": ["Bullish", "Bullish", "Bullish"],
+      "table_hidden": true,
+      "disclaimer": true, "updated_pill": true,
+      "coming_soon_all_present": true,
+      "status": "PASS"
+    },
+    "mobile_360": {
+      "mt_scrollWidth": 310, "mt_clientWidth": 310,
+      "doc_scrollWidth": 360, "innerWidth": 360,
+      "cards_present": [true, true, true],
+      "table_hidden": true,
+      "status": "PASS"
+    },
+    "desktop_1440": {
+      "rows_present": [true, true, true],
+      "table_visible": true,
+      "disclaimer": true,
+      "coming_soon_all_present": true,
+      "status": "PASS"
+    }
+  },
+  "test_report_links": [],
+  "action_items": [],
+  "critical_code_review_comments": [],
+  "updated_files": [],
+  "success_rate": {"backend": "N/A", "frontend": "100%"},
+  "seed_data_creation": "None. Existing NVDA/CRWD/PLTR seed data used.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Momentum Leaders section on /alpha-terminal is fully responsive: mobile shows cards (momentum-card-<i>), desktop shows table (momentum-row-<i>). No horizontal overflow at 360/390. Regression items (coming-soon-*, terminal-updated, momentum-disclaimer) all intact."
+}

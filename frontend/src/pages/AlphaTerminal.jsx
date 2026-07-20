@@ -25,8 +25,9 @@ const DISCLAIMER =
 
 const MomentumTable = ({ rows }) => (
   <div className="glass rounded-2xl overflow-hidden" data-testid="momentum-table">
-    <div className="overflow-x-auto">
-      <table className="w-full min-w-[720px] text-left">
+    {/* Desktop / tablet table */}
+    <div className="hidden md:block">
+      <table className="w-full text-left">
         <thead>
           <tr className="border-b border-white/10">
             {["Ticker", "Company", "Momentum Score", "Volume", "Bias"].map((h) => (
@@ -65,7 +66,43 @@ const MomentumTable = ({ rows }) => (
         </tbody>
       </table>
     </div>
-    <div className="px-6 py-5 border-t border-white/10">
+
+    {/* Mobile stacked cards */}
+    <div className="md:hidden divide-y divide-white/[0.06]">
+      {rows.map((r, i) => (
+        <motion.div
+          key={r.id}
+          initial={{ opacity: 0, y: 12 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.5, ease: EASE, delay: i * 0.06 }}
+          className="p-5"
+          data-testid={`momentum-card-${i}`}
+        >
+          <div className="flex items-center justify-between mb-3">
+            <span className="inline-flex items-center gap-1.5 font-display text-xl font-extrabold text-white tracking-tight">
+              {r.ticker}
+              <TrendingUp size={15} className="text-emerald-400" />
+            </span>
+            <BiasBadge bias={r.bias} testid={`momentum-bias-${i}`} />
+          </div>
+          <p className="text-sm text-slate-400 mb-4">{r.company || "—"}</p>
+          <div className="flex items-center gap-6">
+            <div>
+              <p className="font-mono-ui text-[10px] uppercase tracking-[0.18em] text-slate-500 mb-1">Momentum</p>
+              <span className="inline-flex items-center rounded-md border border-emerald-400/25 bg-emerald-400/10 px-2.5 py-1 font-mono-ui text-sm font-semibold text-emerald-300">
+                {r.momentum_score}
+              </span>
+            </div>
+            <div>
+              <p className="font-mono-ui text-[10px] uppercase tracking-[0.18em] text-slate-500 mb-1">Volume</p>
+              <span className="font-mono-ui text-sm text-slate-300">{r.volume}</span>
+            </div>
+          </div>
+        </motion.div>
+      ))}
+    </div>
+
+    <div className="px-5 md:px-6 py-5 border-t border-white/10">
       <p className="text-xs font-light text-slate-500 leading-relaxed max-w-4xl" data-testid="momentum-disclaimer">
         {DISCLAIMER}
       </p>
