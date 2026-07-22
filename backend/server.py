@@ -8,6 +8,7 @@ import asyncio
 import httpx
 import bcrypt
 import jwt
+from definedge_service import DefinedgeService, DefinedgeError
 from pathlib import Path
 from pydantic import BaseModel, Field, EmailStr, ConfigDict
 from typing import List, Optional
@@ -45,6 +46,13 @@ SCANNERS = [
     {"key": "positional", "label": "Positional Opportunities", "active": False},
 ]
 SCANNER_KEYS = [s["key"] for s in SCANNERS]
+
+# Definedge (Sapphire Nifty Vector)
+definedge = DefinedgeService(
+    db,
+    os.environ.get("DEFINEDGE_API_TOKEN", ""),
+    os.environ.get("DEFINEDGE_API_SECRET", ""),
+)
 
 app = FastAPI()
 api_router = APIRouter(prefix="/api")
@@ -448,6 +456,73 @@ async def update_signal(payload: SignalUpdate, admin: dict = Depends(get_current
 
 
 # ---------------------------------------------------------------------------
+# Definedge live automation (admin) — Sapphire Nifty Vector
+# ---------------------------------------------------------------------------
+class OtpVerify(BaseModel):
+    otp: str
+    otp_token: Optional[str] = None
+
+
+@api_router.get("/admin/definedge/status")
+async def definedge_status(admin: dict = Depends(get_current_admin)):
+    return await definedge.status()
+
+
+@api_router.post("/admin/definedge/otp-init")
+async def definedge_otp_init(admin: dict = Depends(get_current_admin)):
+    try:
+        return await definedge.trigger_otp()
+    except DefinedgeError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@api_router.post("/admin/definedge/otp-verify")
+async def definedge_otp_verify(payload: OtpVerify, admin: dict = Depends(get_current_admin)):
+    try:
+        return await definedge.verify_otp(payload.otp, payload.otp_token)
+    except DefinedgeError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@api_router.get("/admin/definedge/master-sample")
+async def definedge_master_sample(admin: dict = Depends(get_current_admin)):
+    try:
+        return await definedge.master_sample()
+    except DefinedgeError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@api_router.post("/admin/definedge/refresh")
+async def definedge_refresh(admin: dict = Depends(get_current_admin)):
+    try:
+        return await definedge.compute_vector()
+    except DefinedgeError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+async def _vector_scheduler():
+    """Every minute during NSE market hours, recompute the Nifty Vector if a
+    Definedge session is active. Errors are logged and never crash the loop."""
+    while True:
+        try:
+            now = datetime.now(timezone(timedelta(hours=5, minutes=30)))
+            market_open = (
+                now.weekday() < 5
+                and (now.hour, now.minute) >= (9, 15)
+                and (now.hour, now.minute) <= (15, 30)
+            )
+            if market_open and definedge.configured():
+                st = await definedge.status()
+                if st.get("connected"):
+                    await definedge.compute_vector()
+        except DefinedgeError as e:
+            logger.info(f"Vector scheduler skip: {e}")
+        except Exception as e:  # noqa: BLE001
+            logger.warning(f"Vector scheduler error: {e}")
+        await asyncio.sleep(60)
+
+
+# ---------------------------------------------------------------------------
 # Startup: seed admin, momentum data, indexes
 # ---------------------------------------------------------------------------
 @app.on_event("startup")
@@ -492,6 +567,8 @@ async def on_startup():
         await db.terminal_stocks.create_index([("scanner", 1), ("order", 1)])
     except Exception as e:  # noqa: BLE001
         logger.warning(f"Index creation: {e}")
+
+    asyncio.create_task(_vector_scheduler())
 
 
 app.include_router(api_router)
