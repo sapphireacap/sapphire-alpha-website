@@ -17,6 +17,7 @@ Strategy (Sapphire Nifty Vector):
 Live option data is only meaningful during market hours; the daily OTP must be
 entered manually each morning (session key resets daily).
 """
+import asyncio
 import io
 import math
 import zipfile
@@ -245,20 +246,25 @@ class DefinedgeService:
         return list(closes.values())[-1]
 
     async def _straddle_series(self, ce_token: str, pe_token: str):
-        ce = await self._closes("NFO", ce_token)
-        pe = await self._closes("NFO", pe_token)
+        ce, pe = await asyncio.gather(
+            self._closes("NFO", ce_token),
+            self._closes("NFO", pe_token),
+        )
         common = [t for t in ce if t in pe]
         return [ce[t] + pe[t] for t in sorted(common)]
 
     # ---- orchestration -------------------------------------------------
     async def compute_vector(self):
-        spot = await self._spot()
+        # Fetch spot and the (possibly cold-cache) master file concurrently —
+        # neither depends on the other, only token resolution below does.
+        spot, df = await asyncio.gather(self._spot(), self._get_master())
         atm = int(round(spot / 100.0) * 100)
-        df = await self._get_master()
         tokens = self._resolve_tokens(df, atm)
 
-        up = await self._straddle_series(tokens["legs"]["up"]["CE"], tokens["legs"]["up"]["PE"])
-        down = await self._straddle_series(tokens["legs"]["down"]["CE"], tokens["legs"]["down"]["PE"])
+        up, down = await asyncio.gather(
+            self._straddle_series(tokens["legs"]["up"]["CE"], tokens["legs"]["up"]["PE"]),
+            self._straddle_series(tokens["legs"]["down"]["CE"], tokens["legs"]["down"]["PE"]),
+        )
         up_trend = pnf_trend(up)
         down_trend = pnf_trend(down)
         bias = derive_bias(up_trend, down_trend)

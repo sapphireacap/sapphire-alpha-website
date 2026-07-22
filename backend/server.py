@@ -33,6 +33,32 @@ NOTIFY_EMAIL = os.environ.get("NOTIFY_EMAIL", "contact@sapphirealphacapital.com"
 # Auth config
 JWT_SECRET = os.environ.get("JWT_SECRET", "dev-secret-change-me")
 JWT_ALGORITHM = "HS256"
+
+# Shared secret for the external (GitHub Actions) Definedge auto-refresh cron —
+# independent of admin login so the interactive admin credential never has to
+# live in CI.
+CRON_SECRET = os.environ.get("CRON_SECRET")
+
+IST = timezone(timedelta(hours=5, minutes=30))
+
+# NSE full-day trading holidays (equity/derivatives segment). Mirrors
+# NSE_HOLIDAYS in frontend/src/pages/AlphaTerminal.jsx — no shared config
+# layer between the two languages, so both need a fresh entry set added each
+# calendar year.
+NSE_HOLIDAYS = {
+    # 2026
+    "2026-01-26", "2026-03-03", "2026-03-26", "2026-03-31", "2026-04-03",
+    "2026-04-14", "2026-05-01", "2026-05-28", "2026-06-26", "2026-09-14",
+    "2026-10-02", "2026-10-20", "2026-11-10", "2026-11-24", "2026-12-25",
+}
+
+
+def _is_market_open(now_ist: datetime) -> bool:
+    if now_ist.weekday() >= 5:
+        return False
+    if now_ist.strftime("%Y-%m-%d") in NSE_HOLIDAYS:
+        return False
+    return (9, 15) <= (now_ist.hour, now_ist.minute) <= (15, 30)
 ADMIN_EMAIL = os.environ.get("ADMIN_EMAIL", "admin@example.com").lower()
 ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "admin123")
 
@@ -500,26 +526,27 @@ async def definedge_refresh(admin: dict = Depends(get_current_admin)):
         raise HTTPException(status_code=400, detail=str(e))
 
 
-async def _vector_scheduler():
-    """Every minute during NSE market hours, recompute the Nifty Vector if a
-    Definedge session is active. Errors are logged and never crash the loop."""
-    while True:
-        try:
-            now = datetime.now(timezone(timedelta(hours=5, minutes=30)))
-            market_open = (
-                now.weekday() < 5
-                and (now.hour, now.minute) >= (9, 15)
-                and (now.hour, now.minute) <= (15, 30)
-            )
-            if market_open and definedge.configured():
-                st = await definedge.status()
-                if st.get("connected"):
-                    await definedge.compute_vector()
-        except DefinedgeError as e:
-            logger.info(f"Vector scheduler skip: {e}")
-        except Exception as e:  # noqa: BLE001
-            logger.warning(f"Vector scheduler error: {e}")
-        await asyncio.sleep(60)
+@api_router.post("/admin/definedge/auto-refresh")
+async def definedge_auto_refresh(request: Request):
+    """Called by the external (GitHub Actions) cron on a schedule during NSE
+    hours. Authenticated with a static shared secret rather than an admin
+    login, since this is a machine caller, not the interactive admin."""
+    if not CRON_SECRET or request.headers.get("X-Cron-Key") != CRON_SECRET:
+        raise HTTPException(status_code=401, detail="Invalid cron key")
+
+    now = datetime.now(IST)
+    if not _is_market_open(now):
+        return {"skipped": "outside market hours"}
+    if not definedge.configured():
+        return {"skipped": "not configured"}
+    status = await definedge.status()
+    if not status.get("connected"):
+        return {"skipped": "not connected"}
+
+    try:
+        return await definedge.compute_vector()
+    except DefinedgeError as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
 
 # ---------------------------------------------------------------------------
@@ -567,8 +594,6 @@ async def on_startup():
         await db.terminal_stocks.create_index([("scanner", 1), ("order", 1)])
     except Exception as e:  # noqa: BLE001
         logger.warning(f"Index creation: {e}")
-
-    asyncio.create_task(_vector_scheduler())
 
 
 app.include_router(api_router)
