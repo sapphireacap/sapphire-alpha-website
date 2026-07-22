@@ -113,7 +113,7 @@ class DefinedgeService:
             raise DefinedgeError(f"OTP init failed ({r.status_code}): {r.text[:200]}")
         data = r.json()
         self._otp_token = data.get("otp_token")
-        return {"message": data.get("message", "OTP sent."), "otp_token_present": bool(self._otp_token)}
+        return {"message": data.get("message", "OTP sent."), "otp_token": self._otp_token, "otp_token_present": bool(self._otp_token)}
 
     async def verify_otp(self, otp: str, otp_token: str = None):
         token = otp_token or self._otp_token

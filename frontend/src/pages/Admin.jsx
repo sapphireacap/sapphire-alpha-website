@@ -4,6 +4,7 @@ import { toast } from "sonner";
 import { Link } from "react-router-dom";
 import {
   Loader2, LogOut, Plus, Trash2, GripVertical, Save, X, ArrowLeft, ShieldCheck,
+  Wifi, WifiOff, RefreshCw, ChevronDown,
 } from "lucide-react";
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
@@ -79,19 +80,204 @@ const Login = ({ onSuccess }) => {
   );
 };
 
+/* ------------------------ Definedge live connection ------------------------ */
+const errMsg = (err, fallback) => {
+  const d = err?.response?.data?.detail;
+  return typeof d === "string" ? d : fallback;
+};
+
+const DefinedgeConnect = ({ onAuthError, onSignalUpdate }) => {
+  const [status, setStatus] = useState(null);
+  const [otp, setOtp] = useState("");
+  const [otpToken, setOtpToken] = useState(null);
+  const [sendingOtp, setSendingOtp] = useState(false);
+  const [verifyingOtp, setVerifyingOtp] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
+  const [showDebug, setShowDebug] = useState(false);
+  const [masterSample, setMasterSample] = useState(null);
+  const [loadingMaster, setLoadingMaster] = useState(false);
+
+  const loadStatus = useCallback(async () => {
+    try {
+      const { data } = await axios.get(`${API}/admin/definedge/status`, authHeaders());
+      setStatus(data);
+    } catch (err) {
+      if (err?.response?.status === 401) onAuthError();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => { loadStatus(); }, [loadStatus]);
+
+  const sendOtp = async () => {
+    setSendingOtp(true);
+    try {
+      const { data } = await axios.post(`${API}/admin/definedge/otp-init`, {}, authHeaders());
+      setOtpToken(data.otp_token ?? null);
+      toast.success(data.message || "OTP sent.");
+    } catch (err) {
+      if (err?.response?.status === 401) { onAuthError(); return; }
+      toast.error(errMsg(err, "Failed to send OTP."));
+    } finally {
+      setSendingOtp(false);
+    }
+  };
+
+  const verifyOtp = async () => {
+    if (!otp.trim()) return;
+    setVerifyingOtp(true);
+    try {
+      await axios.post(`${API}/admin/definedge/otp-verify`, { otp, otp_token: otpToken }, authHeaders());
+      toast.success("Definedge connected.");
+      setOtp("");
+      setOtpToken(null);
+      await loadStatus();
+    } catch (err) {
+      if (err?.response?.status === 401) { onAuthError(); return; }
+      toast.error(errMsg(err, "OTP verification failed."));
+    } finally {
+      setVerifyingOtp(false);
+    }
+  };
+
+  const refreshNow = async () => {
+    setRefreshing(true);
+    try {
+      const { data } = await axios.post(`${API}/admin/definedge/refresh`, {}, authHeaders());
+      onSignalUpdate(data);
+      toast.success("Sapphire Nifty Vector refreshed from live data.");
+    } catch (err) {
+      if (err?.response?.status === 401) { onAuthError(); return; }
+      toast.error(errMsg(err, "Refresh failed."));
+    } finally {
+      setRefreshing(false);
+    }
+  };
+
+  const toggleDebug = async () => {
+    const next = !showDebug;
+    setShowDebug(next);
+    if (next && !masterSample) {
+      setLoadingMaster(true);
+      try {
+        const { data } = await axios.get(`${API}/admin/definedge/master-sample`, authHeaders());
+        setMasterSample(data);
+      } catch (err) {
+        if (err?.response?.status === 401) { onAuthError(); return; }
+        toast.error(errMsg(err, "Failed to load master sample."));
+      } finally {
+        setLoadingMaster(false);
+      }
+    }
+  };
+
+  const connected = !!status?.connected;
+  const configured = !!status?.configured;
+  const pill = connected
+    ? { icon: Wifi, cls: "text-emerald-300 border-emerald-400/30 bg-emerald-400/10", dot: "bg-emerald-400", label: "Connected" }
+    : configured
+    ? { icon: WifiOff, cls: "text-amber-300 border-amber-400/30 bg-amber-400/10", dot: "bg-amber-400", label: "Not connected" }
+    : { icon: WifiOff, cls: "text-slate-400 border-white/15 bg-white/5", dot: "bg-slate-500", label: "Not configured" };
+  const PillIcon = pill.icon;
+
+  const fld = "w-full bg-white/5 border border-white/10 rounded-md px-3 py-2 text-sm text-white outline-none focus:border-sapphire-light transition-colors";
+
+  return (
+    <div className="glass rounded-2xl p-6 md:p-8 mb-6" data-testid="definedge-connect-panel">
+      <div className="flex flex-wrap items-center justify-between gap-3 mb-2">
+        <h2 className="font-display text-xl font-bold text-white">Definedge Live Connection</h2>
+        <span className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 font-mono-ui text-[10px] uppercase tracking-[0.18em] ${pill.cls}`} data-testid="definedge-status-pill">
+          <span className={`h-1.5 w-1.5 rounded-full ${pill.dot}`} />
+          <PillIcon size={12} /> {pill.label}
+        </span>
+      </div>
+      <p className="text-sm text-slate-500 mb-6">
+        Log in with the daily OTP to enable auto-live updates. The session resets every trading day —
+        repeat this each morning.
+        {status?.session_updated_at && (
+          <span className="block mt-1 text-xs text-slate-600">Session updated: {status.session_updated_at}</span>
+        )}
+      </p>
+
+      <div className="flex flex-wrap items-end gap-4">
+        <button
+          onClick={sendOtp}
+          disabled={!configured || sendingOtp}
+          className="btn-sapphire disabled:opacity-50"
+          data-testid="definedge-send-otp-btn"
+        >
+          {sendingOtp ? <><Loader2 size={16} className="animate-spin" /> Sending</> : "Send OTP"}
+        </button>
+
+        <div className="flex-1 min-w-[160px]">
+          <label className="font-mono-ui text-[10px] uppercase tracking-[0.18em] text-slate-500 block mb-1.5">OTP</label>
+          <input
+            value={otp}
+            onChange={(e) => setOtp(e.target.value)}
+            className={fld}
+            placeholder="Enter OTP"
+            data-testid="definedge-otp-input"
+          />
+        </div>
+        <button
+          onClick={verifyOtp}
+          disabled={!otp.trim() || verifyingOtp}
+          className="btn-ghost !px-4 !py-2.5 text-sm disabled:opacity-50"
+          data-testid="definedge-verify-otp-btn"
+        >
+          {verifyingOtp ? <><Loader2 size={16} className="animate-spin" /> Verifying</> : "Verify"}
+        </button>
+
+        <button
+          onClick={refreshNow}
+          disabled={!connected || refreshing}
+          className="btn-ghost !px-4 !py-2.5 text-sm disabled:opacity-50"
+          data-testid="definedge-refresh-btn"
+        >
+          {refreshing ? <><Loader2 size={16} className="animate-spin" /> Refreshing</> : <><RefreshCw size={15} /> Refresh Now</>}
+        </button>
+      </div>
+
+      <div className="mt-6 border-t border-white/10 pt-4">
+        <button
+          onClick={toggleDebug}
+          className="inline-flex items-center gap-1.5 text-xs text-slate-500 hover:text-white transition-colors"
+          data-testid="definedge-debug-toggle"
+        >
+          <ChevronDown size={14} className={`transition-transform ${showDebug ? "rotate-180" : ""}`} />
+          Debug: master file sample
+        </button>
+        {showDebug && (
+          <div className="mt-3">
+            {loadingMaster ? (
+              <div className="flex items-center gap-2 text-sm text-slate-500"><Loader2 size={14} className="animate-spin" /> Loading…</div>
+            ) : masterSample ? (
+              <pre className="text-[11px] font-mono-ui text-slate-400 bg-black/30 rounded-lg p-3 overflow-x-auto max-h-64">
+                {`shape: ${JSON.stringify(masterSample.shape)}\n\n${JSON.stringify(masterSample.head, null, 2)}`}
+              </pre>
+            ) : (
+              <p className="text-sm text-slate-600">No data loaded.</p>
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
+
 /* ------------------------ Straddle Compass panel ------------------------ */
 const BIAS_OPTS = ["Neutral", "Bullish", "Bearish"];
 const TREND_OPTS = ["Neutral", "Bullish", "Bearish"];
 
-const SignalPanel = ({ onAuthError }) => {
+const SignalPanel = ({ onAuthError, signal }) => {
   const empty = { bias: "Neutral", spot: "", atm: "", up_strike: "", up_trend: "Neutral", down_strike: "", down_trend: "Neutral", note: "", source: "manual" };
   const [sig, setSig] = useState(empty);
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
-    axios.get(`${API}/terminal/signal`).then((r) => setSig({ ...empty, ...r.data })).catch(() => {});
+    if (signal) setSig((s) => ({ ...empty, ...signal }));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [signal]);
 
   const set = (k) => (e) => setSig((s) => ({ ...s, [k]: e.target.value }));
 
@@ -178,6 +364,11 @@ const Dashboard = ({ onLogout }) => {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [dragIndex, setDragIndex] = useState(null);
+  const [signal, setSignal] = useState(null);
+
+  useEffect(() => {
+    axios.get(`${API}/terminal/signal`).then((r) => setSignal(r.data)).catch(() => {});
+  }, []);
 
   const load = useCallback(async (sc) => {
     setLoading(true);
@@ -285,7 +476,8 @@ const Dashboard = ({ onLogout }) => {
       </div>
 
       <div className="container-x py-10">
-        <SignalPanel onAuthError={onLogout} />
+        <DefinedgeConnect onAuthError={onLogout} onSignalUpdate={setSignal} />
+        <SignalPanel onAuthError={onLogout} signal={signal} />
 
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-8">
           <div>
