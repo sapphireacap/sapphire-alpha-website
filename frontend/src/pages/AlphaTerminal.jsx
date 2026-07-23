@@ -207,7 +207,7 @@ const StraddleCompass = ({ signal }) => {
     const tick = () => {
       if (!isNseSessionLive()) return;
       axios.get(`${API}/terminal/spot`).then((r) => {
-        if (r.data?.spot) setLiveSpot(r.data.spot);
+        if (r.data?.spot) setLiveSpot(r.data);
       }).catch(() => {});
     };
     tick();
@@ -215,20 +215,14 @@ const StraddleCompass = ({ signal }) => {
     return () => clearInterval(id);
   }, []);
 
-  const displaySpot = liveSpot || s.spot;
+  const displaySpot = liveSpot?.spot || s.spot;
+  const changeNegative = liveSpot?.change?.startsWith("-");
 
   return (
-    <Reveal className="mb-16 md:mb-20" data-testid="straddle-compass">
-      <div className="flex items-center gap-4 mb-6">
-        <Compass size={18} className="text-sapphire-light" />
-        <h3 className="font-display text-2xl md:text-3xl font-bold text-white tracking-tight">Sapphire Nifty Vector</h3>
-        <span className="h-px flex-1 bg-white/10" />
-        <span className="font-mono-ui text-[10px] uppercase tracking-[0.18em] text-slate-500 hidden sm:block">Proprietary Signal</span>
-      </div>
-
       <div
         className={`relative glass rounded-2xl border ${style.ring} overflow-hidden`}
         style={{ boxShadow: `0 0 60px ${style.glow} inset` }}
+        data-testid="straddle-compass"
       >
         <div className="flex flex-col items-center text-center gap-5 p-8 md:p-14">
           <p className="font-mono-ui text-[10px] uppercase tracking-[0.28em] text-slate-500">Nifty Directional Bias</p>
@@ -263,14 +257,22 @@ const StraddleCompass = ({ signal }) => {
                 Status: <span className="text-amber-300 ml-1">Standby</span>
               </>
             )}
-            {displaySpot && <span className="ml-4">NIFTY SPOT: <span className="text-slate-300">{displaySpot}</span></span>}
+            {displaySpot && (
+              <span className="ml-4">
+                NIFTY SPOT: <span className="text-slate-300">{displaySpot}</span>
+                {liveSpot?.change && (
+                  <span className={`ml-1 ${changeNegative ? "text-red-400" : "text-emerald-400"}`}>
+                    ({liveSpot.change}, {liveSpot.change_pct}%)
+                  </span>
+                )}
+              </span>
+            )}
           </p>
           <p className="text-[11px] font-light text-slate-600 max-w-md">
             Use as confirmation before entering a trade — an aligned bias supports your CE/PE or futures setup, an opposing bias is a caution signal. Not investment advice.
           </p>
         </div>
       </div>
-    </Reveal>
   );
 };
 
@@ -362,9 +364,29 @@ export default function AlphaTerminal() {
               </div>
             ) : (
               <>
-                <StraddleCompass signal={signal} />
+                <Accordion type="single" collapsible className="space-y-4" data-testid="scanner-accordion">
+                  <AccordionItem
+                    value="vector"
+                    className="border border-white/10 rounded-2xl overflow-hidden bg-white/[0.015]"
+                    data-testid="scanner-vector"
+                  >
+                    <AccordionTrigger
+                      className="px-5 md:px-6 py-5 hover:no-underline hover:bg-white/[0.03] transition-colors [&>svg]:text-sapphire-light"
+                      data-testid="scanner-trigger-vector"
+                    >
+                      <span className="flex items-center gap-4 text-left">
+                        <Compass size={18} className="text-sapphire-light" />
+                        <span className="font-display text-xl md:text-2xl font-bold text-white tracking-tight">Sapphire Nifty Vector</span>
+                        <span className="hidden sm:inline-flex rounded-full border border-white/15 px-2.5 py-0.5 font-mono-ui text-[10px] uppercase tracking-wider text-slate-500">
+                          Proprietary Signal
+                        </span>
+                      </span>
+                    </AccordionTrigger>
+                    <AccordionContent className="px-5 md:px-6 pb-6 pt-1">
+                      <StraddleCompass signal={signal} />
+                    </AccordionContent>
+                  </AccordionItem>
 
-                <Accordion type="single" collapsible defaultValue="momentum" className="space-y-4" data-testid="scanner-accordion">
                   {SCANNER_ORDER.map((s, i) => {
                     const rows = data[s.key];
                     const hasData = rows && rows.length > 0;

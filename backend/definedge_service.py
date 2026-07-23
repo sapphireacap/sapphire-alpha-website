@@ -104,6 +104,7 @@ class DefinedgeService:
         self._otp_token = None
         self._master_cache = None       # (date_str, DataFrame)
         self._spot_cache = None         # (monotonic_time, {"spot": "..."})
+        self._prev_close_cache = None   # (date_str, float)
 
     # ---- auth ----------------------------------------------------------
     def configured(self) -> bool:
@@ -221,11 +222,13 @@ class DefinedgeService:
         return out
 
     # ---- historical ----------------------------------------------------
-    async def _closes(self, segment: str, token: str):
+    async def _closes(self, segment: str, token: str, frm: str = None, to: str = None):
         session = await self._session_key()
         now = datetime.now(IST)
-        frm = now.replace(hour=9, minute=15, second=0).strftime("%d%m%Y%H%M")
-        to = now.strftime("%d%m%Y%H%M")
+        if frm is None:
+            frm = now.replace(hour=9, minute=15, second=0).strftime("%d%m%Y%H%M")
+        if to is None:
+            to = now.strftime("%d%m%Y%H%M")
         url = f"{DATA_BASE}/history/{segment}/{token}/minute/{frm}/{to}"
         async with httpx.AsyncClient(timeout=45) as c:
             r = await c.get(url, headers={"Authorization": session})
@@ -250,6 +253,27 @@ class DefinedgeService:
             raise DefinedgeError("No Nifty spot data returned.")
         return list(closes.values())[-1]
 
+    async def _prev_close(self):
+        """Nifty's last close before today's session — cached per calendar day.
+        Definedge's quotes endpoint doesn't return a previous-close field, so
+        this pulls a wide history window ending just before today's open and
+        takes the last bar. Naturally skips weekends/holidays since it just
+        reads whatever data actually exists, rather than us guessing the
+        prior trading day ourselves."""
+        today_str = datetime.now(IST).strftime("%Y-%m-%d")
+        if self._prev_close_cache and self._prev_close_cache[0] == today_str:
+            return self._prev_close_cache[1]
+
+        now = datetime.now(IST)
+        frm = (now - timedelta(days=8)).strftime("%d%m%Y0000")
+        to = now.replace(hour=9, minute=14, second=0).strftime("%d%m%Y%H%M")
+        closes = await self._closes("NSE", NIFTY_SPOT_TOKEN, frm=frm, to=to)
+        if not closes:
+            raise DefinedgeError("No previous session close data.")
+        value = list(closes.values())[-1]
+        self._prev_close_cache = (today_str, value)
+        return value
+
     async def spot_quote(self):
         """Lightweight, cached LTP lookup for the public fast-polling ticker —
         deliberately separate from _spot() (which pulls a full minute-bar
@@ -258,6 +282,8 @@ class DefinedgeService:
         now = time.monotonic()
         if self._spot_cache and now - self._spot_cache[0] < SPOT_CACHE_TTL:
             return self._spot_cache[1]
+
+        prev_close = await self._prev_close()
 
         session = await self._session_key()
         url = f"{QUOTES_BASE}/quotes/NSE/{NIFTY_SPOT_TOKEN}"
@@ -270,8 +296,15 @@ class DefinedgeService:
         ltp = r.json().get("ltp")
         if ltp is None:
             raise DefinedgeError("No LTP in quote response.")
+        ltp = float(ltp)
+        change = ltp - prev_close
+        pct = (change / prev_close * 100) if prev_close else 0.0
 
-        result = {"spot": f"{float(ltp):,.2f}"}
+        result = {
+            "spot": f"{ltp:,.2f}",
+            "change": f"{change:+,.2f}",
+            "change_pct": f"{pct:+.2f}",
+        }
         self._spot_cache = (now, result)
         return result
 
