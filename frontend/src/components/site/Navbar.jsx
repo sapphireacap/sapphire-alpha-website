@@ -142,12 +142,14 @@ export const Navbar = () => {
                     }`}
                     data-testid={`nav-mobile-${l.id || l.to.slice(1)}-link`}
                   >
-                    {isAlpha && (
-                      <span className="relative flex h-1.5 w-1.5">
-                        <span className="absolute inline-flex h-full w-full rounded-full bg-sapphire-light opacity-75 animate-ping" />
-                        <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-sapphire-light" />
-                      </span>
-                    )}
+                    <span className="relative flex h-1.5 w-1.5 shrink-0">
+                      {isAlpha && (
+                        <>
+                          <span className="absolute inline-flex h-full w-full rounded-full bg-sapphire-light opacity-75 animate-ping" />
+                          <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-sapphire-light" />
+                        </>
+                      )}
+                    </span>
                     {l.label}
                   </button>
                 );
