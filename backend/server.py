@@ -12,6 +12,9 @@ import bcrypt
 import jwt
 import zxcvbn
 from definedge_service import DefinedgeService, DefinedgeError
+from journal_routes import create_journal_router
+from journal_analytics import create_analytics_router
+from journal_models import DEFAULT_SETUP_TAGS, DEFAULT_EMOTION_TAGS
 from pathlib import Path
 from pydantic import BaseModel, Field, EmailStr, ConfigDict
 from typing import List, Optional
@@ -522,6 +525,8 @@ async def signup(payload: SignupRequest, request: Request):
         "created_at": now.isoformat(),
         "last_login_at": None,
         "last_password_reset_at": None,
+        "setup_tags": list(DEFAULT_SETUP_TAGS),
+        "emotion_tags": list(DEFAULT_EMOTION_TAGS),
     })
     await _clear_rate_limit(identifiers)
 
@@ -921,11 +926,27 @@ async def on_startup():
         await db.refresh_tokens.create_index("family_id")
         await db.audit_log.create_index([("user_id", 1), ("timestamp", -1)])
         await db.audit_log.create_index("event_type")
+
+        await db.trades.create_index("user_id")
+        await db.trades.create_index("entry_time")
+        await db.trades.create_index("setup_tag")
+        await db.trades.create_index("strategy_family")
+        await db.trades.create_index([("user_id", 1), ("entry_time", -1)])
+        await db.trades.create_index("status")
+        await db.reviews.create_index([("user_id", 1), ("period_start", -1)])
+        await db.reviews.create_index("period_type")
+        await db.playbooks.create_index("user_id")
+        await db.nifty_signal_history.create_index([("updated_at", -1)])
     except Exception as e:  # noqa: BLE001
         logger.warning(f"Index creation: {e}")
 
 
+journal_router = create_journal_router(db, get_current_user, log_audit_event, definedge)
+analytics_router = create_analytics_router(db, get_current_user)
+
 app.include_router(api_router)
+app.include_router(journal_router, prefix="/api")
+app.include_router(analytics_router, prefix="/api")
 
 app.add_middleware(
     CORSMiddleware,
