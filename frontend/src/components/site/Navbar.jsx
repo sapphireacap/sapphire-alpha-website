@@ -10,6 +10,7 @@ const links = [
   { label: "About", id: "about" },
   { label: "Research", id: "research" },
   { label: "Alpha Terminal", to: "/alpha-terminal" },
+  { label: "Journal", to: "/journal" },
   { label: "Insights", id: "insights" },
   { label: "Investing", id: "investing" },
   { label: "Contact", id: "contact" },
