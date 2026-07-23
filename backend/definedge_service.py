@@ -21,9 +21,11 @@ import asyncio
 import io
 import math
 import time
+import uuid
 import zipfile
 import logging
 from datetime import datetime, timezone, timedelta
+from typing import Optional
 
 import httpx
 import pandas as pd
@@ -35,6 +37,9 @@ DATA_BASE = "https://data.definedgesecurities.com/sds"
 QUOTES_BASE = "https://integrate.definedgesecurities.com/dart/v1"
 MASTER_URL = "https://app.definedgesecurities.com/public/nsefno.zip"
 NIFTY_SPOT_TOKEN = "26000"   # NIFTY 50 index token (NSE segment)
+VIX_TOKEN = "26017"          # India VIX token (NSE segment) — lives in the nsecash
+                              # master file, not the nsefno one the option legs use;
+                              # verified live via the quotes endpoint during Phase 2 design.
 
 SPOT_CACHE_TTL = 2.0   # seconds — protects against many concurrent visitors each triggering their own upstream call
 
@@ -105,6 +110,7 @@ class DefinedgeService:
         self._master_cache = None       # (date_str, DataFrame)
         self._spot_cache = None         # (monotonic_time, {"spot": "..."})
         self._prev_close_cache = None   # (date_str, float)
+        self._vix_cache = None          # (monotonic_time, float)
 
     # ---- auth ----------------------------------------------------------
     def configured(self) -> bool:
@@ -308,6 +314,30 @@ class DefinedgeService:
         self._spot_cache = (now, result)
         return result
 
+    async def vix_quote(self) -> Optional[float]:
+        """Cached India VIX LTP — same caching rationale as spot_quote() (many
+        concurrent journal trade-enrichment calls shouldn't each hit Definedge).
+        Returns None rather than raising, since this only ever feeds a
+        best-effort auto-fill field."""
+        now = time.monotonic()
+        if self._vix_cache and now - self._vix_cache[0] < SPOT_CACHE_TTL:
+            return self._vix_cache[1]
+        try:
+            session = await self._session_key()
+            url = f"{QUOTES_BASE}/quotes/NSE/{VIX_TOKEN}"
+            async with httpx.AsyncClient(timeout=10) as c:
+                r = await c.get(url, headers={"Authorization": session})
+            if r.status_code != 200:
+                return None
+            ltp = r.json().get("ltp")
+            if ltp is None:
+                return None
+            value = float(ltp)
+        except Exception:  # noqa: BLE001 — best-effort field, never propagate
+            return None
+        self._vix_cache = (now, value)
+        return value
+
     async def _straddle_series(self, ce_token: str, pe_token: str):
         ce, pe = await asyncio.gather(
             self._closes("NFO", ce_token),
@@ -350,4 +380,10 @@ class DefinedgeService:
             "updated_label": now_ist.strftime("Today, %I:%M %p IST"),
         }
         await self.db.nifty_signal.update_one({"id": "current"}, {"$set": signal}, upsert=True)
+        # nifty_signal only ever holds the current value (upserted in place
+        # above) — the journal's straddle_regime_at_entry needs to ask "what
+        # was the bias at time X", so keep an append-only history alongside it.
+        history_doc = dict(signal)
+        history_doc["id"] = str(uuid.uuid4())
+        await self.db.nifty_signal_history.insert_one(history_doc)
         return signal
