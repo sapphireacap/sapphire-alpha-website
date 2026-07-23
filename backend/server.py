@@ -493,7 +493,13 @@ async def logout(request: Request, response: Response):
 
 @api_router.get("/auth/me")
 async def auth_me(user: dict = Depends(get_current_user)):
-    return {"email": user["email"], "name": user.get("name", "Admin"), "role": user.get("role", "trader")}
+    return {
+        "email": user["email"],
+        "name": user.get("name", "Admin"),
+        "role": user.get("role", "trader"),
+        "setup_tags": user.get("setup_tags", []),
+        "emotion_tags": user.get("emotion_tags", []),
+    }
 
 
 class SignupRequest(BaseModel):
