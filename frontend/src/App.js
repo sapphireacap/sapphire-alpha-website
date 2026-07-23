@@ -17,6 +17,7 @@ import Footer from "@/components/site/Footer";
 import LegalPage from "@/components/site/LegalPage";
 import AlphaTerminal from "@/pages/AlphaTerminal";
 import Admin from "@/pages/Admin";
+import { SignupPage, LoginPage, ForgotPasswordPage, ResetPasswordPage, VerifyEmailPage } from "@/pages/Auth";
 
 const Landing = () => (
   <>
@@ -46,6 +47,11 @@ function App() {
             <Route path="/" element={<Landing />} />
             <Route path="/alpha-terminal" element={<AlphaTerminal />} />
             <Route path="/admin" element={<Admin />} />
+            <Route path="/signup" element={<SignupPage />} />
+            <Route path="/login" element={<LoginPage />} />
+            <Route path="/forgot-password" element={<ForgotPasswordPage />} />
+            <Route path="/reset-password" element={<ResetPasswordPage />} />
+            <Route path="/verify-email" element={<VerifyEmailPage />} />
             <Route path="/privacy" element={<LegalPage page="privacy" />} />
             <Route path="/terms" element={<LegalPage page="terms" />} />
             <Route path="/disclaimer" element={<LegalPage page="disclaimer" />} />

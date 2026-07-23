@@ -1,13 +1,16 @@
-from fastapi import FastAPI, APIRouter, HTTPException, Depends, Request
+from fastapi import FastAPI, APIRouter, HTTPException, Depends, Request, Response
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
 import os
 import logging
 import asyncio
+import hashlib
+import secrets
 import httpx
 import bcrypt
 import jwt
+import zxcvbn
 from definedge_service import DefinedgeService, DefinedgeError
 from pathlib import Path
 from pydantic import BaseModel, Field, EmailStr, ConfigDict
@@ -33,6 +36,10 @@ NOTIFY_EMAIL = os.environ.get("NOTIFY_EMAIL", "contact@sapphirealphacapital.com"
 # Auth config
 JWT_SECRET = os.environ.get("JWT_SECRET", "dev-secret-change-me")
 JWT_ALGORITHM = "HS256"
+ACCESS_TOKEN_TTL_MINUTES = 15
+REFRESH_TOKEN_TTL_DAYS = 30
+REFRESH_COOKIE_NAME = "refresh_token"
+FRONTEND_BASE_URL = os.environ.get("FRONTEND_BASE_URL", "https://www.sapphirealphacapital.com")
 
 # Shared secret for the external (GitHub Actions) Definedge auto-refresh cron —
 # independent of admin login so the interactive admin credential never has to
@@ -243,10 +250,10 @@ async def create_contact(payload: ContactCreate):
 
 
 # ---------------------------------------------------------------------------
-# Auth (single admin, JWT Bearer)
+# Auth (multi-tenant: admin + trader roles, JWT access + rotating refresh)
 # ---------------------------------------------------------------------------
 def hash_password(password: str) -> str:
-    return bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
+    return bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt(rounds=12)).decode("utf-8")
 
 
 def verify_password(plain: str, hashed: str) -> bool:
@@ -256,18 +263,24 @@ def verify_password(plain: str, hashed: str) -> bool:
         return False
 
 
-def create_access_token(user_id: str, email: str) -> str:
+def _check_password_strength(password: str, email: str = None):
+    result = zxcvbn.zxcvbn(password, user_inputs=[email] if email else None)
+    if result["score"] < 3:
+        raise HTTPException(status_code=400, detail="Password is too weak. Try a longer, less predictable passphrase.")
+
+
+def create_access_token(user_id: str, email: str, role: str) -> str:
     payload = {
         "sub": user_id,
         "email": email,
-        "role": "admin",
+        "role": role,
         "type": "access",
-        "exp": datetime.now(timezone.utc) + timedelta(hours=12),
+        "exp": datetime.now(timezone.utc) + timedelta(minutes=ACCESS_TOKEN_TTL_MINUTES),
     }
     return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
 
 
-async def get_current_admin(request: Request) -> dict:
+async def get_current_user(request: Request) -> dict:
     auth_header = request.headers.get("Authorization", "")
     token = auth_header[7:] if auth_header.startswith("Bearer ") else None
     if not token:
@@ -281,9 +294,100 @@ async def get_current_admin(request: Request) -> dict:
     except jwt.InvalidTokenError:
         raise HTTPException(status_code=401, detail="Invalid token")
     user = await db.users.find_one({"email": payload.get("email")}, {"_id": 0, "password_hash": 0})
-    if not user or user.get("role") != "admin":
+    if not user:
         raise HTTPException(status_code=401, detail="Not authorized")
     return user
+
+
+async def get_current_admin(request: Request) -> dict:
+    user = await get_current_user(request)
+    if user.get("role") != "admin":
+        raise HTTPException(status_code=401, detail="Not authorized")
+    return user
+
+
+# ---- rate limiting (shared across login/signup/password-reset) -----------
+async def _check_rate_limit(request: Request, email: str, scope: str) -> list:
+    """Keys on IP+email (stops one attacker hammering one target) AND
+    email-only (defense-in-depth against an attacker rotating source IPs
+    against one target email). Returns the identifiers for the caller to
+    pass to _record_rate_limit_failure/_clear_rate_limit."""
+    ip = request.client.host if request.client else "unknown"
+    now = datetime.now(timezone.utc)
+    identifiers = [f"{scope}:{ip}:{email}", f"{scope}:email:{email}"]
+    for identifier in identifiers:
+        attempt = await db.rate_limits.find_one({"identifier": identifier})
+        if attempt and attempt.get("locked_until"):
+            locked_until = datetime.fromisoformat(attempt["locked_until"])
+            if locked_until > now:
+                raise HTTPException(status_code=429, detail="Too many attempts. Try again in a few minutes.")
+    return identifiers
+
+
+async def _record_rate_limit_failure(identifiers: list, max_attempts: int = 5, lock_minutes: int = 15):
+    now = datetime.now(timezone.utc)
+    for identifier in identifiers:
+        attempt = await db.rate_limits.find_one({"identifier": identifier})
+        count = (attempt.get("count", 0) if attempt else 0) + 1
+        update = {"count": count}
+        if count >= max_attempts:
+            update["locked_until"] = (now + timedelta(minutes=lock_minutes)).isoformat()
+        await db.rate_limits.update_one({"identifier": identifier}, {"$set": update}, upsert=True)
+
+
+async def _clear_rate_limit(identifiers: list):
+    for identifier in identifiers:
+        await db.rate_limits.delete_one({"identifier": identifier})
+
+
+# ---- audit log --------------------------------------------------------
+async def log_audit_event(request: Request, user_id: Optional[str], event_type: str, **metadata):
+    ip = request.client.host if request.client else "unknown"
+    await db.audit_log.insert_one({
+        "id": str(uuid.uuid4()),
+        "user_id": user_id,
+        "event_type": event_type,
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "ip_address": ip,
+        "user_agent": request.headers.get("user-agent", ""),
+        "metadata": metadata,
+    })
+
+
+# ---- refresh tokens (rotation + reuse detection) -----------------------
+def _hash_refresh_token(raw: str) -> str:
+    return hashlib.sha256(raw.encode("utf-8")).hexdigest()
+
+
+async def _issue_refresh_token(user_id: str, family_id: str = None, token_id: str = None) -> str:
+    """Inserts a new refresh_tokens row and returns the raw (unhashed) token
+    to hand to the client. Pass family_id when rotating an existing session
+    (see /auth/refresh); omit to start a fresh session (login)."""
+    raw = secrets.token_urlsafe(32)
+    now = datetime.now(timezone.utc)
+    await db.refresh_tokens.insert_one({
+        "id": token_id or str(uuid.uuid4()),
+        "user_id": user_id,
+        "family_id": family_id or str(uuid.uuid4()),
+        "token_hash": _hash_refresh_token(raw),
+        "created_at": now.isoformat(),
+        "expires_at": (now + timedelta(days=REFRESH_TOKEN_TTL_DAYS)).isoformat(),
+        "revoked_at": None,
+        "replaced_by": None,
+    })
+    return raw
+
+
+def _set_refresh_cookie(response: Response, raw_token: str):
+    response.set_cookie(
+        key=REFRESH_COOKIE_NAME,
+        value=raw_token,
+        httponly=True,
+        secure=True,
+        samesite="none",  # frontend (Vercel) and backend (Render) are on different registrable domains
+        max_age=REFRESH_TOKEN_TTL_DAYS * 24 * 3600,
+        path="/api/auth",
+    )
 
 
 class LoginRequest(BaseModel):
@@ -292,35 +396,241 @@ class LoginRequest(BaseModel):
 
 
 @api_router.post("/auth/login")
-async def login(payload: LoginRequest, request: Request):
+async def login(payload: LoginRequest, request: Request, response: Response):
     email = payload.email.lower()
-    ip = request.client.host if request.client else "unknown"
-    identifier = f"{ip}:{email}"
-    now = datetime.now(timezone.utc)
-
-    attempt = await db.login_attempts.find_one({"identifier": identifier})
-    if attempt and attempt.get("locked_until"):
-        locked_until = datetime.fromisoformat(attempt["locked_until"])
-        if locked_until > now:
-            raise HTTPException(status_code=429, detail="Too many attempts. Try again in a few minutes.")
+    identifiers = await _check_rate_limit(request, email, scope="login")
 
     user = await db.users.find_one({"email": email})
     if not user or not verify_password(payload.password, user["password_hash"]):
-        count = (attempt.get("count", 0) if attempt else 0) + 1
-        update = {"count": count}
-        if count >= 5:
-            update["locked_until"] = (now + timedelta(minutes=15)).isoformat()
-        await db.login_attempts.update_one({"identifier": identifier}, {"$set": update}, upsert=True)
+        await _record_rate_limit_failure(identifiers)
+        await log_audit_event(request, user.get("id") if user else None, "login_failed", email=email)
         raise HTTPException(status_code=401, detail="Invalid email or password.")
 
-    await db.login_attempts.delete_one({"identifier": identifier})
-    token = create_access_token(str(user.get("id", email)), email)
-    return {"access_token": token, "token_type": "bearer", "user": {"email": email, "name": user.get("name", "Admin")}}
+    await _clear_rate_limit(identifiers)
+    user_id = str(user.get("id", email))
+    now = datetime.now(timezone.utc)
+    await db.users.update_one({"email": email}, {"$set": {"last_login_at": now.isoformat()}})
+
+    role = user.get("role", "trader")
+    access_token = create_access_token(user_id, email, role)
+    raw_refresh = await _issue_refresh_token(user_id)
+    _set_refresh_cookie(response, raw_refresh)
+
+    await log_audit_event(request, user_id, "login_success")
+    return {
+        "access_token": access_token,
+        "token_type": "bearer",
+        "user": {"email": email, "name": user.get("name", "Admin"), "role": role},
+    }
+
+
+@api_router.post("/auth/refresh")
+async def refresh_token_endpoint(request: Request, response: Response):
+    raw = request.cookies.get(REFRESH_COOKIE_NAME)
+    if not raw:
+        raise HTTPException(status_code=401, detail="No refresh token.")
+    token_hash = _hash_refresh_token(raw)
+    now = datetime.now(timezone.utc)
+    new_token_id = str(uuid.uuid4())
+
+    # Atomic claim: only succeeds if this token hasn't already been rotated
+    # or revoked. Doing this as a single find_one_and_update (rather than a
+    # separate read-then-write) closes a race where two concurrent refreshes
+    # with the same token could otherwise both succeed, silently defeating
+    # reuse detection.
+    record = await db.refresh_tokens.find_one_and_update(
+        {"token_hash": token_hash, "revoked_at": None, "replaced_by": None},
+        {"$set": {"replaced_by": new_token_id}},
+    )
+
+    if record is None:
+        # Token unknown, already revoked, or already rotated. If it's a
+        # known, already-rotated token being replayed, that's theft — kill
+        # the whole session family.
+        stolen = await db.refresh_tokens.find_one({"token_hash": token_hash})
+        if stolen and stolen.get("replaced_by") and not stolen.get("revoked_at"):
+            await db.refresh_tokens.update_many(
+                {"family_id": stolen["family_id"], "revoked_at": None},
+                {"$set": {"revoked_at": now.isoformat()}},
+            )
+            await log_audit_event(request, stolen["user_id"], "refresh_reuse_detected")
+        response.delete_cookie(REFRESH_COOKIE_NAME, path="/api/auth")
+        raise HTTPException(status_code=401, detail="Session invalid. Please sign in again.")
+
+    if datetime.fromisoformat(record["expires_at"]) < now:
+        response.delete_cookie(REFRESH_COOKIE_NAME, path="/api/auth")
+        raise HTTPException(status_code=401, detail="Session expired. Please sign in again.")
+
+    user = await db.users.find_one({"id": record["user_id"]}, {"_id": 0, "password_hash": 0})
+    if not user:
+        raise HTTPException(status_code=401, detail="Session invalid. Please sign in again.")
+
+    new_raw = await _issue_refresh_token(record["user_id"], family_id=record["family_id"], token_id=new_token_id)
+    _set_refresh_cookie(response, new_raw)
+
+    role = user.get("role", "trader")
+    access_token = create_access_token(record["user_id"], user["email"], role)
+    return {"access_token": access_token, "token_type": "bearer", "user": {"email": user["email"], "name": user.get("name", "Admin"), "role": role}}
+
+
+@api_router.post("/auth/logout")
+async def logout(request: Request, response: Response):
+    raw = request.cookies.get(REFRESH_COOKIE_NAME)
+    if raw:
+        record = await db.refresh_tokens.find_one({"token_hash": _hash_refresh_token(raw)})
+        if record:
+            await db.refresh_tokens.update_many(
+                {"family_id": record["family_id"], "revoked_at": None},
+                {"$set": {"revoked_at": datetime.now(timezone.utc).isoformat()}},
+            )
+            await log_audit_event(request, record["user_id"], "logout")
+    response.delete_cookie(REFRESH_COOKIE_NAME, path="/api/auth")
+    return {"status": "logged_out"}
 
 
 @api_router.get("/auth/me")
-async def auth_me(admin: dict = Depends(get_current_admin)):
-    return {"email": admin["email"], "name": admin.get("name", "Admin")}
+async def auth_me(user: dict = Depends(get_current_user)):
+    return {"email": user["email"], "name": user.get("name", "Admin"), "role": user.get("role", "trader")}
+
+
+class SignupRequest(BaseModel):
+    email: EmailStr
+    password: str
+    name: str
+
+
+@api_router.post("/auth/signup")
+async def signup(payload: SignupRequest, request: Request):
+    email = payload.email.lower()
+    identifiers = await _check_rate_limit(request, email, scope="signup")
+
+    if await db.users.find_one({"email": email}):
+        await _record_rate_limit_failure(identifiers)
+        raise HTTPException(status_code=409, detail="An account with this email already exists.")
+
+    _check_password_strength(payload.password, email)
+
+    now = datetime.now(timezone.utc)
+    user_id = str(uuid.uuid4())
+    await db.users.insert_one({
+        "id": user_id,
+        "email": email,
+        "password_hash": hash_password(payload.password),
+        "name": payload.name,
+        "role": "trader",
+        "email_verified": False,
+        "created_at": now.isoformat(),
+        "last_login_at": None,
+        "last_password_reset_at": None,
+    })
+    await _clear_rate_limit(identifiers)
+
+    verify_token = jwt.encode(
+        {"sub": user_id, "email": email, "type": "email_verify", "exp": now + timedelta(hours=24)},
+        JWT_SECRET, algorithm=JWT_ALGORITHM,
+    )
+    verify_url = f"{FRONTEND_BASE_URL}/verify-email?token={verify_token}"
+    asyncio.create_task(send_email(
+        recipient=email,
+        subject="Verify your email — Sapphire Alpha Capital",
+        html=_wrap_email(
+            "Confirm your email address",
+            f"Hi {payload.name},<br/><br/>Click the link below to verify your email and activate your account.<br/><br/>"
+            f'<a href="{verify_url}" style="color:#437EEB;">Verify Email</a><br/><br/>This link expires in 24 hours.'
+        ),
+    ))
+    await log_audit_event(request, user_id, "signup")
+    return {"message": "Account created. Check your email to verify your address."}
+
+
+@api_router.get("/auth/verify-email")
+async def verify_email(token: str):
+    try:
+        payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
+        if payload.get("type") != "email_verify":
+            raise HTTPException(status_code=400, detail="Invalid verification link.")
+    except jwt.ExpiredSignatureError:
+        raise HTTPException(status_code=400, detail="This verification link has expired.")
+    except jwt.InvalidTokenError:
+        raise HTTPException(status_code=400, detail="Invalid verification link.")
+    await db.users.update_one({"id": payload["sub"]}, {"$set": {"email_verified": True}})
+    return {"message": "Email verified. You can now log in."}
+
+
+class PasswordResetRequest(BaseModel):
+    email: EmailStr
+
+
+@api_router.post("/auth/request-password-reset")
+async def request_password_reset(payload: PasswordResetRequest, request: Request):
+    email = payload.email.lower()
+    identifiers = await _check_rate_limit(request, email, scope="password_reset")
+    user = await db.users.find_one({"email": email})
+    if user:
+        now = datetime.now(timezone.utc)
+        reset_token = jwt.encode(
+            {"sub": user["id"], "email": email, "type": "password_reset", "iat": now, "exp": now + timedelta(hours=1)},
+            JWT_SECRET, algorithm=JWT_ALGORITHM,
+        )
+        reset_url = f"{FRONTEND_BASE_URL}/reset-password?token={reset_token}"
+        asyncio.create_task(send_email(
+            recipient=email,
+            subject="Reset your password — Sapphire Alpha Capital",
+            html=_wrap_email(
+                "Reset your password",
+                "Click the link below to choose a new password. This link expires in 1 hour and can only be used once.<br/><br/>"
+                f'<a href="{reset_url}" style="color:#437EEB;">Reset Password</a>'
+            ),
+        ))
+        await log_audit_event(request, user["id"], "password_reset_requested")
+    await _record_rate_limit_failure(identifiers)
+    # Always the same response, whether or not the account exists — avoids account enumeration.
+    return {"message": "If an account exists for that email, a reset link has been sent."}
+
+
+class PasswordResetConfirm(BaseModel):
+    token: str
+    new_password: str
+
+
+@api_router.post("/auth/reset-password")
+async def reset_password(payload: PasswordResetConfirm, request: Request):
+    try:
+        claims = jwt.decode(payload.token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
+        if claims.get("type") != "password_reset":
+            raise HTTPException(status_code=400, detail="Invalid reset link.")
+    except jwt.ExpiredSignatureError:
+        raise HTTPException(status_code=400, detail="This reset link has expired.")
+    except jwt.InvalidTokenError:
+        raise HTTPException(status_code=400, detail="Invalid reset link.")
+
+    user = await db.users.find_one({"id": claims["sub"]})
+    if not user:
+        raise HTTPException(status_code=400, detail="Invalid reset link.")
+
+    # Single-use enforcement without a separate token-store: reject if this
+    # token was issued before the account's most recent successful reset,
+    # i.e. it's already been used once.
+    last_reset = user.get("last_password_reset_at")
+    if last_reset:
+        issued_at = datetime.fromtimestamp(claims["iat"], tz=timezone.utc)
+        if issued_at <= datetime.fromisoformat(last_reset):
+            raise HTTPException(status_code=400, detail="This reset link has already been used.")
+
+    _check_password_strength(payload.new_password, user["email"])
+
+    now = datetime.now(timezone.utc)
+    await db.users.update_one(
+        {"id": user["id"]},
+        {"$set": {"password_hash": hash_password(payload.new_password), "last_password_reset_at": now.isoformat()}},
+    )
+    # A stolen refresh token shouldn't survive a password change.
+    await db.refresh_tokens.update_many(
+        {"user_id": user["id"], "revoked_at": None},
+        {"$set": {"revoked_at": now.isoformat()}},
+    )
+    await log_audit_event(request, user["id"], "password_reset_completed")
+    return {"message": "Password updated. Please sign in with your new password."}
 
 
 # ---------------------------------------------------------------------------
@@ -575,7 +885,10 @@ async def on_startup():
             "password_hash": hash_password(ADMIN_PASSWORD),
             "name": "Admin",
             "role": "admin",
+            "email_verified": True,
             "created_at": datetime.now(timezone.utc).isoformat(),
+            "last_login_at": None,
+            "last_password_reset_at": None,
         })
         logger.info("Seeded admin user.")
     elif not verify_password(ADMIN_PASSWORD, existing["password_hash"]):
@@ -604,6 +917,10 @@ async def on_startup():
     try:
         await db.users.create_index("email", unique=True)
         await db.terminal_stocks.create_index([("scanner", 1), ("order", 1)])
+        await db.refresh_tokens.create_index("token_hash", unique=True)
+        await db.refresh_tokens.create_index("family_id")
+        await db.audit_log.create_index([("user_id", 1), ("timestamp", -1)])
+        await db.audit_log.create_index("event_type")
     except Exception as e:  # noqa: BLE001
         logger.warning(f"Index creation: {e}")
 
