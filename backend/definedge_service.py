@@ -20,6 +20,7 @@ entered manually each morning (session key resets daily).
 import asyncio
 import io
 import math
+import time
 import zipfile
 import logging
 from datetime import datetime, timezone, timedelta
@@ -31,8 +32,11 @@ logger = logging.getLogger(__name__)
 
 AUTH_BASE = "https://signin.definedgesecurities.com/auth/realms/debroking/dsbpkc"
 DATA_BASE = "https://data.definedgesecurities.com/sds"
+QUOTES_BASE = "https://integrate.definedgesecurities.com/dart/v1"
 MASTER_URL = "https://app.definedgesecurities.com/public/nsefno.zip"
 NIFTY_SPOT_TOKEN = "26000"   # NIFTY 50 index token (NSE segment)
+
+SPOT_CACHE_TTL = 2.0   # seconds — protects against many concurrent visitors each triggering their own upstream call
 
 IST = timezone(timedelta(hours=5, minutes=30))
 
@@ -99,6 +103,7 @@ class DefinedgeService:
         self.api_secret = api_secret
         self._otp_token = None
         self._master_cache = None       # (date_str, DataFrame)
+        self._spot_cache = None         # (monotonic_time, {"spot": "..."})
 
     # ---- auth ----------------------------------------------------------
     def configured(self) -> bool:
@@ -244,6 +249,31 @@ class DefinedgeService:
         if not closes:
             raise DefinedgeError("No Nifty spot data returned.")
         return list(closes.values())[-1]
+
+    async def spot_quote(self):
+        """Lightweight, cached LTP lookup for the public fast-polling ticker —
+        deliberately separate from _spot() (which pulls a full minute-bar
+        history series for the P&F engine). Cached briefly so many concurrent
+        site visitors polling at once don't each trigger their own upstream call."""
+        now = time.monotonic()
+        if self._spot_cache and now - self._spot_cache[0] < SPOT_CACHE_TTL:
+            return self._spot_cache[1]
+
+        session = await self._session_key()
+        url = f"{QUOTES_BASE}/quotes/NSE/{NIFTY_SPOT_TOKEN}"
+        async with httpx.AsyncClient(timeout=10) as c:
+            r = await c.get(url, headers={"Authorization": session})
+        if r.status_code == 401:
+            raise DefinedgeError("Definedge session expired. Please login again (OTP).")
+        if r.status_code != 200:
+            raise DefinedgeError(f"Quote failed ({r.status_code}).")
+        ltp = r.json().get("ltp")
+        if ltp is None:
+            raise DefinedgeError("No LTP in quote response.")
+
+        result = {"spot": f"{float(ltp):,.2f}"}
+        self._spot_cache = (now, result)
+        return result
 
     async def _straddle_series(self, ce_token: str, pe_token: str):
         ce, pe = await asyncio.gather(

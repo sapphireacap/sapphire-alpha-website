@@ -195,6 +195,22 @@ const StraddleCompass = ({ signal }) => {
   const { Icon } = style;
   const confidence = bias === "Neutral" ? "Awaiting Confluence" : "High Confidence";
   const live = isNseSessionLive();
+
+  const [liveSpot, setLiveSpot] = useState(null);
+  useEffect(() => {
+    const tick = () => {
+      if (!isNseSessionLive()) return;
+      axios.get(`${API}/terminal/spot`).then((r) => {
+        if (r.data?.spot) setLiveSpot(r.data.spot);
+      }).catch(() => {});
+    };
+    tick();
+    const id = setInterval(tick, 3000);
+    return () => clearInterval(id);
+  }, []);
+
+  const displaySpot = liveSpot || s.spot;
+
   return (
     <Reveal className="mb-16 md:mb-20" data-testid="straddle-compass">
       <div className="flex items-center gap-4 mb-6">
@@ -241,7 +257,7 @@ const StraddleCompass = ({ signal }) => {
                 Status: <span className="text-amber-300 ml-1">Standby</span>
               </>
             )}
-            {s.spot && <span className="ml-4">NIFTY SPOT: <span className="text-slate-300">{s.spot}</span></span>}
+            {displaySpot && <span className="ml-4">NIFTY SPOT: <span className="text-slate-300">{displaySpot}</span></span>}
           </p>
           <p className="text-[11px] font-light text-slate-600 max-w-md">
             Use as confirmation before entering a trade — an aligned bias supports your CE/PE or futures setup, an opposing bias is a caution signal. Not investment advice.

@@ -464,6 +464,18 @@ async def get_signal():
     return doc or DEFAULT_SIGNAL
 
 
+@api_router.get("/terminal/spot")
+async def get_live_spot():
+    """Public, fast-pollable ticker value — falls back to a null spot on any
+    upstream hiccup (not connected, outside hours, rate limited) rather than
+    surfacing an error to site visitors; the frontend just keeps showing the
+    last known signal.spot in that case."""
+    try:
+        return await definedge.spot_quote()
+    except DefinedgeError:
+        return {"spot": None}
+
+
 @api_router.put("/terminal/signal")
 async def update_signal(payload: SignalUpdate, admin: dict = Depends(get_current_admin)):
     data = payload.model_dump()
