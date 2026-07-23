@@ -19,6 +19,14 @@
 
 html {
     background: var(--void);
+    /* Site is dark-only. Without this, native form controls (select dropdown
+       popups, date pickers, scrollbars) render with the OS light theme
+       regardless of per-element inline colorScheme styles — that's the
+       "text only visible on hover" bug: the popup background stays white,
+       only the hover highlight makes the (also-white) option text readable.
+       Setting this at the document root is what actually makes Chromium
+       use its dark UA styles for the popup itself, not just the closed box. */
+    color-scheme: dark;
 }
 
 body {
