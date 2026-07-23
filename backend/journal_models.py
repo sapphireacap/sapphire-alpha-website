@@ -34,6 +34,7 @@ class TradeLeg(BaseModel):
     leg_id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     strike: Optional[Decimal] = None          # None for futures/equity legs
     option_type: Optional[str] = None         # "CE" | "PE" | None
+    expiry: Optional[str] = None              # ISO date; needed for Greeks/IV time-to-expiry
     side: str                                 # "buy" | "sell"
     qty: int
     entry_price: Decimal
