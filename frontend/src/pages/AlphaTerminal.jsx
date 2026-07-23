@@ -80,6 +80,12 @@ const isNseSessionLive = () => {
   return mins >= 9 * 60 + 15 && mins <= 15 * 60 + 30;
 };
 
+const MOMENTUM_TREND = {
+  Bullish: { Icon: TrendingUp, color: "text-emerald-400", box: "border-emerald-400/25 bg-emerald-400/10 text-emerald-300" },
+  Bearish: { Icon: TrendingDown, color: "text-red-400", box: "border-red-400/25 bg-red-400/10 text-red-300" },
+  Neutral: { Icon: Minus, color: "text-slate-400", box: "border-white/15 bg-white/5 text-slate-300" },
+};
+
 const MomentumTable = ({ rows }) => (
   <div className="glass rounded-2xl overflow-hidden" data-testid="momentum-table">
     {/* Desktop / tablet table */}
@@ -107,12 +113,12 @@ const MomentumTable = ({ rows }) => (
               <td className="px-6 py-5 whitespace-nowrap">
                 <span className="inline-flex items-center gap-1.5 font-display text-lg font-extrabold text-white tracking-tight">
                   {r.ticker}
-                  <TrendingUp size={14} className="text-emerald-400" />
+                  {(() => { const { Icon, color } = MOMENTUM_TREND[r.bias] || MOMENTUM_TREND.Neutral; return <Icon size={14} className={color} />; })()}
                 </span>
               </td>
               <td className="px-6 py-5 text-sm text-slate-300 whitespace-nowrap">{r.company || "—"}</td>
               <td className="px-6 py-5">
-                <span className="inline-flex items-center rounded-md border border-emerald-400/25 bg-emerald-400/10 px-2.5 py-1 font-mono-ui text-sm font-semibold text-emerald-300">
+                <span className={`inline-flex items-center justify-center w-14 py-1 rounded-md border font-mono-ui text-sm font-semibold ${(MOMENTUM_TREND[r.bias] || MOMENTUM_TREND.Neutral).box}`}>
                   {r.momentum_score}
                 </span>
               </td>
@@ -138,7 +144,7 @@ const MomentumTable = ({ rows }) => (
           <div className="flex items-center justify-between mb-3">
             <span className="inline-flex items-center gap-1.5 font-display text-xl font-extrabold text-white tracking-tight">
               {r.ticker}
-              <TrendingUp size={15} className="text-emerald-400" />
+              {(() => { const { Icon, color } = MOMENTUM_TREND[r.bias] || MOMENTUM_TREND.Neutral; return <Icon size={15} className={color} />; })()}
             </span>
             <BiasBadge bias={r.bias} testid={`momentum-bias-${i}`} />
           </div>
@@ -146,7 +152,7 @@ const MomentumTable = ({ rows }) => (
           <div className="flex items-center gap-6">
             <div>
               <p className="font-mono-ui text-[10px] uppercase tracking-[0.18em] text-slate-500 mb-1">Momentum</p>
-              <span className="inline-flex items-center rounded-md border border-emerald-400/25 bg-emerald-400/10 px-2.5 py-1 font-mono-ui text-sm font-semibold text-emerald-300">
+              <span className={`inline-flex items-center justify-center w-14 py-1 rounded-md border font-mono-ui text-sm font-semibold ${(MOMENTUM_TREND[r.bias] || MOMENTUM_TREND.Neutral).box}`}>
                 {r.momentum_score}
               </span>
             </div>
