@@ -103,6 +103,14 @@ export const LoginPage = () => {
   const navigate = useNavigate();
   const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
 
+  useEffect(() => {
+    const token = localStorage.getItem(TRADER_TOKEN_KEY);
+    if (!token) return;
+    axios.get(`${API}/auth/me`, { headers: { Authorization: `Bearer ${token}` } })
+      .then(() => navigate("/journal", { replace: true }))
+      .catch(() => localStorage.removeItem(TRADER_TOKEN_KEY));
+  }, [navigate]);
+
   const submit = async (e) => {
     e.preventDefault();
     setLoading(true);
@@ -110,7 +118,7 @@ export const LoginPage = () => {
       const { data } = await axios.post(`${API}/auth/login`, form, { withCredentials: true });
       localStorage.setItem(TRADER_TOKEN_KEY, data.access_token);
       toast.success("Signed in.");
-      navigate("/");
+      navigate("/journal");
     } catch (err) {
       toast.error(errMsg(err, "Login failed."));
     } finally {

@@ -1,4 +1,5 @@
 import "@/App.css";
+import { useEffect } from "react";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { Toaster } from "sonner";
 
@@ -18,6 +19,12 @@ import LegalPage from "@/components/site/LegalPage";
 import AlphaTerminal from "@/pages/AlphaTerminal";
 import Admin from "@/pages/Admin";
 import { SignupPage, LoginPage, ForgotPasswordPage, ResetPasswordPage, VerifyEmailPage } from "@/pages/Auth";
+import { installAuthInterceptor } from "@/lib/auth";
+import JournalLayout from "@/pages/journal/JournalLayout";
+import Dashboard from "@/pages/journal/Dashboard";
+import TradeEntry from "@/pages/journal/TradeEntry";
+import TradeLog from "@/pages/journal/TradeLog";
+import Reviews from "@/pages/journal/Reviews";
 
 const Landing = () => (
   <>
@@ -38,6 +45,8 @@ const Landing = () => (
 );
 
 function App() {
+  useEffect(() => { installAuthInterceptor(); }, []);
+
   return (
     <div className="App bg-void text-white">
       <div className="grain" />
@@ -52,6 +61,12 @@ function App() {
             <Route path="/forgot-password" element={<ForgotPasswordPage />} />
             <Route path="/reset-password" element={<ResetPasswordPage />} />
             <Route path="/verify-email" element={<VerifyEmailPage />} />
+            <Route path="/journal" element={<JournalLayout />}>
+              <Route index element={<Dashboard />} />
+              <Route path="new" element={<TradeEntry />} />
+              <Route path="trades" element={<TradeLog />} />
+              <Route path="reviews" element={<Reviews />} />
+            </Route>
             <Route path="/privacy" element={<LegalPage page="privacy" />} />
             <Route path="/terms" element={<LegalPage page="terms" />} />
             <Route path="/disclaimer" element={<LegalPage page="disclaimer" />} />
