@@ -19,14 +19,28 @@
 
 html {
     background: var(--void);
-    /* Site is dark-only. Without this, native form controls (select dropdown
-       popups, date pickers, scrollbars) render with the OS light theme
-       regardless of per-element inline colorScheme styles — that's the
-       "text only visible on hover" bug: the popup background stays white,
-       only the hover highlight makes the (also-white) option text readable.
-       Setting this at the document root is what actually makes Chromium
-       use its dark UA styles for the popup itself, not just the closed box. */
     color-scheme: dark;
+}
+
+/* Fix for invisible <option> text in every dropdown site-wide. The actual
+   cause: nearly every <select> here uses a semi-transparent Tailwind
+   background (e.g. bg-white/5) for its glass look, but Chrome on Windows/
+   Linux doesn't carry that transparency into the native <option> popup — it
+   silently falls back to opaque white, so white option text disappears
+   except on the blue hover row. color-scheme: dark alone doesn't fix this
+   (it's a transparency bug, not a light/dark theming mismatch). Forcing an
+   explicit opaque background here overrides whatever translucent utility
+   class is also applied, with !important since Tailwind's own class
+   carries real specificity that a bare element selector won't beat.
+   Consistent across the site regardless of what className an individual
+   <select> also carries. */
+select {
+    background-color: var(--surface) !important;
+    color: #ffffff !important;
+}
+select option {
+    background-color: var(--surface);
+    color: #ffffff;
 }
 
 body {
