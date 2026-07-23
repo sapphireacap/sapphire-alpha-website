@@ -276,9 +276,52 @@ const StraddleCompass = ({ signal }) => {
   );
 };
 
+const fmtSince = (iso) => {
+  if (!iso) return "—";
+  const [y, m, d] = iso.split("-");
+  return `${d} ${MONTHS[Number(m) - 1]} ${y}`;
+};
+
+const TrackRecordPanel = ({ record }) => {
+  if (!record) {
+    return <div className="p-8 text-center text-sm text-slate-500">Loading track record…</div>;
+  }
+  if (record.low_data) {
+    return (
+      <div className="p-8 text-center">
+        <p className="text-sm text-slate-400 max-w-md mx-auto leading-relaxed">
+          Building track record since <span className="text-white">{fmtSince(record.since)}</span> —{" "}
+          <span className="text-white">{record.total_readings}</span> readings so far. Check back after a few more trading sessions for a meaningful accuracy read.
+        </p>
+      </div>
+    );
+  }
+  return (
+    <div className="p-6 md:p-8">
+      <p className="text-xs text-slate-500 mb-5">
+        Tracking since <span className="text-slate-300">{fmtSince(record.since)}</span> across{" "}
+        <span className="text-slate-300">{record.trading_sessions}</span> sessions — {record.total_readings} readings evaluated.
+      </p>
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        {record.horizons.map((h) => (
+          <div key={h.minutes} className="rounded-xl border border-white/10 bg-white/[0.02] p-5 text-center">
+            <p className="font-mono-ui text-[10px] uppercase tracking-[0.18em] text-slate-500 mb-2">{h.minutes} min</p>
+            <p className="font-display text-3xl font-black text-white mb-1">{(h.accuracy * 100).toFixed(0)}%</p>
+            <p className="text-xs text-slate-500">{h.correct}/{h.evaluated} correct</p>
+          </div>
+        ))}
+      </div>
+      <p className="text-[11px] font-light text-slate-600 mt-5">
+        A call is "correct" when Nifty moved in the read direction by the time each horizon elapsed. Past accuracy doesn't guarantee future results — not investment advice.
+      </p>
+    </div>
+  );
+};
+
 export default function AlphaTerminal() {
   const [data, setData] = useState({});
   const [signal, setSignal] = useState(null);
+  const [trackRecord, setTrackRecord] = useState(null);
   const [loading, setLoading] = useState(true);
   const navigate = useNavigate();
 
@@ -294,6 +337,7 @@ export default function AlphaTerminal() {
         setData(grouped);
       }),
       axios.get(`${API}/terminal/signal`).then((r) => setSignal(r.data)),
+      axios.get(`${API}/terminal/track-record`).then((r) => setTrackRecord(r.data)).catch(() => {}),
     ])
       .catch(() => {})
       .finally(() => setLoading(false));
@@ -384,6 +428,28 @@ export default function AlphaTerminal() {
                     </AccordionTrigger>
                     <AccordionContent className="px-5 md:px-6 pb-6 pt-1">
                       <StraddleCompass signal={signal} />
+                    </AccordionContent>
+                  </AccordionItem>
+
+                  <AccordionItem
+                    value="track-record"
+                    className="border border-white/10 rounded-2xl overflow-hidden bg-white/[0.015]"
+                    data-testid="scanner-track-record"
+                  >
+                    <AccordionTrigger
+                      className="px-5 md:px-6 py-5 hover:no-underline hover:bg-white/[0.03] transition-colors [&>svg]:text-sapphire-light"
+                      data-testid="scanner-trigger-track-record"
+                    >
+                      <span className="flex items-center gap-4 text-left">
+                        <TrendingUp size={18} className="text-sapphire-light" />
+                        <span className="font-display text-xl md:text-2xl font-bold text-white tracking-tight">Track Record</span>
+                        <span className="hidden sm:inline-flex rounded-full border border-white/15 px-2.5 py-0.5 font-mono-ui text-[10px] uppercase tracking-wider text-slate-500">
+                          Vector Accuracy
+                        </span>
+                      </span>
+                    </AccordionTrigger>
+                    <AccordionContent className="px-0 pb-0 pt-0">
+                      <TrackRecordPanel record={trackRecord} />
                     </AccordionContent>
                   </AccordionItem>
 

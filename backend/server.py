@@ -5,6 +5,7 @@ from motor.motor_asyncio import AsyncIOMotorClient
 import os
 import logging
 import asyncio
+import bisect
 import hashlib
 import secrets
 import httpx
@@ -795,6 +796,73 @@ async def get_live_spot():
         return await definedge.spot_quote()
     except DefinedgeError:
         return {"spot": None}
+
+
+@api_router.get("/terminal/track-record")
+async def get_track_record():
+    """Accuracy of the Nifty Vector's directional calls, evaluated at 15/30/60
+    minute horizons after each Bullish/Bearish reading (Neutral isn't a call).
+    Correct = spot moved in the predicted direction by the time the horizon
+    elapses. The nearest history doc at/after T+H stands in for "spot at
+    T+H" since data is only ~1/minute; if nothing exists near T+H (e.g. the
+    horizon runs past market close, or into the next session) that reading
+    is skipped, not scored either way."""
+    docs = await db.nifty_signal_history.find({}, {"_id": 0}).sort("updated_at", 1).limit(5000).to_list(length=5000)
+
+    parsed = []
+    for d in docs:
+        try:
+            spot = float(str(d.get("spot", "")).replace(",", ""))
+            ts = datetime.fromisoformat(d["updated_at"])
+        except (ValueError, TypeError, KeyError):
+            continue
+        parsed.append({"ts": ts, "spot": spot, "bias": d.get("bias")})
+
+    if not parsed:
+        return {"since": None, "trading_sessions": 0, "total_readings": 0, "low_data": True, "horizons": []}
+
+    timestamps = [p["ts"] for p in parsed]
+    horizon_minutes = [15, 30, 60]
+    results = {h: {"evaluated": 0, "correct": 0} for h in horizon_minutes}
+
+    for p in parsed:
+        if p["bias"] not in ("Bullish", "Bearish"):
+            continue
+        for h in horizon_minutes:
+            target = p["ts"] + timedelta(minutes=h)
+            idx = bisect.bisect_left(timestamps, target)
+            if idx >= len(parsed):
+                continue  # horizon runs past the data we have
+            future = parsed[idx]
+            # Guard against matching a reading from the next trading session
+            # when the horizon runs past today's close (overnight/weekend gap).
+            if (future["ts"] - p["ts"]) > timedelta(minutes=h + 15):
+                continue
+            results[h]["evaluated"] += 1
+            moved_up = future["spot"] > p["spot"]
+            correct = (p["bias"] == "Bullish" and moved_up) or (p["bias"] == "Bearish" and not moved_up)
+            if correct:
+                results[h]["correct"] += 1
+
+    since = parsed[0]["ts"].date().isoformat()
+    trading_sessions = len({p["ts"].date() for p in parsed})
+    max_evaluated = max((r["evaluated"] for r in results.values()), default=0)
+
+    return {
+        "since": since,
+        "trading_sessions": trading_sessions,
+        "total_readings": len(parsed),
+        "low_data": max_evaluated < 100,
+        "horizons": [
+            {
+                "minutes": h,
+                "evaluated": results[h]["evaluated"],
+                "correct": results[h]["correct"],
+                "accuracy": (results[h]["correct"] / results[h]["evaluated"]) if results[h]["evaluated"] else 0,
+            }
+            for h in horizon_minutes
+        ],
+    }
 
 
 @api_router.put("/terminal/signal")
