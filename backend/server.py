@@ -1016,6 +1016,7 @@ async def on_startup():
         await db.quant_lab_ewma_cache.create_index(
             [("segment", 1), ("symbol", 1), ("fast_span", 1), ("slow_span", 1)], unique=True
         )
+        await db.quant_lab_sharpe_cache.create_index("symbol", unique=True)
         await db.ipos.create_index("id", unique=True)
         # partialFilterExpression, not sparse=True: every IPO doc stores
         # nse_symbol explicitly (None for manual entries), and a sparse index
@@ -1032,7 +1033,7 @@ async def on_startup():
 
 journal_router = create_journal_router(db, get_current_user, log_audit_event, definedge)
 analytics_router = create_analytics_router(db, get_current_user)
-quant_lab_router = create_quant_lab_router(db, definedge)
+quant_lab_router = create_quant_lab_router(db, definedge, get_current_admin, CRON_SECRET)
 ipo_router = create_ipo_router(db, get_current_admin, CRON_SECRET)
 
 app.include_router(api_router)

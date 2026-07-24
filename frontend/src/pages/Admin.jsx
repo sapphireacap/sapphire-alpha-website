@@ -356,6 +356,75 @@ const SignalPanel = ({ onAuthError, signal }) => {
   );
 };
 
+/* ----------------------------- Quant Lab ----------------------------- */
+const QuantLabPanel = ({ onAuthError }) => {
+  const [status, setStatus] = useState(null);
+  const [starting, setStarting] = useState(false);
+
+  const loadStatus = useCallback(async () => {
+    try {
+      const { data } = await axios.get(`${API}/quant-lab/sharpe-refresh-status`);
+      setStatus(data);
+    } catch {
+      // best-effort — leave last-known status showing
+    }
+  }, []);
+
+  useEffect(() => { loadStatus(); }, [loadStatus]);
+
+  useEffect(() => {
+    if (status?.status !== "running") return undefined;
+    const id = setInterval(loadStatus, 3000);
+    return () => clearInterval(id);
+  }, [status?.status, loadStatus]);
+
+  const refreshNow = async () => {
+    setStarting(true);
+    try {
+      await axios.post(`${API}/quant-lab/admin/sharpe-refresh-now`, {}, authHeaders());
+      toast.success("Nifty 500 Sharpe refresh started — takes a few minutes.");
+      await loadStatus();
+    } catch (err) {
+      if (err?.response?.status === 401) { onAuthError(); return; }
+      toast.error(errMsg(err, "Failed to start refresh."));
+    } finally {
+      setStarting(false);
+    }
+  };
+
+  const running = status?.status === "running";
+
+  return (
+    <div className="glass rounded-2xl p-6 md:p-8 mb-10" data-testid="admin-quant-lab-panel">
+      <div className="flex flex-wrap items-center justify-between gap-3 mb-2">
+        <h2 className="font-display text-xl font-bold text-white">Quant Lab — Sharpe Dashboard</h2>
+        <button
+          onClick={refreshNow}
+          disabled={starting || running}
+          className="btn-ghost !px-4 !py-2 text-sm disabled:opacity-50"
+          data-testid="sharpe-refresh-nifty500-btn"
+        >
+          {running ? <><Loader2 size={16} className="animate-spin" /> Refreshing</> : <><RefreshCw size={15} /> Refresh Nifty 500 Cache</>}
+        </button>
+      </div>
+      <p className="text-sm text-slate-500 mb-4">
+        Recomputes Sharpe/Sortino/max drawdown for all Nifty 500 constituents (takes a few minutes) — needed once before
+        "Top Ranked" mode on the public Sharpe Dashboard has anything to rank. Individual symbols in "Compare" mode
+        compute on demand and don't need this.
+      </p>
+      {status && (
+        <div className="text-xs text-slate-500 font-mono-ui" data-testid="sharpe-refresh-status-line">
+          {status.status === "idle" && "No refresh has run yet."}
+          {running && `Running — ${status.done ?? 0}/${status.total ?? 0} processed (${status.cached ?? 0} cached, ${status.failed ?? 0} failed).`}
+          {status.status === "done" && !running && (
+            <>Last refresh: {status.cached ?? 0}/{status.total ?? 0} cached, {status.failed ?? 0} failed{status.completed_at ? ` — ${new Date(status.completed_at).toLocaleString("en-IN")}` : ""}.</>
+          )}
+        </div>
+      )}
+    </div>
+  );
+};
+
 /* ------------------------------ IPO Section ------------------------------ */
 const EXCHANGES = ["NSE", "BSE"];
 const emptyIpo = () => ({
@@ -720,6 +789,7 @@ const Dashboard = ({ onLogout }) => {
       <div className="container-x py-10">
         <DefinedgeConnect onAuthError={onLogout} onSignalUpdate={setSignal} />
         <SignalPanel onAuthError={onLogout} signal={signal} />
+        <QuantLabPanel onAuthError={onLogout} />
         <IpoPanel onAuthError={onLogout} />
 
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-8">

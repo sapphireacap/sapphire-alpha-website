@@ -26,17 +26,30 @@ fixed here):
   - .cumprod() (not .prod()) so the total-return number comes with a real
     equity path, not just a discarded final scalar.
 """
+import asyncio
+import csv
+import io
+import logging
 import math
 from datetime import datetime, timezone, timedelta
+from typing import List, Optional
 
+import httpx
 import pandas as pd
-from fastapi import APIRouter
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 
 from definedge_service import DefinedgeError
+from pricing import RISK_FREE_RATE
 
+logger = logging.getLogger(__name__)
 IST = timezone(timedelta(hours=5, minutes=30))
 MIN_EVALUATED_BARS = 30  # minimum post-warmup bars required for a meaningful return comparison
+
+BROWSER_USER_AGENT = (
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+    "(KHTML, like Gecko) Chrome/120.0 Safari/537.36"
+)
 
 
 class EwmaCrossoverRequest(BaseModel):
@@ -121,7 +134,194 @@ def _compute_backtest(bars: list, fast_span: int, slow_span: int):
     }
 
 
-def create_quant_lab_router(db, definedge) -> APIRouter:
+# ---------------------------------------------------------------------------
+# Sharpe Ratio Dashboard (second Quant Lab tool) — Nifty 500 universe
+# ---------------------------------------------------------------------------
+NIFTY500_CSV_URL = "https://nsearchives.nseindia.com/content/indices/ind_nifty500list.csv"
+TRADING_DAYS_PER_YEAR = 252
+MIN_BARS_FOR_STATS = 252  # ~1 year — below this, Sharpe/Sortino aren't meaningful
+MIN_UNIVERSE_COVERAGE = 400  # of ~500 — below this, "Top Ranked" refuses to rank off too small a sample
+
+_nifty500_cache = None  # (date_str, list[dict]) — module-level, same per-day TTL pattern as definedge_service.py's master caches
+
+
+async def _fetch_nifty500_list() -> list:
+    """[{symbol, company_name, industry}, ...] from NSE's public index-
+    constituent CSV — verified live, no auth needed. Same fragility caveat
+    as the other unofficial NSE endpoints already relied on in ipo_routes.py:
+    an archive path, not a published API, can change without notice."""
+    global _nifty500_cache
+    today = datetime.now(IST).strftime("%Y-%m-%d")
+    if _nifty500_cache and _nifty500_cache[0] == today:
+        return _nifty500_cache[1]
+    async with httpx.AsyncClient(timeout=30) as c:
+        r = await c.get(NIFTY500_CSV_URL, headers={"User-Agent": BROWSER_USER_AGENT})
+    if r.status_code != 200:
+        raise DefinedgeError(f"Nifty 500 list fetch failed (HTTP {r.status_code}).")
+    rows = []
+    for row in csv.DictReader(io.StringIO(r.text)):
+        symbol = (row.get("Symbol") or "").strip()
+        if not symbol:
+            continue
+        rows.append({
+            "symbol": symbol,
+            "company_name": (row.get("Company Name") or "").strip(),
+            "industry": (row.get("Industry") or "").strip(),
+        })
+    _nifty500_cache = (today, rows)
+    return rows
+
+
+def _compute_risk_stats(bars: list) -> Optional[dict]:
+    """Pure function, no I/O — mirrors _compute_backtest's contract: None
+    when there isn't enough history for a meaningful read. Annualized Sharpe
+    and Sortino use pricing.py's existing RISK_FREE_RATE (not reinvented),
+    max drawdown from the peak-to-trough of the cumulative-return curve. A
+    zero-volatility edge case (division by zero) isn't special-cased — it
+    naturally produces inf/NaN, which _clean() already collapses to None."""
+    df = pd.DataFrame(bars)
+    if len(df) < MIN_BARS_FOR_STATS:
+        return None
+
+    df["date"] = pd.to_datetime(df["date"])
+    df = df.sort_values("date").reset_index(drop=True)
+    daily_return = df["close"].pct_change().dropna()
+    if daily_return.empty:
+        return None
+
+    rf_daily = RISK_FREE_RATE / TRADING_DAYS_PER_YEAR
+    excess_mean = (daily_return - rf_daily).mean()
+    sharpe = (excess_mean / daily_return.std()) * math.sqrt(TRADING_DAYS_PER_YEAR)
+
+    downside = daily_return[daily_return < 0]
+    sortino = (
+        (excess_mean / downside.std()) * math.sqrt(TRADING_DAYS_PER_YEAR)
+        if len(downside) > 1 else float("nan")
+    )
+
+    equity = (1 + daily_return).cumprod()
+    max_drawdown = (equity / equity.cummax() - 1).min()
+
+    return {
+        "stats": {
+            "sharpe": _clean(sharpe),
+            "sortino": _clean(sortino),
+            "max_drawdown": _clean(max_drawdown),
+        },
+        "bars_used": len(daily_return),
+        "history_from": df["date"].iloc[0].date().isoformat(),
+        "history_to": df["date"].iloc[-1].date().isoformat(),
+    }
+
+
+async def _get_or_compute_sharpe(db, definedge, master_df, symbol: str) -> Optional[dict]:
+    """Cache-or-compute for one symbol — shared by both the "compare" mode
+    route and the full-universe batch refresh. Returns None (never raises)
+    when the symbol can't be resolved or lacks enough history, so callers
+    can report it per-item rather than failing the whole request."""
+    today_ist = datetime.now(IST).strftime("%Y-%m-%d")
+    cached = await db.quant_lab_sharpe_cache.find_one({"symbol": symbol}, {"_id": 0})
+    if cached and cached.get("computed_date") == today_ist:
+        cached["cached"] = True
+        return cached
+
+    resolved = definedge.resolve_symbol(master_df, "NSE", symbol)
+    if resolved is None:
+        return None
+    try:
+        bars = await definedge.daily_history("NSE", resolved["token"], years=10)
+    except DefinedgeError:
+        return None
+    if not bars:
+        return None
+    risk = _compute_risk_stats(bars)
+    if risk is None:
+        return None
+
+    doc = {
+        "symbol": symbol,
+        "resolved_symbol": resolved.get("tradingsymbol", symbol),
+        **risk,
+        "computed_date": today_ist,
+        "computed_at": datetime.now(timezone.utc).isoformat(),
+    }
+    await db.quant_lab_sharpe_cache.update_one({"symbol": symbol}, {"$set": doc}, upsert=True)
+    doc["cached"] = False
+    return doc
+
+
+async def _refresh_nifty500_cache(db, definedge):
+    """Runs as a FastAPI BackgroundTask — refreshes every Nifty 500
+    constituent's Sharpe/Sortino/max-drawdown, bounded to 5 concurrent
+    Definedge requests (courteous, not hammering the broker API 500-at-once;
+    a single request measured at 0.4s live, so 500 at concurrency 5 is a
+    few minutes). Progress is written to quant_lab_sharpe_refresh_status as
+    it goes, so the admin UI isn't staring at a black box for that long."""
+    now_iso = lambda: datetime.now(timezone.utc).isoformat()  # noqa: E731
+    try:
+        universe = await _fetch_nifty500_list()
+    except Exception as e:  # noqa: BLE001
+        logger.exception("Nifty 500 list fetch failed during refresh")
+        await db.quant_lab_sharpe_refresh_status.update_one(
+            {"id": "current"},
+            {"$set": {"id": "current", "status": "done", "completed_at": now_iso(), "error": str(e)}},
+            upsert=True,
+        )
+        return
+
+    total = len(universe)
+    await db.quant_lab_sharpe_refresh_status.update_one(
+        {"id": "current"},
+        {"$set": {
+            "id": "current", "status": "running", "started_at": now_iso(), "completed_at": None,
+            "total": total, "done": 0, "cached": 0, "failed": 0, "error": None,
+        }},
+        upsert=True,
+    )
+
+    try:
+        master = await definedge._get_all_master()
+    except Exception as e:  # noqa: BLE001
+        logger.exception("Master file fetch failed during Sharpe refresh")
+        await db.quant_lab_sharpe_refresh_status.update_one(
+            {"id": "current"}, {"$set": {"status": "done", "completed_at": now_iso(), "error": str(e)}}
+        )
+        return
+
+    semaphore = asyncio.Semaphore(5)
+    counters = {"done": 0, "cached": 0, "failed": 0}
+    counters_lock = asyncio.Lock()
+
+    async def worker(row):
+        symbol = row["symbol"]
+        async with semaphore:
+            try:
+                doc = await _get_or_compute_sharpe(db, definedge, master, symbol)
+            except Exception:  # noqa: BLE001
+                logger.exception("Sharpe refresh failed for %s", symbol)
+                doc = None
+        async with counters_lock:
+            counters["done"] += 1
+            counters["cached" if doc is not None else "failed"] += 1
+            await db.quant_lab_sharpe_refresh_status.update_one(
+                {"id": "current"},
+                {"$set": {"done": counters["done"], "cached": counters["cached"], "failed": counters["failed"]}},
+            )
+
+    await asyncio.gather(*(worker(row) for row in universe))
+
+    await db.quant_lab_sharpe_refresh_status.update_one(
+        {"id": "current"}, {"$set": {"status": "done", "completed_at": now_iso()}}
+    )
+
+
+class SharpeDashboardRequest(BaseModel):
+    mode: str  # "compare" | "top"
+    symbols: Optional[List[str]] = None
+    top_n: int = Field(default=10, ge=1, le=20)
+
+
+def create_quant_lab_router(db, definedge, get_current_admin, cron_secret: str) -> APIRouter:
     router = APIRouter(prefix="/quant-lab")
 
     @router.post("/ewma-crossover")
@@ -188,5 +388,87 @@ def create_quant_lab_router(db, definedge) -> APIRouter:
         result["found"] = True
         result["cached"] = False
         return result
+
+    @router.get("/nifty500-symbols")
+    async def nifty500_symbols():
+        try:
+            return await _fetch_nifty500_list()
+        except DefinedgeError as e:
+            raise HTTPException(status_code=502, detail=str(e))
+
+    @router.post("/sharpe-dashboard")
+    async def sharpe_dashboard(payload: SharpeDashboardRequest):
+        if payload.mode not in ("compare", "top"):
+            return {"found": False, "reason": "mode must be 'compare' or 'top'."}
+
+        if payload.mode == "compare":
+            symbols = list(dict.fromkeys(s.strip().upper() for s in (payload.symbols or []) if s.strip()))
+            if not (2 <= len(symbols) <= 10):
+                return {"found": False, "reason": "Select between 2 and 10 symbols to compare."}
+
+            try:
+                universe = await _fetch_nifty500_list()
+            except DefinedgeError as e:
+                return {"found": False, "reason": str(e)}
+            universe_symbols = {row["symbol"] for row in universe}
+
+            try:
+                master = await definedge._get_all_master()
+            except DefinedgeError as e:
+                return {"found": False, "reason": str(e)}
+
+            results, skipped = [], []
+            for sym in symbols:
+                if sym not in universe_symbols:
+                    skipped.append({"symbol": sym, "reason": "Not a current Nifty 500 constituent."})
+                    continue
+                doc = await _get_or_compute_sharpe(db, definedge, master, sym)
+                if doc is None:
+                    skipped.append({"symbol": sym, "reason": "Insufficient price history."})
+                    continue
+                results.append(doc)
+
+            if not results:
+                return {"found": False, "reason": "None of the requested symbols could be evaluated."}
+            return {"found": True, "results": results, "skipped": skipped}
+
+        # mode == "top" — ranks strictly off the pre-computed cache; 500
+        # symbols is a multi-minute job, not something a request can compute inline.
+        today_ist = datetime.now(IST).strftime("%Y-%m-%d")
+        docs = await db.quant_lab_sharpe_cache.find({}, {"_id": 0}).to_list(600)
+        fresh = [d for d in docs if d.get("computed_date") == today_ist and d.get("stats", {}).get("sharpe") is not None]
+        if len(fresh) < MIN_UNIVERSE_COVERAGE:
+            return {
+                "found": False,
+                "reason": (
+                    f"Nifty 500 ranking isn't ready yet — only {len(fresh)} of ~500 constituents are cached "
+                    "for today. Trigger a refresh from the admin panel, or wait for the next scheduled refresh."
+                ),
+            }
+        ranked = sorted(fresh, key=lambda d: d["stats"]["sharpe"], reverse=True)[: payload.top_n]
+        for d in ranked:
+            d["cached"] = True
+        return {"found": True, "results": ranked, "universe_coverage": {"cached": len(fresh), "total": len(docs)}}
+
+    @router.get("/sharpe-refresh-status")
+    async def sharpe_refresh_status():
+        doc = await db.quant_lab_sharpe_refresh_status.find_one({"id": "current"}, {"_id": 0})
+        return doc or {"status": "idle", "total": 0, "done": 0, "cached": 0, "failed": 0}
+
+    @router.post("/admin/sharpe-refresh")
+    async def sharpe_refresh_cron(request: Request, background_tasks: BackgroundTasks):
+        """External-cron entry point (same X-Cron-Key mechanism as the
+        Definedge and IPO-section cron endpoints) for the once-daily
+        full-universe refresh."""
+        if not cron_secret or request.headers.get("X-Cron-Key") != cron_secret:
+            raise HTTPException(status_code=401, detail="Invalid cron key")
+        background_tasks.add_task(_refresh_nifty500_cache, db, definedge)
+        return {"status": "started"}
+
+    @router.post("/admin/sharpe-refresh-now")
+    async def sharpe_refresh_admin(background_tasks: BackgroundTasks, admin: dict = Depends(get_current_admin)):
+        """Same refresh, admin-JWT-gated for the admin panel's manual button."""
+        background_tasks.add_task(_refresh_nifty500_cache, db, definedge)
+        return {"status": "started"}
 
     return router
