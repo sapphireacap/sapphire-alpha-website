@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import axios from "axios";
 import { motion } from "framer-motion";
 import { useNavigate } from "react-router-dom";
-import { ArrowUpRight, TrendingUp, TrendingDown, Minus, Compass } from "lucide-react";
+import { ArrowUpRight, TrendingUp, TrendingDown, Minus, Compass, FlaskConical } from "lucide-react";
 import Navbar from "../components/site/Navbar";
 import Footer from "../components/site/Footer";
 import ParticleField from "../components/site/ParticleField";
@@ -12,6 +12,7 @@ import { scrollToId } from "../components/site/SmoothScroll";
 import {
   Accordion, AccordionItem, AccordionTrigger, AccordionContent,
 } from "../components/ui/accordion";
+import QuantLab from "./alphaterminal/QuantLab";
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 const EASE = [0.16, 1, 0.3, 1];
@@ -173,7 +174,7 @@ const MomentumTable = ({ rows }) => (
   </div>
 );
 
-const ComingSoonCard = ({ scannerKey }) => (
+export const ComingSoonCard = ({ scannerKey }) => (
   <div
     className="group glass rounded-2xl border border-white/10 px-6 py-20 md:py-28 flex flex-col items-center justify-center text-center transition-colors duration-500 hover:border-sapphire/40 hover:bg-sapphire/[0.03]"
     data-testid={`coming-soon-${scannerKey}`}
@@ -430,6 +431,28 @@ export default function AlphaTerminal() {
                     <AccordionContent className="px-5 md:px-6 pb-6 pt-1">
                       <StraddleCompass signal={signal} />
                       <TrackRecordPanel record={trackRecord} />
+                    </AccordionContent>
+                  </AccordionItem>
+
+                  <AccordionItem
+                    value="quant-lab"
+                    className="border border-white/10 rounded-2xl overflow-hidden bg-white/[0.015]"
+                    data-testid="scanner-quant-lab"
+                  >
+                    <AccordionTrigger
+                      className="px-5 md:px-6 py-5 hover:no-underline hover:bg-white/[0.03] transition-colors [&>svg]:text-sapphire-light"
+                      data-testid="scanner-trigger-quant-lab"
+                    >
+                      <span className="flex items-center gap-4 text-left">
+                        <FlaskConical size={18} className="text-sapphire-light" />
+                        <span className="font-display text-xl md:text-2xl font-bold text-white tracking-tight">Quant Lab</span>
+                        <span className="hidden sm:inline-flex items-center gap-1.5 rounded-full border border-emerald-400/25 bg-emerald-400/10 px-2.5 py-0.5 font-mono-ui text-[10px] uppercase tracking-wider text-emerald-300">
+                          <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" /> Live
+                        </span>
+                      </span>
+                    </AccordionTrigger>
+                    <AccordionContent className="px-5 md:px-6 pb-6 pt-1">
+                      <QuantLab />
                     </AccordionContent>
                   </AccordionItem>
 

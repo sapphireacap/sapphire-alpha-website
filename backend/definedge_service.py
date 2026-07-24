@@ -36,6 +36,7 @@ AUTH_BASE = "https://signin.definedgesecurities.com/auth/realms/debroking/dsbpkc
 DATA_BASE = "https://data.definedgesecurities.com/sds"
 QUOTES_BASE = "https://integrate.definedgesecurities.com/dart/v1"
 MASTER_URL = "https://app.definedgesecurities.com/public/nsefno.zip"
+ALL_MASTER_URL = "https://app.definedgesecurities.com/public/allmaster.zip"  # unified NSE/BSE/NFO/BFO/MCX/CDS master, used by Quant Lab's generic symbol lookup
 NIFTY_SPOT_TOKEN = "26000"   # NIFTY 50 index token (NSE segment)
 VIX_TOKEN = "26017"          # India VIX token (NSE segment) — lives in the nsecash
                               # master file, not the nsefno one the option legs use;
@@ -108,6 +109,7 @@ class DefinedgeService:
         self.api_secret = api_secret
         self._otp_token = None
         self._master_cache = None       # (date_str, DataFrame)
+        self._all_master_cache = None   # (date_str, DataFrame) — allmaster.zip, kept separate from _master_cache
         self._spot_cache = None         # (monotonic_time, {"spot": "..."})
         self._prev_close_cache = None   # (date_str, float)
         self._vix_cache = None          # (monotonic_time, float)
@@ -184,6 +186,68 @@ class DefinedgeService:
         df = await self._get_master()
         return {"shape": list(df.shape), "head": df.head(4).fillna("").values.tolist()}
 
+    async def _get_all_master(self) -> pd.DataFrame:
+        """Unified NSE/BSE/NFO/BFO/MCX/CDS master (allmaster.zip). Same per-day
+        caching pattern as _get_master(), kept as a separate cache so the Nifty
+        Vector's existing option-token resolution stays untouched."""
+        today = datetime.now(IST).strftime("%Y-%m-%d")
+        if self._all_master_cache and self._all_master_cache[0] == today:
+            return self._all_master_cache[1]
+        async with httpx.AsyncClient(timeout=60) as c:
+            r = await c.get(ALL_MASTER_URL)
+        if r.status_code != 200:
+            raise DefinedgeError(f"All-master download failed ({r.status_code}).")
+        with zipfile.ZipFile(io.BytesIO(r.content)) as z:
+            name = z.namelist()[0]
+            with z.open(name) as f:
+                df = pd.read_csv(f, header=None, dtype=str, low_memory=False)
+        self._all_master_cache = (today, df)
+        return df
+
+    def resolve_symbol(self, df: pd.DataFrame, segment: str, symbol: str) -> Optional[dict]:
+        """Resolve a (segment, symbol) pair to a tradeable token via allmaster.zip.
+        Returns None (never raises) when nothing matches, so callers can turn
+        that into a clean "no result found" response instead of a 500.
+        Column layout matches nsefno's: 0=SEG 1=TOKEN 2=SYMBOL 3=TRADINGSYM
+        4=INSTRUMENT 5=EXPIRY(ddmmyyyy). NSE prefers EQ/IDX instruments; BSE has
+        no clean equity tag (trading-group codes instead) so any SYMBOL match
+        within SEG=="BSE" is accepted. NFO/BFO resolve to the nearest-expiry
+        futures contract only (FUTSTK/FUTIDX) — the input has no strike/type,
+        so an options contract can't be identified unambiguously."""
+        SEG, TOKEN, SYMBOL, INSTR, EXPIRY = 0, 1, 2, 4, 5
+        symbol = symbol.strip().upper()
+        segment = segment.strip().upper()
+
+        sub = df[(df[SEG].astype(str) == segment) & (df[SYMBOL].astype(str).str.upper() == symbol)]
+        if sub.empty:
+            return None
+
+        if segment == "NSE":
+            eq = sub[sub[INSTR].astype(str).isin(["EQ", "IDX"])]
+            row = eq.iloc[0] if not eq.empty else sub.iloc[0]
+            return {"token": str(row[TOKEN]), "tradingsymbol": str(row[3])}
+
+        if segment == "BSE":
+            row = sub.iloc[0]
+            return {"token": str(row[TOKEN]), "tradingsymbol": str(row[3])}
+
+        if segment in ("NFO", "BFO"):
+            fut = sub[sub[INSTR].astype(str).isin(["FUTSTK", "FUTIDX"])].copy()
+            if fut.empty:
+                return None
+            fut["_exp"] = pd.to_datetime(fut[EXPIRY].astype(str), format="%d%m%Y", errors="coerce").dt.date
+            fut = fut.dropna(subset=["_exp"])
+            if fut.empty:
+                return None
+            today = datetime.now(IST).date()
+            expiry = self._pick_expiry(sorted(set(fut["_exp"].tolist())), today)
+            if expiry is None:
+                return None
+            row = fut[fut["_exp"] == expiry].iloc[0]
+            return {"token": str(row[TOKEN]), "tradingsymbol": str(row[3]), "expiry": expiry.isoformat()}
+
+        return None
+
     @staticmethod
     def _pick_expiry(expiries, today):
         """Nearest weekly expiry; on Monday(0)/Tuesday(1) roll to the NEXT expiry."""
@@ -252,6 +316,42 @@ class DefinedgeService:
             except ValueError:
                 continue
         return closes
+
+    async def daily_history(self, segment: str, token: str, years: int = 10):
+        """Day-interval history for Quant Lab backtests — like _closes() but
+        daily bars instead of minute. Requests a full `years`-back window
+        unconditionally; Definedge simply returns whatever actually exists if
+        the instrument is younger, which is what implements "since inception
+        if shorter" with no extra branching."""
+        session = await self._session_key()
+        now = datetime.now(IST)
+        frm = (now - timedelta(days=365 * years)).strftime("%d%m%Y0000")
+        to = now.strftime("%d%m%Y%H%M")
+        url = f"{DATA_BASE}/history/{segment}/{token}/day/{frm}/{to}"
+        async with httpx.AsyncClient(timeout=45) as c:
+            r = await c.get(url, headers={"Authorization": session})
+        if r.status_code == 401:
+            raise DefinedgeError("Definedge session expired. Please login again (OTP).")
+        if r.status_code != 200:
+            raise DefinedgeError(f"History failed ({r.status_code}) for {token}.")
+        bars = []
+        for line in r.text.strip().splitlines():
+            parts = line.split(",")
+            if len(parts) < 5:
+                continue
+            try:
+                date_str = parts[0][:8]  # ddmmyyyy prefix, regardless of trailing time component
+                bars.append({
+                    "date": datetime.strptime(date_str, "%d%m%Y").date().isoformat(),
+                    "open": float(parts[1]),
+                    "high": float(parts[2]),
+                    "low": float(parts[3]),
+                    "close": float(parts[4]),
+                })
+            except (ValueError, IndexError):
+                continue
+        bars.sort(key=lambda b: b["date"])
+        return bars
 
     async def _spot(self):
         closes = await self._closes("NSE", NIFTY_SPOT_TOKEN)
