@@ -17,6 +17,8 @@ import Contact from "@/components/site/Contact";
 import Footer from "@/components/site/Footer";
 import LegalPage from "@/components/site/LegalPage";
 import AlphaTerminal from "@/pages/AlphaTerminal";
+import Ipos from "@/pages/Ipos";
+import IpoDetail from "@/pages/IpoDetail";
 import Admin from "@/pages/Admin";
 import { SignupPage, LoginPage, ForgotPasswordPage, ResetPasswordPage, VerifyEmailPage } from "@/pages/Auth";
 import { installAuthInterceptor } from "@/lib/auth";
@@ -55,6 +57,8 @@ function App() {
           <Routes>
             <Route path="/" element={<Landing />} />
             <Route path="/alpha-terminal" element={<AlphaTerminal />} />
+            <Route path="/ipos" element={<Ipos />} />
+            <Route path="/ipos/:id" element={<IpoDetail />} />
             <Route path="/admin" element={<Admin />} />
             <Route path="/signup" element={<SignupPage />} />
             <Route path="/login" element={<LoginPage />} />

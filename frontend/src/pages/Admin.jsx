@@ -356,6 +356,246 @@ const SignalPanel = ({ onAuthError, signal }) => {
   );
 };
 
+/* ------------------------------ IPO Section ------------------------------ */
+const EXCHANGES = ["NSE", "BSE"];
+const emptyIpo = () => ({
+  id: null, company_name: "", sector: "", issue_open_date: "", issue_close_date: "", listing_date: "",
+  price_band: { min: "", max: "" }, lot_size: "", issue_size: "", exchange: ["NSE"], rhp_url: "", nse_symbol: "",
+});
+
+const IpoPanel = ({ onAuthError }) => {
+  const [ipos, setIpos] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [editing, setEditing] = useState(null);
+  const [saving, setSaving] = useState(false);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      const { data } = await axios.get(`${API}/ipos`);
+      setIpos(data);
+    } catch {
+      toast.error("Failed to load IPOs.");
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => { load(); }, [load]);
+
+  const refreshNse = async () => {
+    setRefreshing(true);
+    try {
+      const { data } = await axios.post(`${API}/admin/ipos/refresh-now`, {}, authHeaders());
+      toast.success(`Refreshed from NSE — ${data.upserted} entries updated.`);
+      await load();
+    } catch (err) {
+      if (err?.response?.status === 401) { onAuthError(); return; }
+      toast.error(errMsg(err, "NSE refresh failed."));
+    } finally {
+      setRefreshing(false);
+    }
+  };
+
+  const startEdit = (ipo) => setEditing(ipo ? {
+    ...emptyIpo(),
+    ...ipo,
+    price_band: { min: ipo.price_band?.min ?? "", max: ipo.price_band?.max ?? "" },
+    exchange: ipo.exchange?.length ? ipo.exchange : ["NSE"],
+  } : emptyIpo());
+
+  const setField = (k) => (e) => setEditing((f) => ({ ...f, [k]: e.target.value }));
+  const setBandField = (k) => (e) => setEditing((f) => ({ ...f, price_band: { ...f.price_band, [k]: e.target.value } }));
+  const toggleExchange = (ex) => setEditing((f) => ({
+    ...f,
+    exchange: f.exchange.includes(ex) ? f.exchange.filter((x) => x !== ex) : [...f.exchange, ex],
+  }));
+
+  const save = async () => {
+    if (!editing.company_name.trim()) { toast.error("Company name is required."); return; }
+    setSaving(true);
+    try {
+      const body = {
+        company_name: editing.company_name,
+        sector: editing.sector || null,
+        issue_open_date: editing.issue_open_date || null,
+        issue_close_date: editing.issue_close_date || null,
+        listing_date: editing.listing_date || null,
+        price_band: {
+          min: editing.price_band.min === "" ? null : Number(editing.price_band.min),
+          max: editing.price_band.max === "" ? null : Number(editing.price_band.max),
+        },
+        lot_size: editing.lot_size === "" ? null : Number(editing.lot_size),
+        issue_size: editing.issue_size || null,
+        exchange: editing.exchange,
+        rhp_url: editing.rhp_url || null,
+        nse_symbol: editing.nse_symbol || null,
+      };
+      if (editing.id) {
+        await axios.put(`${API}/ipos/${editing.id}`, body, authHeaders());
+      } else {
+        await axios.post(`${API}/ipos`, body, authHeaders());
+      }
+      toast.success("IPO saved. Report generation runs in the background if an RHP link is set.");
+      setEditing(null);
+      await load();
+    } catch (err) {
+      if (err?.response?.status === 401) { onAuthError(); return; }
+      toast.error(errMsg(err, "Save failed."));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const fld = "w-full bg-white/5 border border-white/10 rounded-md px-3 py-2 text-sm text-white outline-none focus:border-sapphire-light transition-colors";
+
+  return (
+    <div className="glass rounded-2xl p-6 md:p-8 mb-10" data-testid="admin-ipo-panel">
+      <div className="flex flex-wrap items-center justify-between gap-3 mb-2">
+        <h2 className="font-display text-xl font-bold text-white">IPO Section</h2>
+        <div className="flex items-center gap-3">
+          <button onClick={refreshNse} disabled={refreshing} className="btn-ghost !px-4 !py-2 text-sm disabled:opacity-50" data-testid="ipo-refresh-nse-btn">
+            {refreshing ? <><Loader2 size={16} className="animate-spin" /> Refreshing</> : <><RefreshCw size={15} /> Refresh from NSE</>}
+          </button>
+          <button onClick={() => startEdit(null)} className="btn-sapphire !px-4 !py-2 text-sm" data-testid="ipo-add-btn">
+            <Plus size={15} /> Add IPO
+          </button>
+        </div>
+      </div>
+      <p className="text-sm text-slate-500 mb-6">
+        Company name/dates/price band/issue size auto-populate from NSE's public IPO listings where available — add
+        the RHP link (plus sector/lot size, which NSE's feed doesn't expose) to trigger the AI report.
+      </p>
+
+      {loading ? (
+        <div className="flex items-center justify-center py-12 text-slate-500 gap-3"><Loader2 className="animate-spin" size={18} /> Loading…</div>
+      ) : (
+        <div className="rounded-2xl overflow-hidden border border-white/10">
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[760px] text-left">
+              <thead>
+                <tr className="border-b border-white/10 text-slate-500 font-mono-ui text-[11px] uppercase tracking-[0.15em]">
+                  <th className="px-4 py-3">Company</th>
+                  <th className="px-4 py-3">Status</th>
+                  <th className="px-4 py-3">Source</th>
+                  <th className="px-4 py-3">RHP</th>
+                  <th className="px-4 py-3">Report</th>
+                  <th className="px-4 py-3 w-16"></th>
+                </tr>
+              </thead>
+              <tbody>
+                {ipos.map((ipo) => (
+                  <tr key={ipo.id} className="border-b border-white/[0.05] last:border-0" data-testid={`admin-ipo-row-${ipo.id}`}>
+                    <td className="px-4 py-3 text-sm text-white">{ipo.company_name}</td>
+                    <td className="px-4 py-3"><span className="capitalize text-xs text-slate-400">{ipo.status}</span></td>
+                    <td className="px-4 py-3 text-xs text-slate-500">{ipo.nse_symbol ? "NSE auto" : "Manual"}</td>
+                    <td className="px-4 py-3 text-xs">{ipo.rhp_url ? <span className="text-emerald-400">Linked</span> : <span className="text-slate-600">—</span>}</td>
+                    <td className="px-4 py-3 text-xs">
+                      {ipo.report_error ? (
+                        <span className="text-red-400">Error</span>
+                      ) : ipo.short_report ? (
+                        <span className="text-emerald-400">Ready</span>
+                      ) : ipo.rhp_url ? (
+                        <span className="text-amber-400">Generating</span>
+                      ) : (
+                        <span className="text-slate-600">—</span>
+                      )}
+                    </td>
+                    <td className="px-4 py-3">
+                      <button onClick={() => startEdit(ipo)} className="text-slate-500 hover:text-white transition-colors text-xs" data-testid={`admin-ipo-edit-${ipo.id}`}>
+                        Edit
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+                {ipos.length === 0 && (
+                  <tr><td colSpan={6} className="px-6 py-10 text-center text-slate-500 text-sm">No IPOs yet. Click "Refresh from NSE" or "Add IPO".</td></tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {editing && (
+        <div className="mt-6 border-t border-white/10 pt-6">
+          <h3 className="font-display text-base font-bold text-white mb-4">{editing.id ? "Edit IPO" : "Add IPO"}</h3>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
+            <div className="col-span-2">
+              <label className="font-mono-ui text-[10px] uppercase tracking-[0.18em] text-slate-500 block mb-1.5">Company Name</label>
+              <input value={editing.company_name} onChange={setField("company_name")} className={fld} data-testid="ipo-form-company" />
+            </div>
+            <div className="col-span-2">
+              <label className="font-mono-ui text-[10px] uppercase tracking-[0.18em] text-slate-500 block mb-1.5">Sector</label>
+              <input value={editing.sector} onChange={setField("sector")} className={fld} placeholder="e.g. Financial Services" data-testid="ipo-form-sector" />
+            </div>
+            <div>
+              <label className="font-mono-ui text-[10px] uppercase tracking-[0.18em] text-slate-500 block mb-1.5">Issue Opens</label>
+              <input type="date" value={editing.issue_open_date || ""} onChange={setField("issue_open_date")} className={fld} data-testid="ipo-form-open-date" />
+            </div>
+            <div>
+              <label className="font-mono-ui text-[10px] uppercase tracking-[0.18em] text-slate-500 block mb-1.5">Issue Closes</label>
+              <input type="date" value={editing.issue_close_date || ""} onChange={setField("issue_close_date")} className={fld} data-testid="ipo-form-close-date" />
+            </div>
+            <div>
+              <label className="font-mono-ui text-[10px] uppercase tracking-[0.18em] text-slate-500 block mb-1.5">Listing Date</label>
+              <input type="date" value={editing.listing_date || ""} onChange={setField("listing_date")} className={fld} data-testid="ipo-form-listing-date" />
+            </div>
+            <div>
+              <label className="font-mono-ui text-[10px] uppercase tracking-[0.18em] text-slate-500 block mb-1.5">Lot Size</label>
+              <input value={editing.lot_size} onChange={setField("lot_size")} className={fld} placeholder="e.g. 100" data-testid="ipo-form-lot-size" />
+            </div>
+            <div>
+              <label className="font-mono-ui text-[10px] uppercase tracking-[0.18em] text-slate-500 block mb-1.5">Price Band Min (₹)</label>
+              <input value={editing.price_band.min} onChange={setBandField("min")} className={fld} data-testid="ipo-form-price-min" />
+            </div>
+            <div>
+              <label className="font-mono-ui text-[10px] uppercase tracking-[0.18em] text-slate-500 block mb-1.5">Price Band Max (₹)</label>
+              <input value={editing.price_band.max} onChange={setBandField("max")} className={fld} data-testid="ipo-form-price-max" />
+            </div>
+            <div>
+              <label className="font-mono-ui text-[10px] uppercase tracking-[0.18em] text-slate-500 block mb-1.5">Issue Size</label>
+              <input value={editing.issue_size} onChange={setField("issue_size")} className={fld} placeholder="e.g. 91,93,800 shares" data-testid="ipo-form-issue-size" />
+            </div>
+            <div>
+              <label className="font-mono-ui text-[10px] uppercase tracking-[0.18em] text-slate-500 block mb-1.5">Exchange</label>
+              <div className="flex gap-2 pt-1.5">
+                {EXCHANGES.map((ex) => (
+                  <button
+                    type="button"
+                    key={ex}
+                    onClick={() => toggleExchange(ex)}
+                    className={`rounded-md border px-3 py-2 text-xs font-medium transition-colors ${
+                      editing.exchange.includes(ex) ? "border-sapphire/40 bg-sapphire/10 text-sapphire-light" : "border-white/10 text-slate-500"
+                    }`}
+                    data-testid={`ipo-form-exchange-${ex}`}
+                  >
+                    {ex}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div className="col-span-2 md:col-span-4">
+              <label className="font-mono-ui text-[10px] uppercase tracking-[0.18em] text-slate-500 block mb-1.5">RHP PDF URL</label>
+              <input value={editing.rhp_url} onChange={setField("rhp_url")} className={fld} placeholder="https://..." data-testid="ipo-form-rhp-url" />
+              <p className="text-[11px] text-slate-600 mt-1">Saving a new or changed link kicks off AI report generation in the background — usually ready within a couple minutes.</p>
+            </div>
+          </div>
+          <div className="flex items-center gap-3">
+            <button onClick={save} disabled={saving} className="btn-sapphire disabled:opacity-70" data-testid="ipo-form-save-btn">
+              {saving ? <><Loader2 size={16} className="animate-spin" /> Saving</> : <><Save size={15} /> Save IPO</>}
+            </button>
+            <button onClick={() => setEditing(null)} className="btn-ghost !px-4 !py-2 text-sm" data-testid="ipo-form-cancel-btn">
+              <X size={15} /> Cancel
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
 /* --------------------------- Dashboard --------------------------- */
 const Dashboard = ({ onLogout }) => {
   const [scanner, setScanner] = useState("momentum");
@@ -478,6 +718,7 @@ const Dashboard = ({ onLogout }) => {
       <div className="container-x py-10">
         <DefinedgeConnect onAuthError={onLogout} onSignalUpdate={setSignal} />
         <SignalPanel onAuthError={onLogout} signal={signal} />
+        <IpoPanel onAuthError={onLogout} />
 
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-8">
           <div>

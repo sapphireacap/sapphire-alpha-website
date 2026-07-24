@@ -16,6 +16,7 @@ from definedge_service import DefinedgeService, DefinedgeError
 from journal_routes import create_journal_router
 from journal_analytics import create_analytics_router
 from quant_lab import create_quant_lab_router
+from ipo_routes import create_ipo_router
 from journal_models import DEFAULT_SETUP_TAGS, DEFAULT_EMOTION_TAGS
 from pathlib import Path
 from pydantic import BaseModel, Field, EmailStr, ConfigDict
@@ -1015,6 +1016,16 @@ async def on_startup():
         await db.quant_lab_ewma_cache.create_index(
             [("segment", 1), ("symbol", 1), ("fast_span", 1), ("slow_span", 1)], unique=True
         )
+        await db.ipos.create_index("id", unique=True)
+        # partialFilterExpression, not sparse=True: every IPO doc stores
+        # nse_symbol explicitly (None for manual entries), and a sparse index
+        # only skips documents missing the field entirely, not ones with it
+        # set to null — sparse still enforced uniqueness across all the
+        # nulls and 500'd on the second manually-added IPO (caught live).
+        await db.ipos.create_index(
+            "nse_symbol", unique=True, partialFilterExpression={"nse_symbol": {"$type": "string"}}
+        )
+        await db.ipos.create_index("issue_open_date")
     except Exception as e:  # noqa: BLE001
         logger.warning(f"Index creation: {e}")
 
@@ -1022,11 +1033,13 @@ async def on_startup():
 journal_router = create_journal_router(db, get_current_user, log_audit_event, definedge)
 analytics_router = create_analytics_router(db, get_current_user)
 quant_lab_router = create_quant_lab_router(db, definedge)
+ipo_router = create_ipo_router(db, get_current_admin, CRON_SECRET)
 
 app.include_router(api_router)
 app.include_router(journal_router, prefix="/api")
 app.include_router(analytics_router, prefix="/api")
 app.include_router(quant_lab_router, prefix="/api")
+app.include_router(ipo_router, prefix="/api")
 
 app.add_middleware(
     CORSMiddleware,
