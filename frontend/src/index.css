@@ -58,6 +58,7 @@ body {
 }
 .font-mono-ui {
     font-family: 'JetBrains Mono', monospace;
+    font-variant-numeric: tabular-nums;
 }
 
 /* Selection */

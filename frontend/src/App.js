@@ -17,6 +17,9 @@ import Contact from "@/components/site/Contact";
 import Footer from "@/components/site/Footer";
 import LegalPage from "@/components/site/LegalPage";
 import AlphaTerminal from "@/pages/AlphaTerminal";
+import EwmaCrossoverPage from "@/pages/alphaterminal/EwmaCrossoverPage";
+import SharpeDashboardPage from "@/pages/alphaterminal/SharpeDashboardPage";
+import ScannerDetail from "@/pages/alphaterminal/ScannerDetail";
 import Ipos from "@/pages/Ipos";
 import IpoDetail from "@/pages/IpoDetail";
 import Admin from "@/pages/Admin";
@@ -57,6 +60,12 @@ function App() {
           <Routes>
             <Route path="/" element={<Landing />} />
             <Route path="/alpha-terminal" element={<AlphaTerminal />} />
+            <Route path="/alpha-terminal/ewma-crossover" element={<EwmaCrossoverPage />} />
+            <Route path="/alpha-terminal/sharpe-dashboard" element={<SharpeDashboardPage />} />
+            <Route path="/alpha-terminal/momentum-leaders" element={<ScannerDetail scannerKey="momentum" label="Intraday Momentum Leaders" />} />
+            <Route path="/alpha-terminal/relative-strength-leaders" element={<ScannerDetail scannerKey="relative_strength" label="Relative Strength Leaders" />} />
+            <Route path="/alpha-terminal/breakout-candidates" element={<ScannerDetail scannerKey="breakout" label="Breakout Candidates" />} />
+            <Route path="/alpha-terminal/positional-opportunities" element={<ScannerDetail scannerKey="positional" label="Positional Opportunities" />} />
             <Route path="/ipos" element={<Ipos />} />
             <Route path="/ipos/:id" element={<IpoDetail />} />
             <Route path="/admin" element={<Admin />} />

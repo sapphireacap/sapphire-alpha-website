@@ -221,7 +221,10 @@ const SharpeDashboardTool = () => {
         ))}
       </div>
 
-      <div className="glass rounded-2xl p-6 md:p-8 mb-6">
+      <div className="glass rounded-2xl border border-white/10 p-5 md:p-6 mb-6">
+        <p className="font-mono-ui text-[10px] uppercase tracking-[0.24em] text-sapphire-light mb-4 pb-4 border-b border-white/10">
+          {mode === "compare" ? "Custom Comparison" : "Custom Ranking"}
+        </p>
         {mode === "compare" ? (
           <>
             <label className={label}>Symbols (2–10)</label>

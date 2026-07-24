@@ -1,27 +1,25 @@
 import { useEffect, useState } from "react";
 import axios from "axios";
 import { motion } from "framer-motion";
-import { useNavigate } from "react-router-dom";
-import { ArrowUpRight, TrendingUp, TrendingDown, Minus, Compass, FlaskConical } from "lucide-react";
+import { Link, useNavigate } from "react-router-dom";
+import { ArrowUpRight, TrendingUp, TrendingDown, Minus, Compass, FlaskConical, Clock } from "lucide-react";
 import Navbar from "../components/site/Navbar";
 import Footer from "../components/site/Footer";
 import ParticleField from "../components/site/ParticleField";
 import Reveal from "../components/site/Reveal";
 import BiasBadge from "../components/site/BiasBadge";
+import LivePulseDot from "../components/site/LivePulseDot";
 import { scrollToId } from "../components/site/SmoothScroll";
-import {
-  Accordion, AccordionItem, AccordionTrigger, AccordionContent,
-} from "../components/ui/accordion";
 import QuantLab from "./alphaterminal/QuantLab";
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 const EASE = [0.16, 1, 0.3, 1];
 
 const SCANNER_ORDER = [
-  { key: "momentum", label: "Intraday Momentum Leaders" },
-  { key: "relative_strength", label: "Relative Strength Leaders" },
-  { key: "breakout", label: "Breakout Candidates" },
-  { key: "positional", label: "Positional Opportunities" },
+  { key: "momentum", label: "Intraday Momentum Leaders", path: "momentum-leaders" },
+  { key: "relative_strength", label: "Relative Strength Leaders", path: "relative-strength-leaders" },
+  { key: "breakout", label: "Breakout Candidates", path: "breakout-candidates" },
+  { key: "positional", label: "Positional Opportunities", path: "positional-opportunities" },
 ];
 
 const DISCLAIMER =
@@ -62,7 +60,7 @@ const isTradingDay = (d) => {
 
 const nowIst = () => new Date(Date.now() + 5.5 * 60 * 60 * 1000);
 
-const getMarketUpdatedLabel = () => {
+export const getMarketUpdatedLabel = () => {
   const now = nowIst();
   const mins = now.getUTCHours() * 60 + now.getUTCMinutes();
   if (isTradingDay(now) && mins >= 9 * 60 + 30) return "Today, 09:30 AM IST";
@@ -87,7 +85,7 @@ const MOMENTUM_TREND = {
   Neutral: { Icon: Minus, color: "text-slate-400", box: "border-white/15 bg-white/5 text-slate-300" },
 };
 
-const MomentumTable = ({ rows }) => (
+export const MomentumTable = ({ rows }) => (
   <div className="glass rounded-2xl overflow-hidden" data-testid="momentum-table">
     {/* Desktop / tablet table */}
     <div className="hidden md:block">
@@ -176,12 +174,10 @@ const MomentumTable = ({ rows }) => (
 
 export const ComingSoonCard = ({ scannerKey }) => (
   <div
-    className="group glass rounded-2xl border border-white/10 px-6 py-20 md:py-28 flex flex-col items-center justify-center text-center transition-colors duration-500 hover:border-sapphire/40 hover:bg-sapphire/[0.03]"
+    className="relative glass rounded-2xl border border-dashed border-white/10 opacity-40 px-6 py-10 md:py-14 flex flex-col items-center justify-center text-center"
     data-testid={`coming-soon-${scannerKey}`}
   >
-    <span className="font-mono-ui text-[11px] uppercase tracking-[0.28em] text-slate-600 mb-4 transition-colors duration-500 group-hover:text-sapphire-light">
-      In Development
-    </span>
+    <Clock size={16} className="absolute top-4 right-4 text-slate-600" />
     <h4 className="font-display text-2xl md:text-3xl font-bold text-slate-300">Coming Soon</h4>
     <p className="mt-3 text-sm font-light text-slate-500 max-w-sm">
       This scanner is being calibrated and will activate here as soon as it goes live.
@@ -192,7 +188,7 @@ export const ComingSoonCard = ({ scannerKey }) => (
 const BIAS_STYLE = {
   Bullish: { color: "text-emerald-300", ring: "border-emerald-400/30", glow: "rgba(52,211,153,0.18)", Icon: TrendingUp, dot: "bg-emerald-400" },
   Bearish: { color: "text-red-300", ring: "border-red-400/30", glow: "rgba(248,113,113,0.18)", Icon: TrendingDown, dot: "bg-red-400" },
-  Neutral: { color: "text-slate-300", ring: "border-white/15", glow: "rgba(148,163,184,0.12)", Icon: Minus, dot: "bg-slate-400" },
+  Neutral: { color: "text-amber-300", ring: "border-amber-400/30", glow: "rgba(245,158,11,0.18)", Icon: Minus, dot: "bg-amber-400" },
 };
 
 const StraddleCompass = ({ signal }) => {
@@ -222,10 +218,10 @@ const StraddleCompass = ({ signal }) => {
   return (
       <div
         className={`relative glass rounded-2xl border ${style.ring} overflow-hidden`}
-        style={{ boxShadow: `0 0 60px ${style.glow} inset` }}
+        style={{ boxShadow: `0 0 60px ${style.glow} inset`, borderLeftWidth: 3 }}
         data-testid="straddle-compass"
       >
-        <div className="flex flex-col items-center text-center gap-5 p-8 md:p-14">
+        <div className="flex flex-col items-center text-center gap-5 p-6 md:p-10">
           <p className="font-mono-ui text-[10px] uppercase tracking-[0.28em] text-slate-500">Nifty Directional Bias</p>
           <div className="flex items-center gap-4">
             <span className={`inline-flex h-14 w-14 items-center justify-center rounded-xl border ${style.ring} ${style.color}`}>
@@ -243,21 +239,13 @@ const StraddleCompass = ({ signal }) => {
           </p>
         </div>
         <div className="px-6 md:px-8 py-4 border-t border-white/10 flex flex-wrap items-center justify-between gap-3">
-          <p className="font-mono-ui text-[11px] text-slate-500 flex items-center">
+          <p className="font-mono-ui text-[11px] text-slate-500 flex items-center flex-wrap">
             {live ? (
-              <>
-                <span className="relative flex h-2 w-2 mr-2">
-                  <span className="absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75 animate-ping" />
-                  <span className="relative inline-flex h-2 w-2 rounded-full bg-emerald-400" />
-                </span>
-                Status: <span className="text-emerald-300 ml-1">Live</span>
-              </>
+              <LivePulseDot color={style.dot} size="h-2 w-2" />
             ) : (
-              <>
-                <span className="inline-block h-2 w-2 rounded-full bg-amber-400 mr-2" />
-                Status: <span className="text-amber-300 ml-1">Standby</span>
-              </>
+              <span className={`inline-block h-2 w-2 rounded-full ${style.dot}`} />
             )}
+            <span className="ml-2">Status: <span className={`ml-1 ${style.color}`}>{live ? "Live" : "Standby"}</span></span>
             {displaySpot && (
               <span className="ml-4">
                 NIFTY SPOT: <span className="text-slate-300">{displaySpot}</span>
@@ -307,7 +295,7 @@ const TrackRecordPanel = ({ record }) => (
           {record.horizons.map((h) => (
             <div key={h.minutes} className="rounded-xl border border-white/10 bg-white/[0.02] p-4 text-center">
               <p className="font-mono-ui text-[10px] uppercase tracking-[0.18em] text-slate-500 mb-1.5">{h.minutes} min</p>
-              <p className="font-display text-2xl md:text-3xl font-black text-white mb-1">{(h.accuracy * 100).toFixed(0)}%</p>
+              <p className="font-mono-ui text-2xl md:text-3xl font-bold text-white mb-1">{(h.accuracy * 100).toFixed(0)}%</p>
               <p className="text-[11px] text-slate-500">{h.correct}/{h.evaluated} correct</p>
             </div>
           ))}
@@ -319,6 +307,60 @@ const TrackRecordPanel = ({ record }) => (
     )}
   </div>
 );
+
+const ScannerPreviewCard = ({ scanner, index, rows, hasData }) => {
+  const content = (
+    <>
+      <div className="flex items-center justify-between mb-4 gap-2">
+        <span className="flex items-center gap-3 min-w-0">
+          <span className="font-mono-ui text-xs text-sapphire-light shrink-0">{String(index + 1).padStart(2, "0")}</span>
+          <span className="font-display text-lg md:text-xl font-bold text-white tracking-tight truncate">{scanner.label}</span>
+        </span>
+        {hasData ? (
+          <span className="hidden sm:inline-flex items-center gap-1.5 rounded-full border border-emerald-400/25 bg-emerald-400/10 px-2.5 py-0.5 font-mono-ui text-[10px] uppercase tracking-wider text-emerald-300 shrink-0">
+            <LivePulseDot size="h-1.5 w-1.5" /> Live
+          </span>
+        ) : (
+          <span className="hidden sm:inline-flex rounded-full border border-white/15 px-2.5 py-0.5 font-mono-ui text-[10px] uppercase tracking-wider text-slate-500 shrink-0">
+            Soon
+          </span>
+        )}
+      </div>
+
+      {hasData ? (
+        <div className="space-y-2" data-testid={`scanner-preview-rows-${scanner.key}`}>
+          {rows.slice(0, 3).map((r) => (
+            <div key={r.id} className="flex items-center justify-between text-sm">
+              <span className="font-display font-bold text-white">{r.ticker}</span>
+              <span className="font-mono-ui text-slate-400">{r.momentum_score}</span>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <div className="space-y-2.5" data-testid={`scanner-preview-skeleton-${scanner.key}`}>
+          {[0, 1, 2].map((i) => (
+            <div key={i} className="h-3 rounded bg-white/5 animate-pulse" style={{ width: `${70 - i * 14}%` }} />
+          ))}
+        </div>
+      )}
+    </>
+  );
+
+  const cardCls = `glass rounded-2xl border p-5 md:p-6 transition-all duration-300 ${
+    hasData
+      ? "border-white/10 hover:border-sapphire/40 hover:bg-sapphire/[0.03] hover:shadow-[0_0_30px_rgba(31,95,208,0.15)] cursor-pointer"
+      : "border-dashed border-white/10 opacity-40"
+  }`;
+
+  if (!hasData) {
+    return <div className={cardCls} data-testid={`scanner-preview-${scanner.key}`}>{content}</div>;
+  }
+  return (
+    <Link to={`/alpha-terminal/${scanner.path}`} className={`block ${cardCls}`} data-testid={`scanner-preview-${scanner.key}`}>
+      {content}
+    </Link>
+  );
+};
 
 export default function AlphaTerminal() {
   const [data, setData] = useState({});
@@ -357,7 +399,7 @@ export default function AlphaTerminal() {
       <Navbar />
       <main className="relative bg-void min-h-screen">
         {/* Hero */}
-        <section className="relative pt-36 pb-16 md:pt-44 md:pb-20 overflow-hidden" data-testid="terminal-hero">
+        <section className="relative pt-28 pb-10 md:pt-32 md:pb-14 overflow-hidden" data-testid="terminal-hero">
           <ParticleField density={0.00006} />
           <div className="absolute inset-0 radial-glow" />
           <div className="absolute inset-0 bg-gradient-to-b from-void/0 to-void pointer-events-none" />
@@ -370,10 +412,7 @@ export default function AlphaTerminal() {
                   transition={{ duration: 0.7, ease: EASE }}
                   className="flex items-center gap-3 mb-6"
                 >
-                  <span className="relative flex h-2 w-2">
-                    <span className="absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75 animate-ping" />
-                    <span className="relative inline-flex h-2 w-2 rounded-full bg-emerald-400" />
-                  </span>
+                  <LivePulseDot />
                   <span className="font-mono-ui text-[11px] uppercase tracking-[0.28em] text-emerald-300 font-bold">
                     Live Alpha Terminal
                   </span>
@@ -401,101 +440,51 @@ export default function AlphaTerminal() {
           </div>
         </section>
 
-        {/* Scanners */}
-        <section className="relative pb-28 md:pb-40">
+        {/* Terminal panels */}
+        <section className="relative pb-20 md:pb-28">
           <div className="container-x">
             {loading ? (
               <div className="flex items-center justify-center py-32 text-slate-500 font-mono-ui text-sm gap-3" data-testid="terminal-loading">
                 <span className="h-2 w-2 rounded-full bg-sapphire-light animate-ping" /> Loading terminal…
               </div>
             ) : (
-              <>
-                <Accordion type="single" collapsible className="space-y-4" data-testid="scanner-accordion">
-                  <AccordionItem
-                    value="vector"
-                    className="border border-white/10 rounded-2xl overflow-hidden bg-white/[0.015]"
-                    data-testid="scanner-vector"
-                  >
-                    <AccordionTrigger
-                      className="px-5 md:px-6 py-5 hover:no-underline hover:bg-white/[0.03] transition-colors [&>svg]:text-sapphire-light"
-                      data-testid="scanner-trigger-vector"
-                    >
-                      <span className="flex items-center gap-4 text-left">
-                        <Compass size={18} className="text-sapphire-light" />
-                        <span className="font-display text-xl md:text-2xl font-bold text-white tracking-tight">Sapphire Nifty Vector</span>
-                        <span className="hidden sm:inline-flex rounded-full border border-white/15 px-2.5 py-0.5 font-mono-ui text-[10px] uppercase tracking-wider text-slate-500">
-                          Proprietary Signal
-                        </span>
-                      </span>
-                    </AccordionTrigger>
-                    <AccordionContent className="px-5 md:px-6 pb-6 pt-1">
-                      <StraddleCompass signal={signal} />
-                      <TrackRecordPanel record={trackRecord} />
-                    </AccordionContent>
-                  </AccordionItem>
+              <div className="space-y-10">
+                {/* Sapphire Nifty Vector — the one section that stays fully expanded inline */}
+                <div data-testid="scanner-vector">
+                  <div className="flex items-center gap-4 mb-4">
+                    <Compass size={18} className="text-sapphire-light" />
+                    <span className="font-display text-xl md:text-2xl font-bold text-white tracking-tight">Sapphire Nifty Vector</span>
+                    <span className="hidden sm:inline-flex rounded-full border border-white/15 px-2.5 py-0.5 font-mono-ui text-[10px] uppercase tracking-wider text-slate-500">
+                      Proprietary Signal
+                    </span>
+                  </div>
+                  <StraddleCompass signal={signal} />
+                  <TrackRecordPanel record={trackRecord} />
+                </div>
 
-                  <AccordionItem
-                    value="quant-lab"
-                    className="border border-white/10 rounded-2xl overflow-hidden bg-white/[0.015]"
-                    data-testid="scanner-quant-lab"
-                  >
-                    <AccordionTrigger
-                      className="px-5 md:px-6 py-5 hover:no-underline hover:bg-white/[0.03] transition-colors [&>svg]:text-sapphire-light"
-                      data-testid="scanner-trigger-quant-lab"
-                    >
-                      <span className="flex items-center gap-4 text-left">
-                        <FlaskConical size={18} className="text-sapphire-light" />
-                        <span className="font-display text-xl md:text-2xl font-bold text-white tracking-tight">Quant Lab</span>
-                        <span className="hidden sm:inline-flex items-center gap-1.5 rounded-full border border-emerald-400/25 bg-emerald-400/10 px-2.5 py-0.5 font-mono-ui text-[10px] uppercase tracking-wider text-emerald-300">
-                          <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" /> Live
-                        </span>
-                      </span>
-                    </AccordionTrigger>
-                    <AccordionContent className="px-5 md:px-6 pb-6 pt-1">
-                      <QuantLab />
-                    </AccordionContent>
-                  </AccordionItem>
+                {/* Quant Lab */}
+                <div data-testid="scanner-quant-lab">
+                  <div className="flex items-center gap-4 mb-4">
+                    <FlaskConical size={18} className="text-sapphire-light" />
+                    <span className="font-display text-xl md:text-2xl font-bold text-white tracking-tight">Quant Lab</span>
+                    <span className="hidden sm:inline-flex items-center gap-1.5 rounded-full border border-emerald-400/25 bg-emerald-400/10 px-2.5 py-0.5 font-mono-ui text-[10px] uppercase tracking-wider text-emerald-300">
+                      <LivePulseDot size="h-1.5 w-1.5" /> Live
+                    </span>
+                  </div>
+                  <QuantLab />
+                </div>
 
-                  {SCANNER_ORDER.map((s, i) => {
-                    const rows = data[s.key];
-                    const hasData = rows && rows.length > 0;
-                    return (
-                      <AccordionItem
-                        key={s.key}
-                        value={s.key}
-                        className="border border-white/10 rounded-2xl overflow-hidden bg-white/[0.015]"
-                        data-testid={`scanner-${s.key}`}
-                      >
-                        <AccordionTrigger
-                          className="px-5 md:px-6 py-5 hover:no-underline hover:bg-white/[0.03] transition-colors [&>svg]:text-sapphire-light"
-                          data-testid={`scanner-trigger-${s.key}`}
-                        >
-                          <span className="flex items-center gap-4 text-left">
-                            <span className="font-mono-ui text-xs text-sapphire-light">{String(i + 1).padStart(2, "0")}</span>
-                            <span className="font-display text-xl md:text-2xl font-bold text-white tracking-tight">{s.label}</span>
-                            {s.key === "momentum" ? (
-                              <span className="hidden sm:inline-flex items-center gap-1.5 rounded-full border border-white/15 bg-white/5 px-2.5 py-0.5 font-mono-ui text-[10px] uppercase tracking-wider text-slate-400" data-testid="scanner-trigger-momentum-updated">
-                                Updated: <span className="text-slate-300 normal-case">{getMarketUpdatedLabel()}</span>
-                              </span>
-                            ) : hasData ? (
-                              <span className="hidden sm:inline-flex items-center gap-1.5 rounded-full border border-emerald-400/25 bg-emerald-400/10 px-2.5 py-0.5 font-mono-ui text-[10px] uppercase tracking-wider text-emerald-300">
-                                <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" /> Live
-                              </span>
-                            ) : (
-                              <span className="hidden sm:inline-flex rounded-full border border-white/15 px-2.5 py-0.5 font-mono-ui text-[10px] uppercase tracking-wider text-slate-500">
-                                Soon
-                              </span>
-                            )}
-                          </span>
-                        </AccordionTrigger>
-                        <AccordionContent className="px-5 md:px-6 pb-6 pt-1">
-                          {hasData ? <MomentumTable rows={rows} /> : <ComingSoonCard scannerKey={s.key} />}
-                        </AccordionContent>
-                      </AccordionItem>
-                    );
-                  })}
-                </Accordion>
-              </>
+                {/* Scanners */}
+                <div>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {SCANNER_ORDER.map((s, i) => {
+                      const rows = data[s.key];
+                      const hasData = rows && rows.length > 0;
+                      return <ScannerPreviewCard key={s.key} scanner={s} index={i} rows={rows} hasData={hasData} />;
+                    })}
+                  </div>
+                </div>
+              </div>
             )}
 
             <Reveal className="mt-10">
