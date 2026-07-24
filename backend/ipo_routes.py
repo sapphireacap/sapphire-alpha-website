@@ -17,7 +17,7 @@ Data flow:
     nor SEBI's listing exposes) via POST/PUT /api/ipos. Saving a new-or-
     changed rhp_url schedules _generate_report() as a FastAPI BackgroundTask,
     so the save returns immediately rather than blocking on a ~15-30s PDF
-    fetch + Claude call — same background path the SEBI backfill uses.
+    fetch + Gemini call — same background path the SEBI backfill uses.
   - `status` is never admin input — it's computed from today vs. the three
     date fields on every read (_compute_status), so it can't go stale.
 """
@@ -30,9 +30,11 @@ import uuid
 from datetime import datetime, timezone, timedelta
 from typing import List, Optional
 
-import anthropic
 import httpx
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request
+from google import genai
+from google.genai import errors as genai_errors
+from google.genai import types as genai_types
 from pydantic import BaseModel, ConfigDict, Field
 from pypdf import PdfReader
 
@@ -51,7 +53,7 @@ NSE_MONTHS = {m: i + 1 for i, m in enumerate(
     ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
 )}
 
-ANTHROPIC_MODEL = os.environ.get("ANTHROPIC_MODEL", "claude-sonnet-4-6")
+GEMINI_MODEL = os.environ.get("GEMINI_MODEL", "gemini-2.5-flash")
 REPORT_SYSTEM_PROMPT = (
     "You are a neutral equity-research assistant summarizing an Indian IPO's Red "
     "Herring Prospectus (RHP) for retail investors. Write a short, plain-text report "
@@ -178,26 +180,28 @@ async def _extract_rhp_text(rhp_url: str) -> str:
     return text
 
 
-async def _call_anthropic(ipo: dict, rhp_text: str) -> dict:
+async def _call_gemini(ipo: dict, rhp_text: str) -> dict:
     """Returns {"report": str, "lot_size": int | None} — lot_size is parsed
     off the model's own trailing LOT_SIZE: line rather than a second API
     call, since it's already reading the full RHP text for the report."""
-    api_key = os.environ.get("ANTHROPIC_API_KEY")
+    api_key = os.environ.get("GEMINI_API_KEY")
     if not api_key:
-        raise ReportGenerationError("ANTHROPIC_API_KEY is not configured on the server.")
-    client = anthropic.AsyncAnthropic(api_key=api_key)
+        raise ReportGenerationError("GEMINI_API_KEY is not configured on the server.")
+    client = genai.Client(api_key=api_key)
     try:
-        resp = await client.messages.create(
-            model=ANTHROPIC_MODEL,
-            max_tokens=1500,
-            system=REPORT_SYSTEM_PROMPT,
-            messages=[{"role": "user", "content": f"Company: {ipo.get('company_name')}\n\nRHP text:\n\n{rhp_text}"}],
+        resp = await client.aio.models.generate_content(
+            model=GEMINI_MODEL,
+            contents=f"Company: {ipo.get('company_name')}\n\nRHP text:\n\n{rhp_text}",
+            config=genai_types.GenerateContentConfig(
+                system_instruction=REPORT_SYSTEM_PROMPT,
+                max_output_tokens=1500,
+            ),
         )
-    except anthropic.APIError as e:
-        raise ReportGenerationError(f"Anthropic API error: {e}")
-    full_text = "\n".join(b.text for b in resp.content if getattr(b, "type", None) == "text").strip()
+    except genai_errors.APIError as e:
+        raise ReportGenerationError(f"Gemini API error: {e}")
+    full_text = (resp.text or "").strip()
     if not full_text:
-        raise ReportGenerationError("Anthropic returned an empty report.")
+        raise ReportGenerationError("Gemini returned an empty report.")
 
     lot_size = None
     m = LOT_SIZE_LINE_RE.search(full_text)
@@ -219,7 +223,7 @@ async def _generate_report(db, ipo_id: str):
         return
     try:
         text = await _extract_rhp_text(ipo["rhp_url"])
-        result = await _call_anthropic(ipo, text)
+        result = await _call_gemini(ipo, text)
     except ReportGenerationError as e:
         await db.ipos.update_one({"id": ipo_id}, {"$set": {"report_error": str(e), "updated_at": now()}})
         return
