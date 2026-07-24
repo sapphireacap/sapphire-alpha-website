@@ -7,7 +7,7 @@ const CHAPTERS = [
   {
     no: "01",
     title: "Evidence Before Conviction.",
-    body: "We let data lead. Every idea is tested against history, structure, and statistical reasoning before it earns a place in our thinking.",
+    body: "Every idea begins with research. We explore quantitative techniques, market behaviour, and investment frameworks through a disciplined, evidence-driven process.",
   },
   {
     no: "02",
