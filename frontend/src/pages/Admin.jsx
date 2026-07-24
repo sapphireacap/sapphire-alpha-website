@@ -464,8 +464,10 @@ const IpoPanel = ({ onAuthError }) => {
         </div>
       </div>
       <p className="text-sm text-slate-500 mb-6">
-        Company name/dates/price band/issue size auto-populate from NSE's public IPO listings where available — add
-        the RHP link (plus sector/lot size, which NSE's feed doesn't expose) to trigger the AI report.
+        Company name/dates/price band/issue size auto-populate from NSE; the RHP link auto-populates from SEBI's
+        public filings (when SEBI has indexed it — mainboard company IPOs, not InvITs/REITs) and triggers the AI
+        report, which also fills in lot size from the RHP text itself. Sector stays admin-only — add it manually if
+        you want it shown.
       </p>
 
       {loading ? (

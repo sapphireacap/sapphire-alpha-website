@@ -9,15 +9,19 @@ Data flow:
     and `POST /api/admin/ipos/refresh-now` (admin-JWT-gated, "Refresh from
     NSE" button) both call the same _refresh_from_nse() — upserts company
     name / dates / price band / issue size from NSE's public (undocumented)
-    IPO endpoints, keyed on nse_symbol. Never touches rhp_url/sector/
-    lot_size/short_report on existing rows — those are admin-owned fields.
-  - Admin adds/edits rhp_url (and sector/lot_size, which NSE's API doesn't
-    expose) via POST/PUT /api/ipos. Saving a new-or-changed rhp_url schedules
-    _generate_report() as a FastAPI BackgroundTask, so the save returns
-    immediately rather than blocking on a ~15-30s PDF fetch + Claude call.
+    IPO endpoints, keyed on nse_symbol, then calls _backfill_rhp_links() to
+    fill rhp_url from SEBI's public RHP filings listing for any IPO that
+    doesn't have one yet. Never overwrites sector/lot_size/short_report, or
+    an rhp_url the admin already set — those stay admin-owned once present.
+  - Admin can also add/edit rhp_url (and sector/lot_size, which neither NSE
+    nor SEBI's listing exposes) via POST/PUT /api/ipos. Saving a new-or-
+    changed rhp_url schedules _generate_report() as a FastAPI BackgroundTask,
+    so the save returns immediately rather than blocking on a ~15-30s PDF
+    fetch + Claude call — same background path the SEBI backfill uses.
   - `status` is never admin input — it's computed from today vs. the three
     date fields on every read (_compute_status), so it can't go stale.
 """
+import asyncio
 import io
 import logging
 import os
@@ -56,8 +60,12 @@ REPORT_SYSTEM_PROMPT = (
     "BUSINESS OVERVIEW\nFINANCIAL SNAPSHOT\nOBJECTS OF THE ISSUE\nKEY RISK FACTORS\nCLOSING NOTE\n\n"
     "The CLOSING NOTE must stay neutral and end with a reminder that this is not "
     "investment advice. Base every claim strictly on the provided RHP text — never "
-    "invent numbers or facts that aren't in it."
+    "invent numbers or facts that aren't in it.\n\n"
+    "After CLOSING NOTE, on its own final line, output exactly:\n"
+    "LOT_SIZE: <integer number of equity shares in one market lot, or UNKNOWN if the "
+    "RHP text doesn't state it>"
 )
+LOT_SIZE_LINE_RE = re.compile(r"\n?LOT_SIZE:\s*(\d+|UNKNOWN)\s*$", re.IGNORECASE)
 
 
 class ReportGenerationError(Exception):
@@ -124,12 +132,25 @@ def _compute_status(ipo: dict) -> str:
 # ---------------------------------------------------------------------------
 # RHP fetch + extract + summarize
 # ---------------------------------------------------------------------------
+RHP_FETCH_ATTEMPTS = 3  # RHPs are large (10-20MB+); connections to SEBI's PDF host truncate
+                        # mid-transfer often enough in practice (observed live) to warrant a retry
+
+
 async def _extract_rhp_text(rhp_url: str) -> str:
-    async with httpx.AsyncClient(timeout=60, follow_redirects=True) as c:
-        try:
-            r = await c.get(rhp_url, headers={"User-Agent": BROWSER_USER_AGENT})
-        except httpx.HTTPError as e:
-            raise ReportGenerationError(f"Could not fetch the RHP PDF: {e}")
+    r = None
+    last_err = None
+    async with httpx.AsyncClient(timeout=90, follow_redirects=True) as c:
+        for attempt in range(RHP_FETCH_ATTEMPTS):
+            try:
+                r = await c.get(rhp_url, headers={"User-Agent": BROWSER_USER_AGENT})
+                break
+            except httpx.HTTPError as e:
+                last_err = e
+                r = None
+                if attempt < RHP_FETCH_ATTEMPTS - 1:
+                    await asyncio.sleep(2 * (attempt + 1))
+    if r is None:
+        raise ReportGenerationError(f"Could not fetch the RHP PDF after {RHP_FETCH_ATTEMPTS} attempts: {last_err}")
     if r.status_code != 200:
         raise ReportGenerationError(f"Could not fetch the RHP PDF (HTTP {r.status_code}).")
 
@@ -157,7 +178,10 @@ async def _extract_rhp_text(rhp_url: str) -> str:
     return text
 
 
-async def _call_anthropic(ipo: dict, rhp_text: str) -> str:
+async def _call_anthropic(ipo: dict, rhp_text: str) -> dict:
+    """Returns {"report": str, "lot_size": int | None} — lot_size is parsed
+    off the model's own trailing LOT_SIZE: line rather than a second API
+    call, since it's already reading the full RHP text for the report."""
     api_key = os.environ.get("ANTHROPIC_API_KEY")
     if not api_key:
         raise ReportGenerationError("ANTHROPIC_API_KEY is not configured on the server.")
@@ -171,10 +195,18 @@ async def _call_anthropic(ipo: dict, rhp_text: str) -> str:
         )
     except anthropic.APIError as e:
         raise ReportGenerationError(f"Anthropic API error: {e}")
-    report = "\n".join(b.text for b in resp.content if getattr(b, "type", None) == "text").strip()
-    if not report:
+    full_text = "\n".join(b.text for b in resp.content if getattr(b, "type", None) == "text").strip()
+    if not full_text:
         raise ReportGenerationError("Anthropic returned an empty report.")
-    return report
+
+    lot_size = None
+    m = LOT_SIZE_LINE_RE.search(full_text)
+    report = full_text
+    if m:
+        report = full_text[:m.start()].strip()
+        if m.group(1).upper() != "UNKNOWN":
+            lot_size = int(m.group(1))
+    return {"report": report, "lot_size": lot_size}
 
 
 async def _generate_report(db, ipo_id: str):
@@ -187,7 +219,7 @@ async def _generate_report(db, ipo_id: str):
         return
     try:
         text = await _extract_rhp_text(ipo["rhp_url"])
-        report = await _call_anthropic(ipo, text)
+        result = await _call_anthropic(ipo, text)
     except ReportGenerationError as e:
         await db.ipos.update_one({"id": ipo_id}, {"$set": {"report_error": str(e), "updated_at": now()}})
         return
@@ -195,9 +227,14 @@ async def _generate_report(db, ipo_id: str):
         logger.exception("Unexpected IPO report generation failure for %s", ipo_id)
         await db.ipos.update_one({"id": ipo_id}, {"$set": {"report_error": f"Unexpected error: {e}", "updated_at": now()}})
         return
-    await db.ipos.update_one({"id": ipo_id}, {"$set": {
-        "short_report": report, "report_generated_at": now(), "report_error": None, "updated_at": now(),
-    }})
+    patch = {
+        "short_report": result["report"], "report_generated_at": now(), "report_error": None, "updated_at": now(),
+    }
+    # Only fill lot_size if the admin hasn't already set it — same "auto-fill
+    # missing fields, never clobber admin edits" rule as the NSE/SEBI backfill.
+    if result["lot_size"] is not None and ipo.get("lot_size") is None:
+        patch["lot_size"] = result["lot_size"]
+    await db.ipos.update_one({"id": ipo_id}, {"$set": patch})
 
 
 # ---------------------------------------------------------------------------
@@ -234,7 +271,7 @@ async def _fetch_nse_ipos() -> list:
     return r.json()
 
 
-async def _refresh_from_nse(db) -> dict:
+async def _refresh_from_nse(db, background_tasks: BackgroundTasks) -> dict:
     rows = await _fetch_nse_ipos()
     upserted = 0
     for row in rows:
@@ -260,7 +297,85 @@ async def _refresh_from_nse(db) -> dict:
             doc["status"] = patch["status"]
             await db.ipos.insert_one(doc)
         upserted += 1
-    return {"upserted": upserted, "total_from_nse": len(rows)}
+    rhp_matched = await _backfill_rhp_links(db, background_tasks)
+    return {"upserted": upserted, "total_from_nse": len(rows), "rhp_matched": rhp_matched}
+
+
+# ---------------------------------------------------------------------------
+# SEBI RHP auto-discovery — fills in rhp_url for IPOs that don't have one yet
+# ---------------------------------------------------------------------------
+# SEBI's own public Red Herring filings listing. Verified live: a plain
+# server-rendered HTML table (no JS/cookies needed), one row per company with
+# a link to a filing detail page that embeds the actual RHP PDF in an
+# <iframe src='.../web/?file=<pdf_url>'>. More authoritative than NSE's
+# undocumented JSON API (it's the regulator's own listing), but it's still an
+# HTML scrape of an unpublished page structure, not a published API — same
+# fragility caveat applies (SEBI can restructure this page without notice).
+SEBI_PUBLIC_ISSUES_URL = "https://www.sebi.gov.in/sebiweb/home/HomeAction.do?doListing=yes&sid=3&ssid=15&smid=0"
+SEBI_ROW_RE = re.compile(
+    r'href="(https://www\.sebi\.gov\.in/filings/public-issues/[^"]+)"\s+target="_blank"\s+title="([^<]+?)\s*-\s*RHP',
+)
+SEBI_PDF_IFRAME_RE = re.compile(r"web/\?file=(https://www\.sebi\.gov\.in/sebi_data/attachdocs/[^'\"]+)")
+
+
+def _normalize_company_name(name: str) -> str:
+    """Uppercase + alphanumeric-only, so "INDO-MIM Limited" (NSE) and
+    "Indo-MIM Limited" (SEBI) compare equal despite casing/punctuation
+    differences between the two sources."""
+    return re.sub(r"[^A-Z0-9]", "", (name or "").upper())
+
+
+async def _fetch_sebi_rhp_index() -> dict:
+    """{normalized_company_name: filing_detail_url}."""
+    async with httpx.AsyncClient(timeout=30, follow_redirects=True) as c:
+        r = await c.get(SEBI_PUBLIC_ISSUES_URL, headers={"User-Agent": BROWSER_USER_AGENT})
+    if r.status_code != 200:
+        raise RuntimeError(f"SEBI filings page fetch failed (HTTP {r.status_code}).")
+    return {_normalize_company_name(name): href for href, name in SEBI_ROW_RE.findall(r.text)}
+
+
+async def _resolve_sebi_rhp_pdf(detail_url: str) -> Optional[str]:
+    async with httpx.AsyncClient(timeout=30, follow_redirects=True) as c:
+        r = await c.get(detail_url, headers={"User-Agent": BROWSER_USER_AGENT})
+    if r.status_code != 200:
+        return None
+    m = SEBI_PDF_IFRAME_RE.search(r.text)
+    return m.group(1) if m else None
+
+
+async def _backfill_rhp_links(db, background_tasks: BackgroundTasks) -> int:
+    """For every IPO still missing an rhp_url, try to find it on SEBI's
+    public RHP filings listing by company name. A match auto-triggers report
+    generation, same as an admin pasting a link in by hand — this never
+    touches rows that already have an rhp_url (admin edits always win), and
+    a failure here is swallowed rather than breaking the NSE refresh it
+    rides along with, since it's best-effort enrichment, not core data."""
+    missing = await db.ipos.find({"rhp_url": None}, {"_id": 0, "id": 1, "company_name": 1}).to_list(200)
+    if not missing:
+        return 0
+    try:
+        index = await _fetch_sebi_rhp_index()
+    except Exception:  # noqa: BLE001
+        logger.exception("SEBI RHP index fetch failed")
+        return 0
+
+    matched = 0
+    for ipo in missing:
+        detail_url = index.get(_normalize_company_name(ipo["company_name"]))
+        if not detail_url:
+            continue
+        try:
+            pdf_url = await _resolve_sebi_rhp_pdf(detail_url)
+        except Exception:  # noqa: BLE001
+            continue
+        if not pdf_url:
+            continue
+        await db.ipos.update_one(
+            {"id": ipo["id"]}, {"$set": {"rhp_url": pdf_url, "updated_at": datetime.now(timezone.utc).isoformat()}}
+        )
+        background_tasks.add_task(_generate_report, db, ipo["id"])
+        matched += 1
+    return matched
 
 
 # ---------------------------------------------------------------------------
@@ -311,24 +426,25 @@ def create_ipo_router(db, get_current_admin, cron_secret: str) -> APIRouter:
         return updated
 
     @router.post("/admin/ipos/nse-refresh")
-    async def nse_refresh_cron(request: Request):
+    async def nse_refresh_cron(request: Request, background_tasks: BackgroundTasks):
         """Called by an external cron (same X-Cron-Key mechanism as the
         existing Definedge auto-refresh) rather than admin JWT, since this is
-        a machine caller."""
+        a machine caller. Also backfills rhp_url from SEBI's public filings
+        listing for any IPO that doesn't have one yet — see _backfill_rhp_links."""
         if not cron_secret or request.headers.get("X-Cron-Key") != cron_secret:
             raise HTTPException(status_code=401, detail="Invalid cron key")
         try:
-            return await _refresh_from_nse(db)
+            return await _refresh_from_nse(db, background_tasks)
         except Exception as e:  # noqa: BLE001
             raise HTTPException(status_code=502, detail=f"NSE refresh failed: {e}")
 
     @router.post("/admin/ipos/refresh-now")
-    async def nse_refresh_admin(admin: dict = Depends(get_current_admin)):
-        """Same refresh, triggered by the admin UI's "Refresh from NSE"
-        button — admin-JWT-gated rather than cron-secret-gated so the secret
-        never has to live in the browser."""
+    async def nse_refresh_admin(background_tasks: BackgroundTasks, admin: dict = Depends(get_current_admin)):
+        """Same refresh (NSE data + SEBI RHP backfill), triggered by the admin
+        UI's "Refresh from NSE" button — admin-JWT-gated rather than
+        cron-secret-gated so the secret never has to live in the browser."""
         try:
-            return await _refresh_from_nse(db)
+            return await _refresh_from_nse(db, background_tasks)
         except Exception as e:  # noqa: BLE001
             raise HTTPException(status_code=502, detail=f"NSE refresh failed: {e}")
 
