@@ -155,7 +155,7 @@ export default function Ipos() {
               className="mt-6 text-base md:text-lg font-light text-slate-400 leading-relaxed max-w-2xl"
               data-testid="ipos-subtitle"
             >
-              Current and upcoming mainboard IPOs, with an AI-generated short read on each company's Red Herring Prospectus.
+              Current and Upcoming Mainboard IPOs, with a concise breakdown of each company's Red Herring Prospectus.
             </motion.p>
           </div>
         </section>

@@ -31,8 +31,10 @@ const ReportSection = ({ ipo }) => {
   if (ipo.report_error) {
     return (
       <div className="glass rounded-2xl border border-white/10 p-8 text-center" data-testid="ipo-report-error">
-        <p className="font-mono-ui text-[10px] uppercase tracking-[0.24em] text-slate-500 mb-3">Report Unavailable</p>
-        <p className="text-sm text-slate-400 leading-relaxed max-w-md mx-auto">{ipo.report_error}</p>
+        <p className="font-mono-ui text-[10px] uppercase tracking-[0.24em] text-slate-500 mb-3">Feature Coming Soon</p>
+        <p className="text-sm text-slate-400 leading-relaxed max-w-md mx-auto">
+          AI-generated RHP summaries are on their way. Check back soon.
+        </p>
       </div>
     );
   }
