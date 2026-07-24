@@ -33,7 +33,7 @@ const ReportSection = ({ ipo }) => {
       <div className="glass rounded-2xl border border-white/10 p-8 text-center" data-testid="ipo-report-error">
         <p className="font-mono-ui text-[10px] uppercase tracking-[0.24em] text-slate-500 mb-3">Feature Coming Soon</p>
         <p className="text-sm text-slate-400 leading-relaxed max-w-md mx-auto">
-          AI-generated RHP summaries are on their way. Check back soon.
+          RHP summaries are on their way. Check back soon.
         </p>
       </div>
     );
