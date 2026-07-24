@@ -9,15 +9,18 @@ Data flow:
     and `POST /api/admin/ipos/refresh-now` (admin-JWT-gated, "Refresh from
     NSE" button) both call the same _refresh_from_nse() — upserts company
     name / dates / price band / issue size from NSE's public (undocumented)
-    IPO endpoints, keyed on nse_symbol, then calls _backfill_rhp_links() to
-    fill rhp_url from SEBI's public RHP filings listing for any IPO that
-    doesn't have one yet. Never overwrites sector/lot_size/short_report, or
-    an rhp_url the admin already set — those stay admin-owned once present.
-  - Admin can also add/edit rhp_url (and sector/lot_size, which neither NSE
-    nor SEBI's listing exposes) via POST/PUT /api/ipos. Saving a new-or-
-    changed rhp_url schedules _generate_report() as a FastAPI BackgroundTask,
-    so the save returns immediately rather than blocking on a ~15-30s PDF
-    fetch + Gemini call — same background path the SEBI backfill uses.
+    IPO endpoints, keyed on nse_symbol; estimates listing_date from the SEBI
+    T+3-trading-day rule (or NSE's own confirmed date once it exists); calls
+    _backfill_rhp_links() to fill rhp_url from SEBI's public RHP filings
+    listing; and _backfill_lot_sizes() to fill lot_size from Zerodha's public
+    IPO pages (matched by exchange symbol). None of these ever overwrite a
+    field that's already set — sector, and any rhp_url/lot_size the admin (or
+    a prior auto-fill) already set, stay put.
+  - Admin can also add/edit rhp_url (and sector, which no source here
+    exposes) via POST/PUT /api/ipos. Saving a new-or-changed rhp_url
+    schedules _generate_report() as a FastAPI BackgroundTask, so the save
+    returns immediately rather than blocking on a ~15-30s PDF fetch + Gemini
+    call — same background path the SEBI backfill uses.
   - `status` is never admin input — it's computed from today vs. the three
     date fields on every read (_compute_status), so it can't go stale.
 """
@@ -376,7 +379,11 @@ async def _refresh_from_nse(db, background_tasks: BackgroundTasks) -> dict:
             await db.ipos.insert_one(doc)
         upserted += 1
     rhp_matched = await _backfill_rhp_links(db, background_tasks)
-    return {"upserted": upserted, "total_from_nse": len(rows), "rhp_matched": rhp_matched}
+    lot_size_matched = await _backfill_lot_sizes(db)
+    return {
+        "upserted": upserted, "total_from_nse": len(rows),
+        "rhp_matched": rhp_matched, "lot_size_matched": lot_size_matched,
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -452,6 +459,77 @@ async def _backfill_rhp_links(db, background_tasks: BackgroundTasks) -> int:
             {"id": ipo["id"]}, {"$set": {"rhp_url": pdf_url, "updated_at": datetime.now(timezone.utc).isoformat()}}
         )
         background_tasks.add_task(_generate_report, db, ipo["id"])
+        matched += 1
+    return matched
+
+
+# ---------------------------------------------------------------------------
+# Zerodha lot-size auto-discovery — fills in lot_size for IPOs missing one
+# ---------------------------------------------------------------------------
+# Neither NSE's API nor the RHP text reliably states the finalized lot size
+# (it's a "[*]" placeholder in the RHP until the price band is finalized,
+# confirmed by reading real RHP/abridged-prospectus text). Zerodha's public
+# IPO pages publish it directly, server-rendered, matched by exchange symbol
+# (exact, not fuzzy name-matching) since the index page shows the ticker
+# right next to each listing. Same fragility caveat as the other scrapes —
+# a public broker page, not a published API, can restructure without notice.
+ZERODHA_IPO_INDEX_URL = "https://zerodha.com/ipo/"
+ZERODHA_SYMBOL_LINK_RE = re.compile(
+    r'<td class="name">\s*<a href="(/ipo/\d+/[a-z0-9-]+)">\s*<span class="ipo-symbol">\s*([A-Z0-9&]+)\s*<span',
+    re.S,
+)
+ZERODHA_LOT_SIZE_RE = re.compile(r'lot-size-ipo">Lot size</a>\s*(\d+)\s*(?:&mdash;|&ndash;|-)')
+
+
+async def _fetch_zerodha_index() -> dict:
+    """{nse_symbol: detail_url}."""
+    async with httpx.AsyncClient(timeout=30, follow_redirects=True) as c:
+        r = await c.get(ZERODHA_IPO_INDEX_URL, headers={"User-Agent": BROWSER_USER_AGENT})
+    if r.status_code != 200:
+        raise RuntimeError(f"Zerodha IPO index fetch failed (HTTP {r.status_code}).")
+    return {symbol: f"https://zerodha.com{href}" for href, symbol in ZERODHA_SYMBOL_LINK_RE.findall(r.text)}
+
+
+async def _fetch_zerodha_lot_size(detail_url: str) -> Optional[int]:
+    async with httpx.AsyncClient(timeout=30, follow_redirects=True) as c:
+        r = await c.get(detail_url, headers={"User-Agent": BROWSER_USER_AGENT})
+    if r.status_code != 200:
+        return None
+    m = ZERODHA_LOT_SIZE_RE.search(r.text)
+    return int(m.group(1)) if m else None
+
+
+async def _backfill_lot_sizes(db) -> int:
+    """For every IPO still missing lot_size (and with an nse_symbol to match
+    on), try Zerodha's public IPO pages. Never touches rows that already
+    have a lot_size — admin edits (or an earlier Gemini extraction) always
+    win. Best-effort: any failure here is swallowed rather than breaking the
+    NSE refresh it rides along with."""
+    missing = await db.ipos.find(
+        {"lot_size": None, "nse_symbol": {"$ne": None}}, {"_id": 0, "id": 1, "nse_symbol": 1}
+    ).to_list(200)
+    if not missing:
+        return 0
+    try:
+        index = await _fetch_zerodha_index()
+    except Exception:  # noqa: BLE001
+        logger.exception("Zerodha IPO index fetch failed")
+        return 0
+
+    matched = 0
+    for ipo in missing:
+        detail_url = index.get(ipo["nse_symbol"])
+        if not detail_url:
+            continue
+        try:
+            lot_size = await _fetch_zerodha_lot_size(detail_url)
+        except Exception:  # noqa: BLE001
+            continue
+        if lot_size is None:
+            continue
+        await db.ipos.update_one(
+            {"id": ipo["id"]}, {"$set": {"lot_size": lot_size, "updated_at": datetime.now(timezone.utc).isoformat()}}
+        )
         matched += 1
     return matched
 

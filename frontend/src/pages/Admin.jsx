@@ -464,10 +464,10 @@ const IpoPanel = ({ onAuthError }) => {
         </div>
       </div>
       <p className="text-sm text-slate-500 mb-6">
-        Company name/dates/price band/issue size auto-populate from NSE; the RHP link auto-populates from SEBI's
-        public filings (when SEBI has indexed it — mainboard company IPOs, not InvITs/REITs) and triggers the AI
-        report, which also fills in lot size from the RHP text itself. Sector stays admin-only — add it manually if
-        you want it shown.
+        Company name/dates/price band/issue size auto-populate from NSE, listing date from the SEBI T+3 rule (or
+        NSE's own confirmed date once known), the RHP link from SEBI's public filings (mainboard company IPOs, not
+        InvITs/REITs — triggers the AI report), and lot size from Zerodha's public IPO pages. Sector stays
+        admin-only — add it manually if you want it shown.
       </p>
 
       {loading ? (
