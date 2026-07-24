@@ -245,13 +245,77 @@ async def _generate_report(db, ipo_id: str):
 # NSE auto-refresh (undocumented public endpoint — see plan notes on risk)
 # ---------------------------------------------------------------------------
 def _parse_nse_date(s: str) -> Optional[str]:
-    """"27-Jul-2026" -> "2026-07-27". Returns None on anything unexpected
-    rather than raising — one bad row shouldn't break the whole refresh."""
+    """"27-Jul-2026" or "27-JUL-2026" -> "2026-07-27" (NSE's two endpoints use
+    different month casing). Returns None on anything unexpected rather than
+    raising — one bad row shouldn't break the whole refresh."""
     try:
         d, mon, y = s.split("-")
-        return f"{y}-{NSE_MONTHS[mon]:02d}-{int(d):02d}"
+        return f"{y}-{NSE_MONTHS[mon.capitalize()]:02d}-{int(d):02d}"
     except Exception:  # noqa: BLE001
         return None
+
+
+# NSE full-day trading holidays — duplicated from server.py/AlphaTerminal.jsx
+# (no shared config layer across languages/modules); needs a fresh entry set
+# added each calendar year.
+NSE_HOLIDAYS = {
+    "2026-01-26", "2026-03-03", "2026-03-26", "2026-03-31", "2026-04-03",
+    "2026-04-14", "2026-05-01", "2026-05-28", "2026-06-26", "2026-09-14",
+    "2026-10-02", "2026-10-20", "2026-11-10", "2026-11-24", "2026-12-25",
+}
+
+
+def _add_trading_days(date_iso: str, days: int) -> str:
+    """SEBI has mandated a fixed T+3-trading-day listing timeline for
+    book-built mainboard issues since Dec 2023; the RHP itself only states
+    this as a rule ("within three Working Days from the Bid/Offer Closing
+    Date"), not a concrete calendar date — confirmed by reading real RHP
+    text, where the actual number is a "[*]" placeholder pending
+    finalization. This computes the estimate from the rule; a confirmed
+    date from NSE's public-past-issues feed (_fetch_nse_listing_dates)
+    always takes priority over this once it exists."""
+    d = datetime.strptime(date_iso, "%Y-%m-%d").date()
+    added = 0
+    while added < days:
+        d += timedelta(days=1)
+        if d.weekday() < 5 and d.isoformat() not in NSE_HOLIDAYS:
+            added += 1
+    return d.isoformat()
+
+
+def _apply_listing_date_estimate(doc: dict):
+    """Fill listing_date with the T+3-trading-day estimate if it's empty and
+    issue_close_date is known — same rule the NSE refresh applies, so
+    manually-added IPOs get the same treatment as NSE-sourced ones."""
+    if not doc.get("listing_date") and doc.get("issue_close_date"):
+        doc["listing_date"] = _add_trading_days(doc["issue_close_date"], 3)
+
+
+NSE_PAST_ISSUES_URL = "https://www.nseindia.com/api/public-past-issues"
+
+
+async def _fetch_nse_listing_dates() -> dict:
+    """{nse_symbol: listing_date_iso} for issues NSE has confirmed an actual
+    listing date for (only populated post-close, once known). Best-effort —
+    returns {} on any failure rather than breaking the NSE refresh it rides
+    along with."""
+    try:
+        async with httpx.AsyncClient(timeout=30) as c:
+            r = await c.get(NSE_PAST_ISSUES_URL, headers={"User-Agent": BROWSER_USER_AGENT, "Accept": "application/json"})
+        if r.status_code != 200:
+            return {}
+        out = {}
+        for row in r.json():
+            symbol, listing = row.get("symbol"), row.get("listingDate")
+            if not symbol or not listing or listing == "-":
+                continue
+            iso = _parse_nse_date(listing)
+            if iso:
+                out[symbol] = iso
+        return out
+    except Exception:  # noqa: BLE001
+        logger.exception("NSE listing-date fetch failed")
+        return {}
 
 
 def _parse_price_band(s: str) -> dict:
@@ -277,6 +341,7 @@ async def _fetch_nse_ipos() -> list:
 
 async def _refresh_from_nse(db, background_tasks: BackgroundTasks) -> dict:
     rows = await _fetch_nse_ipos()
+    confirmed_listing_dates = await _fetch_nse_listing_dates()
     upserted = 0
     for row in rows:
         symbol, company = row.get("symbol"), row.get("companyName")
@@ -292,8 +357,17 @@ async def _refresh_from_nse(db, background_tasks: BackgroundTasks) -> dict:
             "exchange": ["NSE"],
             "updated_at": datetime.now(timezone.utc).isoformat(),
         }
-        patch["status"] = _compute_status(patch)
         existing = await db.ipos.find_one({"nse_symbol": symbol}, {"_id": 0})
+
+        # Listing date: NSE's own confirmation always wins once it exists
+        # (real, not estimated); otherwise fall back to the SEBI T+3-trading-
+        # day rule, but only if nothing's been filled in yet.
+        if symbol in confirmed_listing_dates:
+            patch["listing_date"] = confirmed_listing_dates[symbol]
+        elif patch["issue_close_date"] and not (existing and existing.get("listing_date")):
+            patch["listing_date"] = _add_trading_days(patch["issue_close_date"], 3)
+
+        patch["status"] = _compute_status({**(existing or {}), **patch})
         if existing:
             await db.ipos.update_one({"nse_symbol": symbol}, {"$set": patch})
         else:
@@ -409,6 +483,7 @@ def create_ipo_router(db, get_current_admin, cron_secret: str) -> APIRouter:
     async def create_ipo(payload: IpoCreateRequest, background_tasks: BackgroundTasks, admin: dict = Depends(get_current_admin)):
         record = IpoRecord(**payload.model_dump())
         doc = record.model_dump()
+        _apply_listing_date_estimate(doc)
         doc["status"] = _compute_status(doc)
         await db.ipos.insert_one(doc)
         doc.pop("_id", None)
@@ -422,6 +497,7 @@ def create_ipo_router(db, get_current_admin, cron_secret: str) -> APIRouter:
         if not existing:
             raise HTTPException(status_code=404, detail="IPO not found.")
         updated = {**existing, **payload.model_dump(), "id": ipo_id, "updated_at": datetime.now(timezone.utc).isoformat()}
+        _apply_listing_date_estimate(updated)
         updated["status"] = _compute_status(updated)
         rhp_changed = bool(payload.rhp_url) and payload.rhp_url != existing.get("rhp_url")
         await db.ipos.update_one({"id": ipo_id}, {"$set": updated})
