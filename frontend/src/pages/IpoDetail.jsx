@@ -2,9 +2,11 @@ import { useEffect, useState } from "react";
 import axios from "axios";
 import { useParams, useNavigate } from "react-router-dom";
 import { ArrowLeft, ExternalLink, Loader2, FileText } from "lucide-react";
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
 import Navbar from "../components/site/Navbar";
 import Footer from "../components/site/Footer";
 import { IpoStatusBadge } from "./Ipos";
+import { GMP_DISCLAIMER } from "./gmpDisclaimer";
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 
@@ -26,6 +28,93 @@ const FactCard = ({ label, value }) => (
     <p className="font-display text-lg font-bold text-white tracking-tight">{value ?? "—"}</p>
   </div>
 );
+
+const fmtDateTime = (iso) => {
+  if (!iso) return "—";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "—";
+  return d.toLocaleString("en-IN", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" });
+};
+
+const GmpChart = ({ history }) => {
+  const series = history.map((h) => ({ ...h, label: fmtDateTime(h.scraped_at) }));
+  return (
+    <div className="h-56" data-testid="gmp-chart">
+      <ResponsiveContainer width="100%" height="100%">
+        <LineChart data={series} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
+          <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" vertical={false} />
+          <XAxis dataKey="label" tick={{ fill: "#64748B", fontSize: 10 }} axisLine={{ stroke: "rgba(255,255,255,0.1)" }} tickLine={false} minTickGap={60} />
+          <YAxis tick={{ fill: "#64748B", fontSize: 11 }} axisLine={false} tickLine={false} domain={["auto", "auto"]} width={48} />
+          <Tooltip
+            contentStyle={{ background: "#0A0D18", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 8, fontSize: 12 }}
+            labelStyle={{ color: "#94A3B8" }}
+            itemStyle={{ color: "#E2E8F0" }}
+            formatter={(v) => [`₹${v}`, "GMP"]}
+          />
+          <Line type="monotone" dataKey="gmp" name="GMP" stroke="#437EEB" strokeWidth={1.5} dot={false} isAnimationActive={false} />
+        </LineChart>
+      </ResponsiveContainer>
+    </div>
+  );
+};
+
+const GmpSection = ({ gmp, gmpLoading }) => {
+  if (gmpLoading) {
+    return (
+      <div className="glass rounded-2xl p-6 md:p-8 mb-6 flex items-center justify-center text-slate-500 gap-3" data-testid="gmp-loading">
+        <Loader2 className="animate-spin" size={16} /> Loading GMP…
+      </div>
+    );
+  }
+
+  const current = gmp?.current ?? null;
+
+  return (
+    <div className="glass rounded-2xl p-6 md:p-8 mb-6" data-testid="gmp-section">
+      <p className="font-mono-ui text-[10px] uppercase tracking-[0.22em] text-slate-500 mb-5">Grey Market Premium</p>
+
+      {!current ? (
+        <p className="text-sm text-slate-500 py-6 text-center" data-testid="gmp-empty">No GMP data available for this IPO yet.</p>
+      ) : (
+        <>
+          <div className="flex flex-wrap items-end gap-x-10 gap-y-4 mb-6">
+            <div>
+              <p className="font-mono-ui text-[10px] uppercase tracking-[0.18em] text-slate-500 mb-1">GMP</p>
+              <p className={`font-display text-3xl md:text-4xl font-black tracking-tight ${current.gmp > 0 ? "text-emerald-400" : current.gmp < 0 ? "text-red-400" : "text-white"}`}>
+                {current.gmp > 0 ? "+" : ""}₹{current.gmp}
+              </p>
+            </div>
+            {current.price_band_text && (
+              <div>
+                <p className="font-mono-ui text-[10px] uppercase tracking-[0.18em] text-slate-500 mb-1">Price Band</p>
+                <p className="text-base text-slate-300">{current.price_band_text}</p>
+              </div>
+            )}
+            {current.status_text && (
+              <div>
+                <p className="font-mono-ui text-[10px] uppercase tracking-[0.18em] text-slate-500 mb-1">Source Status</p>
+                <p className="text-base text-slate-300">{current.status_text}</p>
+              </div>
+            )}
+            <div>
+              <p className="font-mono-ui text-[10px] uppercase tracking-[0.18em] text-slate-500 mb-1">Last Updated</p>
+              <p className="text-sm text-slate-500">
+                {fmtDateTime(current.scraped_at)}
+                {gmp.is_stale && <span className="text-amber-400 ml-2">(may be stale)</span>}
+              </p>
+            </div>
+          </div>
+
+          {gmp.history && gmp.history.length > 1 && <GmpChart history={gmp.history} />}
+        </>
+      )}
+
+      <p className="text-[11px] font-light text-slate-600 mt-6 pt-4 border-t border-white/10" data-testid="gmp-disclaimer">
+        {GMP_DISCLAIMER}
+      </p>
+    </div>
+  );
+};
 
 const ReportSection = ({ ipo }) => {
   if (ipo.report_error) {
@@ -74,6 +163,8 @@ export default function IpoDetail() {
   const [ipo, setIpo] = useState(null);
   const [loading, setLoading] = useState(true);
   const [notFound, setNotFound] = useState(false);
+  const [gmp, setGmp] = useState(null);
+  const [gmpLoading, setGmpLoading] = useState(true);
 
   useEffect(() => {
     window.scrollTo(0, 0);
@@ -83,6 +174,12 @@ export default function IpoDetail() {
       .then((r) => setIpo(r.data))
       .catch(() => setNotFound(true))
       .finally(() => setLoading(false));
+
+    setGmpLoading(true);
+    axios.get(`${API}/ipos/${id}/gmp`)
+      .then((r) => setGmp(r.data))
+      .catch(() => setGmp(null))
+      .finally(() => setGmpLoading(false));
   }, [id]);
 
   return (
@@ -136,6 +233,8 @@ export default function IpoDetail() {
                     ) : "—"}
                   />
                 </div>
+
+                <GmpSection gmp={gmp} gmpLoading={gmpLoading} />
 
                 <ReportSection ipo={ipo} />
               </>

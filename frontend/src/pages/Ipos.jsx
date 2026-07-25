@@ -5,6 +5,7 @@ import { useNavigate } from "react-router-dom";
 import { ArrowUpRight } from "lucide-react";
 import Navbar from "../components/site/Navbar";
 import Footer from "../components/site/Footer";
+import { GMP_DISCLAIMER } from "./gmpDisclaimer";
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 const EASE = [0.16, 1, 0.3, 1];
@@ -46,13 +47,23 @@ const fmtDate = (iso) => {
   return `${d} ${MONTHS[Number(m) - 1]} ${y}`;
 };
 
+const GmpValue = ({ gmp }) => {
+  if (!gmp) return <span className="text-slate-600">—</span>;
+  return (
+    <span className={`font-mono-ui ${gmp.value > 0 ? "text-emerald-400" : gmp.value < 0 ? "text-red-400" : "text-slate-300"}`}>
+      {gmp.value > 0 ? "+" : ""}₹{gmp.value}
+      {gmp.is_stale && <span className="text-amber-400 ml-1" title="May be stale">*</span>}
+    </span>
+  );
+};
+
 const IpoTable = ({ rows, onOpen }) => (
   <div className="glass rounded-2xl overflow-hidden" data-testid="ipo-table">
     <div className="hidden md:block">
       <table className="w-full text-left">
         <thead>
           <tr className="border-b border-white/10">
-            {["Company", "Exchange", "Price Band", "Opens", "Closes", "Status"].map((h) => (
+            {["Company", "Exchange", "Price Band", "GMP", "Opens", "Closes", "Status"].map((h) => (
               <th key={h} className="px-6 py-5 font-mono-ui text-[11px] uppercase tracking-[0.18em] text-slate-500 font-semibold whitespace-nowrap">
                 {h}
               </th>
@@ -76,6 +87,7 @@ const IpoTable = ({ rows, onOpen }) => (
               </td>
               <td className="px-6 py-5 text-sm text-slate-300 whitespace-nowrap">{(r.exchange || []).join(", ") || "—"}</td>
               <td className="px-6 py-5 font-mono-ui text-sm text-slate-300 whitespace-nowrap">{fmtPrice(r.price_band)}</td>
+              <td className="px-6 py-5 text-sm whitespace-nowrap" data-testid={`ipo-gmp-${i}`}><GmpValue gmp={r.gmp} /></td>
               <td className="px-6 py-5 text-sm text-slate-400 whitespace-nowrap">{fmtDate(r.issue_open_date)}</td>
               <td className="px-6 py-5 text-sm text-slate-400 whitespace-nowrap">{fmtDate(r.issue_close_date)}</td>
               <td className="px-6 py-5"><IpoStatusBadge status={r.status} testid={`ipo-status-${i}`} /></td>
@@ -105,6 +117,10 @@ const IpoTable = ({ rows, onOpen }) => (
             <div>
               <p className="font-mono-ui text-[10px] uppercase tracking-[0.18em] text-slate-500 mb-1">Price Band</p>
               <span className="font-mono-ui text-slate-300">{fmtPrice(r.price_band)}</span>
+            </div>
+            <div>
+              <p className="font-mono-ui text-[10px] uppercase tracking-[0.18em] text-slate-500 mb-1">GMP</p>
+              <GmpValue gmp={r.gmp} />
             </div>
             <div>
               <p className="font-mono-ui text-[10px] uppercase tracking-[0.18em] text-slate-500 mb-1">Window</p>
@@ -191,6 +207,9 @@ export default function Ipos() {
 
             <p className="mt-8 text-xs font-light text-slate-500 leading-relaxed max-w-4xl" data-testid="ipos-disclaimer">
               Listing data is aggregated from public exchange sources and may lag or occasionally be incomplete. AI-generated reports are summaries of public RHP filings for research and educational purposes only — not investment advice.
+            </p>
+            <p className="mt-2 text-xs font-light text-slate-500 leading-relaxed max-w-4xl" data-testid="ipos-gmp-disclaimer">
+              {GMP_DISCLAIMER}
             </p>
 
             <div className="mt-4">

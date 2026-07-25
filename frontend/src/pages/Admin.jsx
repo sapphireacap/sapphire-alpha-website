@@ -436,6 +436,7 @@ const IpoPanel = ({ onAuthError }) => {
   const [ipos, setIpos] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [refreshingGmp, setRefreshingGmp] = useState(false);
   const [editing, setEditing] = useState(null);
   const [saving, setSaving] = useState(false);
 
@@ -464,6 +465,20 @@ const IpoPanel = ({ onAuthError }) => {
       toast.error(errMsg(err, "NSE refresh failed."));
     } finally {
       setRefreshing(false);
+    }
+  };
+
+  const refreshGmp = async () => {
+    setRefreshingGmp(true);
+    try {
+      const { data } = await axios.post(`${API}/admin/ipos/gmp-refresh-now`, {}, authHeaders());
+      toast.success(`GMP refreshed — ${data.matched} of ${data.total_rows} rows matched.`);
+      await load();
+    } catch (err) {
+      if (err?.response?.status === 401) { onAuthError(); return; }
+      toast.error(errMsg(err, "GMP refresh failed."));
+    } finally {
+      setRefreshingGmp(false);
     }
   };
 
@@ -526,6 +541,9 @@ const IpoPanel = ({ onAuthError }) => {
         <div className="flex items-center gap-3">
           <button onClick={refreshNse} disabled={refreshing} className="btn-ghost !px-4 !py-2 text-sm disabled:opacity-50" data-testid="ipo-refresh-nse-btn">
             {refreshing ? <><Loader2 size={16} className="animate-spin" /> Refreshing</> : <><RefreshCw size={15} /> Refresh from NSE</>}
+          </button>
+          <button onClick={refreshGmp} disabled={refreshingGmp} className="btn-ghost !px-4 !py-2 text-sm disabled:opacity-50" data-testid="ipo-refresh-gmp-btn">
+            {refreshingGmp ? <><Loader2 size={16} className="animate-spin" /> Refreshing</> : <><RefreshCw size={15} /> Refresh GMP Now</>}
           </button>
           <button onClick={() => startEdit(null)} className="btn-sapphire !px-4 !py-2 text-sm" data-testid="ipo-add-btn">
             <Plus size={15} /> Add IPO

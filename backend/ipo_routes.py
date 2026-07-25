@@ -41,6 +41,10 @@ from google.genai import types as genai_types
 from pydantic import BaseModel, ConfigDict, Field
 from pypdf import PdfReader
 
+from gmp_scraper import refresh_gmp
+
+GMP_STALE_HOURS = 6
+
 logger = logging.getLogger(__name__)
 IST = timezone(timedelta(hours=5, minutes=30))
 
@@ -132,6 +136,14 @@ def _compute_status(ipo: dict) -> str:
     if open_d and today >= open_d:
         return "open"
     return "upcoming"
+
+
+def _gmp_is_stale(scraped_at: str) -> bool:
+    """Same never-store-a-stale-boolean pattern as _compute_status."""
+    try:
+        return (datetime.now(timezone.utc) - datetime.fromisoformat(scraped_at)) > timedelta(hours=GMP_STALE_HOURS)
+    except (TypeError, ValueError):
+        return True
 
 
 # ---------------------------------------------------------------------------
@@ -543,8 +555,12 @@ def create_ipo_router(db, get_current_admin, cron_secret: str) -> APIRouter:
     @router.get("/ipos")
     async def list_ipos(status: Optional[str] = None):
         rows = await db.ipos.find({}, {"_id": 0}).sort("issue_open_date", -1).to_list(500)
+        gmp_docs = await db.gmp_current.find({}, {"_id": 0, "ipo_id": 1, "gmp": 1, "scraped_at": 1}).to_list(1000)
+        gmp_by_ipo = {d["ipo_id"]: d for d in gmp_docs}
         for r in rows:
             r["status"] = _compute_status(r)
+            gmp_doc = gmp_by_ipo.get(r["id"])
+            r["gmp"] = {"value": gmp_doc["gmp"], "is_stale": _gmp_is_stale(gmp_doc["scraped_at"])} if gmp_doc else None
         if status:
             rows = [r for r in rows if r["status"] == status]
         return rows
@@ -605,5 +621,38 @@ def create_ipo_router(db, get_current_admin, cron_secret: str) -> APIRouter:
             return await _refresh_from_nse(db, background_tasks)
         except Exception as e:  # noqa: BLE001
             raise HTTPException(status_code=502, detail=f"NSE refresh failed: {e}")
+
+    @router.get("/ipos/{ipo_id}/gmp")
+    async def get_ipo_gmp(ipo_id: str):
+        """Unofficial single-source GMP (see gmp_scraper.py for why single-
+        source) — current value + history for the trend chart. `is_stale`
+        is computed here on every read (not stored), same pattern as
+        _compute_status, so it can never itself go stale."""
+        current = await db.gmp_current.find_one({"ipo_id": ipo_id}, {"_id": 0})
+        is_stale = _gmp_is_stale(current.get("scraped_at")) if current else False
+        history = await db.gmp_history.find({"ipo_id": ipo_id}, {"_id": 0, "gmp": 1, "scraped_at": 1}) \
+            .sort("scraped_at", 1).to_list(1000)
+        return {"current": current, "is_stale": is_stale, "history": history}
+
+    @router.post("/admin/ipos/gmp-refresh")
+    async def gmp_refresh_cron(request: Request):
+        """External-cron entry point (same X-Cron-Key mechanism as the NSE
+        refresh) — recommend a 30-minute schedule during market hours; GMP
+        doesn't move fast enough intraday to justify hitting an unofficial
+        source more often than that."""
+        if not cron_secret or request.headers.get("X-Cron-Key") != cron_secret:
+            raise HTTPException(status_code=401, detail="Invalid cron key")
+        try:
+            return await refresh_gmp(db)
+        except Exception as e:  # noqa: BLE001
+            raise HTTPException(status_code=502, detail=f"GMP refresh failed: {e}")
+
+    @router.post("/admin/ipos/gmp-refresh-now")
+    async def gmp_refresh_admin(admin: dict = Depends(get_current_admin)):
+        """Same refresh, triggered by the admin UI's "Refresh GMP Now" button."""
+        try:
+            return await refresh_gmp(db)
+        except Exception as e:  # noqa: BLE001
+            raise HTTPException(status_code=502, detail=f"GMP refresh failed: {e}")
 
     return router

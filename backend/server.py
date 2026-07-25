@@ -1051,6 +1051,8 @@ async def on_startup():
             "nse_symbol", unique=True, partialFilterExpression={"nse_symbol": {"$type": "string"}}
         )
         await db.ipos.create_index("issue_open_date")
+        await db.gmp_current.create_index("ipo_id", unique=True)
+        await db.gmp_history.create_index("ipo_id")
     except Exception as e:  # noqa: BLE001
         logger.warning(f"Index creation: {e}")
 
