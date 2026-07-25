@@ -8,7 +8,7 @@ const LOGO = "https://customer-assets-agu9un31.emergentagent.net/job_systematic-
 const NAV = [
   { label: "About", id: "about" },
   { label: "Research", id: "research" },
-  { label: "Insights", id: "insights" },
+  { label: "The Black Box", to: "/black-box" },
   { label: "Investing", id: "investing" },
   { label: "Contact", id: "contact" },
 ];
@@ -66,14 +66,24 @@ export const Footer = () => {
             <p className="overline !text-slate-500 mb-6">Navigation</p>
             <ul className="space-y-3">
               {NAV.map((n) => (
-                <li key={n.id}>
-                  <button
-                    onClick={() => scrollToId(n.id)}
-                    className="text-sm text-slate-400 hover:text-white transition-colors"
-                    data-testid={`footer-nav-${n.id}`}
-                  >
-                    {n.label}
-                  </button>
+                <li key={n.id || n.to}>
+                  {n.to ? (
+                    <Link
+                      to={n.to}
+                      className="text-sm text-slate-400 hover:text-white transition-colors"
+                      data-testid={`footer-nav-${n.to.slice(1)}`}
+                    >
+                      {n.label}
+                    </Link>
+                  ) : (
+                    <button
+                      onClick={() => scrollToId(n.id)}
+                      className="text-sm text-slate-400 hover:text-white transition-colors"
+                      data-testid={`footer-nav-${n.id}`}
+                    >
+                      {n.label}
+                    </button>
+                  )}
                 </li>
               ))}
             </ul>

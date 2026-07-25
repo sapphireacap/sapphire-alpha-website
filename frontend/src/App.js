@@ -11,12 +11,12 @@ import ComingSoon from "@/components/site/ComingSoon";
 import About from "@/components/site/About";
 import Manifesto from "@/components/site/Manifesto";
 import Research from "@/components/site/Research";
-import MarketInsights from "@/components/site/MarketInsights";
 import Investing from "@/components/site/Investing";
 import Contact from "@/components/site/Contact";
 import Footer from "@/components/site/Footer";
 import LegalPage from "@/components/site/LegalPage";
 import AlphaTerminal from "@/pages/AlphaTerminal";
+import BlackBox from "@/pages/BlackBox";
 import EwmaCrossoverPage from "@/pages/alphaterminal/EwmaCrossoverPage";
 import SharpeDashboardPage from "@/pages/alphaterminal/SharpeDashboardPage";
 import ScannerDetail from "@/pages/alphaterminal/ScannerDetail";
@@ -41,7 +41,6 @@ const Landing = () => (
       <About />
       <Manifesto />
       <Research />
-      <MarketInsights />
       <Investing />
       <Contact />
     </main>
@@ -60,6 +59,7 @@ function App() {
           <Routes>
             <Route path="/" element={<Landing />} />
             <Route path="/alpha-terminal" element={<AlphaTerminal />} />
+            <Route path="/black-box" element={<BlackBox />} />
             <Route path="/alpha-terminal/ewma-crossover" element={<EwmaCrossoverPage />} />
             <Route path="/alpha-terminal/sharpe-dashboard" element={<SharpeDashboardPage />} />
             <Route path="/alpha-terminal/momentum-leaders" element={<ScannerDetail scannerKey="momentum" label="Intraday Momentum Leaders" />} />
