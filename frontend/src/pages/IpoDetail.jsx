@@ -36,7 +36,7 @@ const fmtDateTime = (iso) => {
   return d.toLocaleString("en-IN", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" });
 };
 
-const GMP_SOURCE_LABELS = { ipowatch: "IPO Watch", investorgain: "InvestorGain" };
+const GMP_SOURCE_LABELS = { ipowatch: "Source 1", investorgain: "Source 2" };
 const GMP_SOURCE_COLORS = { ipowatch: "#437EEB", investorgain: "#F59E0B" };
 
 const GmpChart = ({ history }) => {

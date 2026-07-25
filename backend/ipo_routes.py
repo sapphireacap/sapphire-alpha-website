@@ -559,17 +559,14 @@ def create_ipo_router(db, get_current_admin, cron_secret: str) -> APIRouter:
         gmp_by_ipo = {}
         for d in gmp_docs:
             gmp_by_ipo.setdefault(d["ipo_id"], {})[d["source"]] = d
+        def _gmp_field(d):
+            return {"value": d["gmp"], "is_stale": _gmp_is_stale(d["scraped_at"])} if d else None
+
         for r in rows:
             r["status"] = _compute_status(r)
-            # IPO Watch is primary for the compact list column; InvestorGain
-            # only fills in when IPO Watch has no match for this IPO.
             by_source = gmp_by_ipo.get(r["id"], {})
-            primary = by_source.get("ipowatch") or by_source.get("investorgain")
-            r["gmp"] = {
-                "value": primary["gmp"],
-                "is_stale": _gmp_is_stale(primary["scraped_at"]),
-                "source": primary["source"],
-            } if primary else None
+            r["gmp"] = _gmp_field(by_source.get("ipowatch"))
+            r["gmp2"] = _gmp_field(by_source.get("investorgain"))
         if status:
             rows = [r for r in rows if r["status"] == status]
         return rows

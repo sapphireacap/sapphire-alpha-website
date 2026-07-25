@@ -63,7 +63,7 @@ const IpoTable = ({ rows, onOpen }) => (
       <table className="w-full text-left">
         <thead>
           <tr className="border-b border-white/10">
-            {["Company", "Exchange", "Price Band", "GMP", "Opens", "Closes", "Status"].map((h) => (
+            {["Company", "Exchange", "Price Band", "GMP 1", "GMP 2", "Opens", "Closes", "Status"].map((h) => (
               <th key={h} className="px-6 py-5 font-mono-ui text-[11px] uppercase tracking-[0.18em] text-slate-500 font-semibold whitespace-nowrap">
                 {h}
               </th>
@@ -88,6 +88,7 @@ const IpoTable = ({ rows, onOpen }) => (
               <td className="px-6 py-5 text-sm text-slate-300 whitespace-nowrap">{(r.exchange || []).join(", ") || "—"}</td>
               <td className="px-6 py-5 font-mono-ui text-sm text-slate-300 whitespace-nowrap">{fmtPrice(r.price_band)}</td>
               <td className="px-6 py-5 text-sm whitespace-nowrap" data-testid={`ipo-gmp-${i}`}><GmpValue gmp={r.gmp} /></td>
+              <td className="px-6 py-5 text-sm whitespace-nowrap" data-testid={`ipo-gmp2-${i}`}><GmpValue gmp={r.gmp2} /></td>
               <td className="px-6 py-5 text-sm text-slate-400 whitespace-nowrap">{fmtDate(r.issue_open_date)}</td>
               <td className="px-6 py-5 text-sm text-slate-400 whitespace-nowrap">{fmtDate(r.issue_close_date)}</td>
               <td className="px-6 py-5"><IpoStatusBadge status={r.status} testid={`ipo-status-${i}`} /></td>
@@ -119,8 +120,12 @@ const IpoTable = ({ rows, onOpen }) => (
               <span className="font-mono-ui text-slate-300">{fmtPrice(r.price_band)}</span>
             </div>
             <div>
-              <p className="font-mono-ui text-[10px] uppercase tracking-[0.18em] text-slate-500 mb-1">GMP</p>
+              <p className="font-mono-ui text-[10px] uppercase tracking-[0.18em] text-slate-500 mb-1">GMP 1</p>
               <GmpValue gmp={r.gmp} />
+            </div>
+            <div>
+              <p className="font-mono-ui text-[10px] uppercase tracking-[0.18em] text-slate-500 mb-1">GMP 2</p>
+              <GmpValue gmp={r.gmp2} />
             </div>
             <div>
               <p className="font-mono-ui text-[10px] uppercase tracking-[0.18em] text-slate-500 mb-1">Window</p>
