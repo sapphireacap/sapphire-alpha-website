@@ -17,6 +17,7 @@ from journal_routes import create_journal_router
 from journal_analytics import create_analytics_router
 from quant_lab import create_quant_lab_router
 from ipo_routes import create_ipo_router
+from blackbox_routes import create_blackbox_router
 from journal_models import DEFAULT_SETUP_TAGS, DEFAULT_EMOTION_TAGS
 from pathlib import Path
 from pydantic import BaseModel, Field, EmailStr, ConfigDict
@@ -1060,6 +1061,8 @@ async def on_startup():
             pass
         await db.gmp_current.create_index([("ipo_id", 1), ("source", 1)], unique=True)
         await db.gmp_history.create_index([("ipo_id", 1), ("source", 1)])
+        await db.blackbox_prism_alpha_trades.create_index("date")
+        await db.blackbox_prism_alpha_trades.create_index("status")
     except Exception as e:  # noqa: BLE001
         logger.warning(f"Index creation: {e}")
 
@@ -1068,12 +1071,14 @@ journal_router = create_journal_router(db, get_current_user, log_audit_event, de
 analytics_router = create_analytics_router(db, get_current_user)
 quant_lab_router = create_quant_lab_router(db, definedge, get_current_admin, CRON_SECRET)
 ipo_router = create_ipo_router(db, get_current_admin, CRON_SECRET)
+blackbox_router = create_blackbox_router(db, definedge, get_current_admin, CRON_SECRET)
 
 app.include_router(api_router)
 app.include_router(journal_router, prefix="/api")
 app.include_router(analytics_router, prefix="/api")
 app.include_router(quant_lab_router, prefix="/api")
 app.include_router(ipo_router, prefix="/api")
+app.include_router(blackbox_router, prefix="/api")
 
 app.add_middleware(
     CORSMiddleware,

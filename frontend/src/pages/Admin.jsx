@@ -425,6 +425,46 @@ const QuantLabPanel = ({ onAuthError }) => {
   );
 };
 
+/* ------------------------------ Black Box — Prism Alpha ------------------------------ */
+const BlackBoxPanel = ({ onAuthError }) => {
+  const [running, setRunning] = useState(false);
+  const [lastResult, setLastResult] = useState(null);
+
+  const evaluateNow = async () => {
+    setRunning(true);
+    try {
+      const { data } = await axios.post(`${API}/blackbox/admin/prism-alpha-evaluate-now`, {}, authHeaders());
+      setLastResult(data);
+      toast.success(`Prism Alpha evaluated — action: ${data.action}${data.reason ? ` (${data.reason})` : ""}.`);
+    } catch (err) {
+      if (err?.response?.status === 401) { onAuthError(); return; }
+      toast.error(errMsg(err, "Evaluation failed."));
+    } finally {
+      setRunning(false);
+    }
+  };
+
+  return (
+    <div className="glass rounded-2xl p-6 md:p-8 mb-10" data-testid="admin-blackbox-panel">
+      <div className="flex flex-wrap items-center justify-between gap-3 mb-2">
+        <h2 className="font-display text-xl font-bold text-white">Black Box — Prism Alpha</h2>
+        <button onClick={evaluateNow} disabled={running} className="btn-ghost !px-4 !py-2 text-sm disabled:opacity-50" data-testid="prism-alpha-evaluate-now-btn">
+          {running ? <><Loader2 size={16} className="animate-spin" /> Evaluating</> : <><RefreshCw size={15} /> Evaluate Now</>}
+        </button>
+      </div>
+      <p className="text-sm text-slate-500 mb-4">
+        Manually runs one Prism Alpha evaluation cycle (entry check if flat, stop/target/trailing-stop check if in a position).
+        The external cron should hit <code className="text-slate-400">/api/blackbox/admin/prism-alpha-evaluate</code> every minute during market hours.
+      </p>
+      {lastResult && (
+        <div className="text-xs text-slate-500 font-mono-ui" data-testid="prism-alpha-last-result">
+          Last run: {lastResult.action}{lastResult.reason ? ` — ${lastResult.reason}` : ""}
+        </div>
+      )}
+    </div>
+  );
+};
+
 /* ------------------------------ IPO Section ------------------------------ */
 const EXCHANGES = ["NSE", "BSE"];
 const emptyIpo = () => ({
@@ -812,6 +852,7 @@ const Dashboard = ({ onLogout }) => {
         <SignalPanel onAuthError={onLogout} signal={signal} />
         <QuantLabPanel onAuthError={onLogout} />
         <IpoPanel onAuthError={onLogout} />
+        <BlackBoxPanel onAuthError={onLogout} />
 
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-8">
           <div>
