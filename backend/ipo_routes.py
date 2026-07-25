@@ -555,12 +555,21 @@ def create_ipo_router(db, get_current_admin, cron_secret: str) -> APIRouter:
     @router.get("/ipos")
     async def list_ipos(status: Optional[str] = None):
         rows = await db.ipos.find({}, {"_id": 0}).sort("issue_open_date", -1).to_list(500)
-        gmp_docs = await db.gmp_current.find({}, {"_id": 0, "ipo_id": 1, "gmp": 1, "scraped_at": 1}).to_list(1000)
-        gmp_by_ipo = {d["ipo_id"]: d for d in gmp_docs}
+        gmp_docs = await db.gmp_current.find({}, {"_id": 0, "ipo_id": 1, "source": 1, "gmp": 1, "scraped_at": 1}).to_list(2000)
+        gmp_by_ipo = {}
+        for d in gmp_docs:
+            gmp_by_ipo.setdefault(d["ipo_id"], {})[d["source"]] = d
         for r in rows:
             r["status"] = _compute_status(r)
-            gmp_doc = gmp_by_ipo.get(r["id"])
-            r["gmp"] = {"value": gmp_doc["gmp"], "is_stale": _gmp_is_stale(gmp_doc["scraped_at"])} if gmp_doc else None
+            # IPO Watch is primary for the compact list column; InvestorGain
+            # only fills in when IPO Watch has no match for this IPO.
+            by_source = gmp_by_ipo.get(r["id"], {})
+            primary = by_source.get("ipowatch") or by_source.get("investorgain")
+            r["gmp"] = {
+                "value": primary["gmp"],
+                "is_stale": _gmp_is_stale(primary["scraped_at"]),
+                "source": primary["source"],
+            } if primary else None
         if status:
             rows = [r for r in rows if r["status"] == status]
         return rows
@@ -624,15 +633,18 @@ def create_ipo_router(db, get_current_admin, cron_secret: str) -> APIRouter:
 
     @router.get("/ipos/{ipo_id}/gmp")
     async def get_ipo_gmp(ipo_id: str):
-        """Unofficial single-source GMP (see gmp_scraper.py for why single-
-        source) — current value + history for the trend chart. `is_stale`
-        is computed here on every read (not stored), same pattern as
-        _compute_status, so it can never itself go stale."""
-        current = await db.gmp_current.find_one({"ipo_id": ipo_id}, {"_id": 0})
-        is_stale = _gmp_is_stale(current.get("scraped_at")) if current else False
-        history = await db.gmp_history.find({"ipo_id": ipo_id}, {"_id": 0, "gmp": 1, "scraped_at": 1}) \
-            .sort("scraped_at", 1).to_list(1000)
-        return {"current": current, "is_stale": is_stale, "history": history}
+        """Unofficial GMP from two independent sources (see gmp_scraper.py
+        for why exactly two, and why they're shown side by side rather than
+        averaged into a fake consensus) — current value per source + history
+        for the trend chart. `is_stale` is computed here on every read (not
+        stored), same pattern as _compute_status, so it can never itself go
+        stale."""
+        sources = await db.gmp_current.find({"ipo_id": ipo_id}, {"_id": 0}).to_list(10)
+        for s in sources:
+            s["is_stale"] = _gmp_is_stale(s.get("scraped_at"))
+        history = await db.gmp_history.find({"ipo_id": ipo_id}, {"_id": 0, "source": 1, "gmp": 1, "scraped_at": 1}) \
+            .sort("scraped_at", 1).to_list(2000)
+        return {"sources": sources, "history": history}
 
     @router.post("/admin/ipos/gmp-refresh")
     async def gmp_refresh_cron(request: Request):

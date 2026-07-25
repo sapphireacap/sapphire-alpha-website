@@ -36,8 +36,18 @@ const fmtDateTime = (iso) => {
   return d.toLocaleString("en-IN", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" });
 };
 
+const GMP_SOURCE_LABELS = { ipowatch: "IPO Watch", investorgain: "InvestorGain" };
+const GMP_SOURCE_COLORS = { ipowatch: "#437EEB", investorgain: "#F59E0B" };
+
 const GmpChart = ({ history }) => {
-  const series = history.map((h) => ({ ...h, label: fmtDateTime(h.scraped_at) }));
+  const byTime = {};
+  history.forEach((h) => {
+    if (!byTime[h.scraped_at]) byTime[h.scraped_at] = { scraped_at: h.scraped_at, label: fmtDateTime(h.scraped_at) };
+    byTime[h.scraped_at][h.source] = h.gmp;
+  });
+  const series = Object.values(byTime).sort((a, b) => a.scraped_at.localeCompare(b.scraped_at));
+  const sourcesPresent = [...new Set(history.map((h) => h.source))];
+
   return (
     <div className="h-56" data-testid="gmp-chart">
       <ResponsiveContainer width="100%" height="100%">
@@ -49,14 +59,33 @@ const GmpChart = ({ history }) => {
             contentStyle={{ background: "#0A0D18", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 8, fontSize: 12 }}
             labelStyle={{ color: "#94A3B8" }}
             itemStyle={{ color: "#E2E8F0" }}
-            formatter={(v) => [`₹${v}`, "GMP"]}
+            formatter={(v, name) => [`₹${v}`, GMP_SOURCE_LABELS[name] || name]}
           />
-          <Line type="monotone" dataKey="gmp" name="GMP" stroke="#437EEB" strokeWidth={1.5} dot={false} isAnimationActive={false} />
+          {sourcesPresent.map((s) => (
+            <Line key={s} type="monotone" dataKey={s} name={s} stroke={GMP_SOURCE_COLORS[s] || "#94A3B8"} strokeWidth={1.5} dot={false} isAnimationActive={false} connectNulls />
+          ))}
         </LineChart>
       </ResponsiveContainer>
     </div>
   );
 };
+
+const GmpSourceRow = ({ s }) => (
+  <div data-testid={`gmp-source-${s.source}`}>
+    <p className="font-mono-ui text-[10px] uppercase tracking-[0.18em] text-slate-500 mb-1 flex items-center gap-1.5">
+      <span className="h-1.5 w-1.5 rounded-full" style={{ background: GMP_SOURCE_COLORS[s.source] || "#94A3B8" }} />
+      {GMP_SOURCE_LABELS[s.source] || s.source}
+    </p>
+    <p className={`font-display text-2xl md:text-3xl font-black tracking-tight ${s.gmp > 0 ? "text-emerald-400" : s.gmp < 0 ? "text-red-400" : "text-white"}`}>
+      {s.gmp > 0 ? "+" : ""}₹{s.gmp}
+    </p>
+    <p className="text-xs text-slate-500 mt-1">
+      {s.price_band_text && <span className="mr-2">{s.price_band_text}</span>}
+      {fmtDateTime(s.scraped_at)}
+      {s.is_stale && <span className="text-amber-400 ml-1">(may be stale)</span>}
+    </p>
+  </div>
+);
 
 const GmpSection = ({ gmp, gmpLoading }) => {
   if (gmpLoading) {
@@ -67,42 +96,18 @@ const GmpSection = ({ gmp, gmpLoading }) => {
     );
   }
 
-  const current = gmp?.current ?? null;
+  const sources = gmp?.sources ?? [];
 
   return (
     <div className="glass rounded-2xl p-6 md:p-8 mb-6" data-testid="gmp-section">
       <p className="font-mono-ui text-[10px] uppercase tracking-[0.22em] text-slate-500 mb-5">Grey Market Premium</p>
 
-      {!current ? (
+      {sources.length === 0 ? (
         <p className="text-sm text-slate-500 py-6 text-center" data-testid="gmp-empty">No GMP data available for this IPO yet.</p>
       ) : (
         <>
-          <div className="flex flex-wrap items-end gap-x-10 gap-y-4 mb-6">
-            <div>
-              <p className="font-mono-ui text-[10px] uppercase tracking-[0.18em] text-slate-500 mb-1">GMP</p>
-              <p className={`font-display text-3xl md:text-4xl font-black tracking-tight ${current.gmp > 0 ? "text-emerald-400" : current.gmp < 0 ? "text-red-400" : "text-white"}`}>
-                {current.gmp > 0 ? "+" : ""}₹{current.gmp}
-              </p>
-            </div>
-            {current.price_band_text && (
-              <div>
-                <p className="font-mono-ui text-[10px] uppercase tracking-[0.18em] text-slate-500 mb-1">Price Band</p>
-                <p className="text-base text-slate-300">{current.price_band_text}</p>
-              </div>
-            )}
-            {current.status_text && (
-              <div>
-                <p className="font-mono-ui text-[10px] uppercase tracking-[0.18em] text-slate-500 mb-1">Source Status</p>
-                <p className="text-base text-slate-300">{current.status_text}</p>
-              </div>
-            )}
-            <div>
-              <p className="font-mono-ui text-[10px] uppercase tracking-[0.18em] text-slate-500 mb-1">Last Updated</p>
-              <p className="text-sm text-slate-500">
-                {fmtDateTime(current.scraped_at)}
-                {gmp.is_stale && <span className="text-amber-400 ml-2">(may be stale)</span>}
-              </p>
-            </div>
+          <div className="flex flex-wrap gap-x-10 gap-y-5 mb-6">
+            {sources.map((s) => <GmpSourceRow key={s.source} s={s} />)}
           </div>
 
           {gmp.history && gmp.history.length > 1 && <GmpChart history={gmp.history} />}

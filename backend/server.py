@@ -1051,8 +1051,15 @@ async def on_startup():
             "nse_symbol", unique=True, partialFilterExpression={"nse_symbol": {"$type": "string"}}
         )
         await db.ipos.create_index("issue_open_date")
-        await db.gmp_current.create_index("ipo_id", unique=True)
-        await db.gmp_history.create_index("ipo_id")
+        # gmp_current used to be one doc per IPO (ipo_id unique); now it's one
+        # doc per IPO per source, so the old single-field unique index has to
+        # go or every second source's upsert 11000s against the first's doc.
+        try:
+            await db.gmp_current.drop_index("ipo_id_1")
+        except Exception:  # noqa: BLE001 — already dropped / never existed on a fresh DB
+            pass
+        await db.gmp_current.create_index([("ipo_id", 1), ("source", 1)], unique=True)
+        await db.gmp_history.create_index([("ipo_id", 1), ("source", 1)])
     except Exception as e:  # noqa: BLE001
         logger.warning(f"Index creation: {e}")
 

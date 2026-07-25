@@ -1,31 +1,37 @@
 """
-GMP (Grey Market Premium) scraper — single-source, from IPO Watch.
+GMP (Grey Market Premium) scraper — two sources, IPO Watch + InvestorGain.
 
-Why single-source: the original spec asked for 3-5 sources aggregated into
-a median consensus with outlier filtering. Live-tested all 5 named
-candidates (Chittorgarh, InvestorGain, IPO Watch, IPO Central, LiveGMP)
-before writing any code:
-  - Chittorgarh and InvestorGain are both client-rendered (Next.js) apps —
-    the raw HTML has no data (InvestorGain's table literally says "No data
-    available" server-side); real values load via a client-side API call
-    that wasn't discoverable without deep JS-bundle reverse-engineering for
-    InvestorGain, and Chittorgarh needs a headless browser to render at all.
+The original spec asked for 3-5 sources aggregated into a median consensus
+with outlier filtering. Live-tested all 5 named candidates (Chittorgarh,
+InvestorGain, IPO Watch, IPO Central, LiveGMP) before writing any code:
+  - Chittorgarh is a client-rendered (Next.js) app that needs a headless
+    browser to render at all — not viable without new infrastructure.
   - IPO Central isn't actually a dedicated GMP tracker — no structured
     table found, just an IPO news blog.
   - LiveGMP appears to be a dead site — its own sitemap links 404, and
     `/ipo/` is an empty directory listing.
-  - IPO Watch is the only one that's genuinely real and scrapeable: plain
-    server-rendered HTML with a clean table (company name, GMP, price band,
-    status, and the source's own last-updated timestamp per row). Its
-    robots.txt permits general crawling (only blocks AI-training bots and a
-    few admin paths); no published Terms of Use found anywhere on the site.
+  - IPO Watch is plain server-rendered HTML with a clean table (company
+    name, GMP, price band, status, source's own last-updated timestamp per
+    row).
+  - InvestorGain's HTML table is an empty client-rendered shell ("No data
+    available" server-side), but the JS bundle that populates it calls a
+    plain JSON REST endpoint (`webnodejs.investorgain.com/cloud/v2/report/
+    data-read/...`) — no headless browser needed, just an httpx GET with the
+    right path params, found by downloading and grepping the page's Next.js
+    chunks for the actual fetch call.
+  Both IPO Watch and InvestorGain: robots.txt permits general crawling
+  (only blocks AI-training/SEO bots), and no published Terms of Use
+  prohibits scraping either site.
 
-With one real source there's nothing to compute a statistical consensus or
-filter outliers against, so this ships as honest single-source GMP instead
-of a faked multi-source aggregate — confirmed with the user before building.
+With exactly 2 real sources, a "median consensus with outlier filtering" is
+statistically meaningless (median of 2 = average, nothing to call an
+outlier against), so this shows both figures side by side instead of
+faking a consensus — confirmed with the user before adding the second
+source. IPO Watch is treated as primary (e.g. for the list-page column);
+InvestorGain is a labeled secondary figure shown alongside it.
 
 Same fragility caveat as every other scrape in this codebase: unofficial,
-can break if the site restructures.
+can break if either site restructures.
 """
 import logging
 import re
@@ -36,6 +42,14 @@ import httpx
 logger = logging.getLogger(__name__)
 
 IPOWATCH_GMP_URL = "https://ipowatch.in/ipo-grey-market-premium-latest-ipo-gmp/"
+
+# InvestorGain's page is a Next.js app; report id 331 is "IPO GMP Live"
+# (found via its own cloud/v2/report/info-read/331 metadata endpoint).
+INVESTORGAIN_REFERER = "https://www.investorgain.com/report/ipo-gmp-live/331/"
+INVESTORGAIN_DATA_URL = (
+    "https://webnodejs.investorgain.com/cloud/v2/report/data-read/331/1/{month}/{year}/{fy}/0/all?search="
+)
+
 BROWSER_USER_AGENT = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
     "(KHTML, like Gecko) Chrome/120.0 Safari/537.36"
@@ -45,6 +59,8 @@ ROW_RE = re.compile(r"<tr>(.*?)</tr>", re.S)
 CELL_RE = re.compile(r"<td[^>]*>(.*?)</td>", re.S)
 TAG_RE = re.compile(r"<[^>]+>")
 NUMBER_RE = re.compile(r"-?\d+(?:\.\d+)?")
+IG_GMP_RE = re.compile(r"&#8377;<b>([^<]+)</b>")
+IG_BOLD_RE = re.compile(r"<b>([^<]+)</b>")
 
 
 def _normalize_company_name(name: str) -> str:
@@ -129,17 +145,69 @@ async def fetch_ipowatch_html() -> str:
     return r.text
 
 
-async def refresh_gmp(db) -> dict:
-    """Fetches, parses, matches against our tracked IPOs, and upserts
-    gmp_current + appends gmp_history for every match. Best-effort: a fetch
-    failure raises (caller decides how to surface it), but a handful of
-    unparseable or unmatched rows never block the ones that did work."""
-    html = await fetch_ipowatch_html()
-    rows = parse_ipowatch_table(html)
+def _investorgain_financial_year(now: datetime) -> str:
+    """"2026-27" style string the API expects — April-March FY, same
+    convention InvestorGain's own JS uses to compute it client-side."""
+    y = now.year
+    return f"{y}-{str(y + 1)[-2:]}" if now.month >= 4 else f"{y - 1}-{str(y)[-2:]}"
 
-    our_ipos = await db.ipos.find({}, {"_id": 0, "id": 1, "company_name": 1}).to_list(1000)
-    now_iso = datetime.now(timezone.utc).isoformat()
 
+def _parse_investorgain_rupee(gmp_html: str):
+    """The GMP cell is HTML like "&#8377;<b>184</b> (32.9%)..."; "--" means
+    no GMP is trading yet for that IPO, not zero — treated as unparseable
+    (skipped) rather than coerced to 0, so it can't be confused with a real
+    zero-GMP row."""
+    m = IG_GMP_RE.search(gmp_html or "")
+    if not m:
+        return None
+    text = m.group(1).strip()
+    if text in ("--", "-", ""):
+        return None
+    try:
+        return float(text.replace(",", ""))
+    except ValueError:
+        return None
+
+
+def parse_investorgain_rows(data: dict) -> list:
+    """[{company_name, gmp, price_band_text, status_text,
+    source_last_updated}, ...] from the data-read JSON. Rows with no GMP yet
+    ("--") are skipped, same as an unparseable IPO Watch cell."""
+    results = []
+    for row in data.get("reportTableData", []):
+        name = (row.get("~ipo_name") or "").strip()
+        gmp = _parse_investorgain_rupee(row.get("GMP", ""))
+        if not name or gmp is None:
+            continue
+        price = (row.get("Price (₹)") or "").strip()
+        updated_m = IG_BOLD_RE.search(row.get("Updated-On", "") or "")
+        results.append({
+            "company_name": name,
+            "gmp": gmp,
+            "price_band_text": f"₹{price}" if price else "",
+            "status_text": (row.get("~IPO_Category") or "").strip(),
+            "source_last_updated": updated_m.group(1).strip() if updated_m else "",
+        })
+    return results
+
+
+async def fetch_investorgain_data() -> dict:
+    now = datetime.now(timezone.utc)
+    url = INVESTORGAIN_DATA_URL.format(month=now.month, year=now.year, fy=_investorgain_financial_year(now))
+    async with httpx.AsyncClient(timeout=30, follow_redirects=True) as c:
+        r = await c.get(url, headers={"User-Agent": BROWSER_USER_AGENT, "Referer": INVESTORGAIN_REFERER})
+    if r.status_code != 200:
+        raise RuntimeError(f"InvestorGain GMP fetch failed (HTTP {r.status_code}).")
+    data = r.json()
+    if data.get("msg") != 1:
+        raise RuntimeError(f"InvestorGain GMP fetch returned error: {data.get('error', 'unknown')}")
+    return data
+
+
+async def _store_rows(db, source: str, rows: list, our_ipos: list, scraped_at: str) -> int:
+    """Upserts gmp_current (keyed on ipo_id+source) and appends gmp_history
+    for every matched row. One bad write is logged and skipped rather than
+    aborting the rest of the cycle."""
     matched = 0
     for row in rows:
         ipo_id = match_ipo(row["company_name"], our_ipos)
@@ -147,18 +215,44 @@ async def refresh_gmp(db) -> dict:
             continue
         doc = {
             "ipo_id": ipo_id,
+            "source": source,
             "gmp": row["gmp"],
             "price_band_text": row["price_band_text"],
             "status_text": row["status_text"],
-            "source": "ipowatch",
             "source_last_updated": row["source_last_updated"],
-            "scraped_at": now_iso,
+            "scraped_at": scraped_at,
         }
         try:
-            await db.gmp_current.update_one({"ipo_id": ipo_id}, {"$set": doc}, upsert=True)
-            await db.gmp_history.insert_one({"ipo_id": ipo_id, "gmp": row["gmp"], "scraped_at": now_iso})
+            await db.gmp_current.update_one({"ipo_id": ipo_id, "source": source}, {"$set": doc}, upsert=True)
+            await db.gmp_history.insert_one({"ipo_id": ipo_id, "source": source, "gmp": row["gmp"], "scraped_at": scraped_at})
             matched += 1
         except Exception:  # noqa: BLE001 — one bad write shouldn't block the rest of the cycle
-            logger.exception("Failed to store GMP for ipo_id=%s", ipo_id)
+            logger.exception("Failed to store GMP for ipo_id=%s source=%s", ipo_id, source)
+    return matched
 
-    return {"matched": matched, "total_rows": len(rows)}
+
+async def refresh_gmp(db) -> dict:
+    """Refreshes both sources independently — one source's fetch failure is
+    logged and reported per-source, never blocks the other. Both sources
+    share a single scraped_at timestamp so gmp_history rows line up on the
+    same x-axis point for the two-line trend chart on the frontend.
+    Returns {"ipowatch": {"matched", "total_rows"} | {"error"}, "investorgain": {...}}."""
+    our_ipos = await db.ipos.find({}, {"_id": 0, "id": 1, "company_name": 1}).to_list(1000)
+    scraped_at = datetime.now(timezone.utc).isoformat()
+    results = {}
+
+    try:
+        rows = parse_ipowatch_table(await fetch_ipowatch_html())
+        results["ipowatch"] = {"matched": await _store_rows(db, "ipowatch", rows, our_ipos, scraped_at), "total_rows": len(rows)}
+    except Exception as e:  # noqa: BLE001
+        logger.exception("IPO Watch GMP refresh failed")
+        results["ipowatch"] = {"error": str(e)}
+
+    try:
+        rows = parse_investorgain_rows(await fetch_investorgain_data())
+        results["investorgain"] = {"matched": await _store_rows(db, "investorgain", rows, our_ipos, scraped_at), "total_rows": len(rows)}
+    except Exception as e:  # noqa: BLE001
+        logger.exception("InvestorGain GMP refresh failed")
+        results["investorgain"] = {"error": str(e)}
+
+    return results

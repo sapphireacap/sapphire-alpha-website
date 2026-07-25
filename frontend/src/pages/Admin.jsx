@@ -472,7 +472,10 @@ const IpoPanel = ({ onAuthError }) => {
     setRefreshingGmp(true);
     try {
       const { data } = await axios.post(`${API}/admin/ipos/gmp-refresh-now`, {}, authHeaders());
-      toast.success(`GMP refreshed — ${data.matched} of ${data.total_rows} rows matched.`);
+      const summary = Object.entries(data)
+        .map(([source, r]) => (r.error ? `${source}: failed` : `${source}: ${r.matched}/${r.total_rows}`))
+        .join(", ");
+      toast.success(`GMP refreshed — ${summary}`);
       await load();
     } catch (err) {
       if (err?.response?.status === 401) { onAuthError(); return; }
