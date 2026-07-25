@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import axios from "axios";
 import { motion } from "framer-motion";
 import { Link, useNavigate } from "react-router-dom";
-import { ArrowUpRight, TrendingUp, TrendingDown, Minus, Compass, FlaskConical, Clock } from "lucide-react";
+import { ArrowUpRight, TrendingUp, TrendingDown, Minus, Compass, FlaskConical, Clock, ExternalLink } from "lucide-react";
 import Navbar from "../components/site/Navbar";
 import Footer from "../components/site/Footer";
 import ParticleField from "../components/site/ParticleField";
@@ -85,6 +85,17 @@ const MOMENTUM_TREND = {
   Neutral: { Icon: Minus, color: "text-slate-400", box: "border-white/15 bg-white/5 text-slate-300" },
 };
 
+// Add an entry here if a ticker's symbol in our own data ever differs from
+// TradingView's NSE listing symbol — empty for now, everything we've seen
+// matches directly.
+const TICKER_ALIASES = {};
+
+const openTradingViewChart = (ticker) => {
+  const symbol = (TICKER_ALIASES[ticker] || ticker || "").toUpperCase().replace(/\s+/g, "");
+  if (!symbol) return;
+  window.open(`https://www.tradingview.com/chart/?symbol=NSE:${symbol}`, "_blank", "noopener,noreferrer");
+};
+
 export const MomentumTable = ({ rows }) => (
   <div className="glass rounded-2xl overflow-hidden" data-testid="momentum-table">
     {/* Desktop / tablet table */}
@@ -97,6 +108,9 @@ export const MomentumTable = ({ rows }) => (
                 {h}
               </th>
             ))}
+            <th className="px-6 py-5 w-10">
+              <span className="sr-only">Chart</span>
+            </th>
           </tr>
         </thead>
         <tbody>
@@ -106,12 +120,13 @@ export const MomentumTable = ({ rows }) => (
               initial={{ opacity: 0, y: 12 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.5, ease: EASE, delay: i * 0.06 }}
-              className="border-b border-white/[0.05] last:border-0 transition-colors duration-300 hover:bg-sapphire/[0.06]"
+              onClick={() => openTradingViewChart(r.ticker)}
+              className="group border-b border-white/[0.05] last:border-0 transition-colors duration-300 hover:bg-sapphire/[0.06] cursor-pointer"
               data-testid={`momentum-row-${i}`}
             >
               <td className="px-6 py-5 whitespace-nowrap">
                 <span className="inline-flex items-center gap-1.5 font-display text-lg font-extrabold text-white tracking-tight">
-                  {r.ticker}
+                  <span className="group-hover:underline">{r.ticker}</span>
                   {(() => { const { Icon, color } = MOMENTUM_TREND[r.bias] || MOMENTUM_TREND.Neutral; return <Icon size={14} className={color} />; })()}
                 </span>
               </td>
@@ -123,6 +138,9 @@ export const MomentumTable = ({ rows }) => (
               </td>
               <td className="px-6 py-5 font-mono-ui text-sm text-slate-300 whitespace-nowrap">{r.volume}</td>
               <td className="px-6 py-5"><BiasBadge bias={r.bias} testid={`momentum-bias-${i}`} /></td>
+              <td className="px-6 py-5">
+                <ExternalLink size={14} className="text-slate-500 opacity-40 group-hover:opacity-100 transition-opacity" data-testid={`momentum-chart-link-${i}`} />
+              </td>
             </motion.tr>
           ))}
         </tbody>
@@ -137,7 +155,8 @@ export const MomentumTable = ({ rows }) => (
           initial={{ opacity: 0, y: 12 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.5, ease: EASE, delay: i * 0.06 }}
-          className="p-5"
+          onClick={() => openTradingViewChart(r.ticker)}
+          className="p-5 cursor-pointer active:bg-sapphire/[0.06] transition-colors"
           data-testid={`momentum-card-${i}`}
         >
           <div className="flex items-center justify-between mb-3">
@@ -145,7 +164,10 @@ export const MomentumTable = ({ rows }) => (
               {r.ticker}
               {(() => { const { Icon, color } = MOMENTUM_TREND[r.bias] || MOMENTUM_TREND.Neutral; return <Icon size={15} className={color} />; })()}
             </span>
-            <BiasBadge bias={r.bias} testid={`momentum-bias-${i}`} />
+            <span className="flex items-center gap-2">
+              <BiasBadge bias={r.bias} testid={`momentum-bias-${i}`} />
+              <ExternalLink size={14} className="text-slate-500 opacity-60" data-testid={`momentum-chart-link-mobile-${i}`} />
+            </span>
           </div>
           <p className="text-sm text-slate-400 mb-4">{r.company || "—"}</p>
           <div className="flex items-center gap-6">
