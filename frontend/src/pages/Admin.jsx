@@ -437,7 +437,8 @@ const BlackBoxPanel = ({ onAuthError }) => {
     try {
       const { data } = await axios.post(`${API}/blackbox/admin/prism-alpha-evaluate-now`, {}, authHeaders());
       setLastResult(data);
-      toast.success(`Prism Alpha evaluated — action: ${data.action}${data.reason ? ` (${data.reason})` : ""}.`);
+      const pa = data.prism_alpha, pa2 = data.prism_alpha_2;
+      toast.success(`Evaluated — Prism Alpha: ${pa?.action}${pa?.reason ? ` (${pa.reason})` : ""}; Prism Alpha 2: ${pa2?.action}${pa2?.reason ? ` (${pa2.reason})` : ""}.`);
     } catch (err) {
       if (err?.response?.status === 401) { onAuthError(); return; }
       toast.error(errMsg(err, "Evaluation failed."));
@@ -451,7 +452,7 @@ const BlackBoxPanel = ({ onAuthError }) => {
     try {
       const { data } = await axios.post(`${API}/blackbox/admin/prism-alpha-backtest-run`, {}, authHeaders());
       setLastBacktest(data);
-      toast.success(`Backtest complete — ${data.trades_generated} trade(s) over ${data.trading_days_evaluated} trading days.`);
+      toast.success(`Backtest complete — Prism Alpha: ${data.prism_alpha_trades} trade(s), Prism Alpha 2: ${data.prism_alpha_2_trades} trade(s), ${data.start_date} to ${data.end_date}.`);
     } catch (err) {
       if (err?.response?.status === 401) { onAuthError(); return; }
       toast.error(errMsg(err, "Backtest run failed."));
@@ -468,26 +469,28 @@ const BlackBoxPanel = ({ onAuthError }) => {
           <button onClick={evaluateNow} disabled={running} className="btn-ghost !px-4 !py-2 text-sm disabled:opacity-50" data-testid="prism-alpha-evaluate-now-btn">
             {running ? <><Loader2 size={16} className="animate-spin" /> Evaluating</> : <><RefreshCw size={15} /> Evaluate Now</>}
           </button>
-          <button onClick={runBacktest} disabled title="Temporarily disabled" className="btn-ghost !px-4 !py-2 text-sm disabled:opacity-50" data-testid="prism-alpha-backtest-run-btn">
+          <button onClick={runBacktest} disabled={backtesting} className="btn-ghost !px-4 !py-2 text-sm disabled:opacity-50" data-testid="prism-alpha-backtest-run-btn">
             {backtesting ? <><Loader2 size={16} className="animate-spin" /> Backtesting</> : <><RefreshCw size={15} /> Run Backtest</>}
           </button>
         </div>
       </div>
       <p className="text-sm text-slate-500 mb-4">
-        "Evaluate Now" runs one live Prism Alpha cycle (entry check if flat, stop/target/trailing-stop check if in a position).
-        The external cron should hit <code className="text-slate-400">/api/blackbox/admin/prism-alpha-evaluate</code> every minute during market hours.
-        "Run Backtest" re-runs the full walk-forward backtest over the real-option-price window (2024-01-01 to today) — a heavier, on-demand
-        operation (fetches NSE bhavcopy data as needed), not something to schedule on a cron. Temporarily disabled — EOD-granularity backtest
-        results are still being refined.
+        "Evaluate Now" runs one live cycle for BOTH Prism Alpha (RSI + XO Zone gated) and Prism Alpha 2 (pattern-only, no indicator gate) —
+        entry check if flat, stop/target/trailing-stop check if in a position. The external cron should hit{" "}
+        <code className="text-slate-400">/api/blackbox/admin/prism-alpha-evaluate</code> every minute during market hours.
+        "Run Backtest" replays real 1-minute Definedge data (Nifty spot + option premium — no daily/EOD approximation) for both variants;
+        the real achievable window is limited to however far back Definedge's option data actually goes for currently-listed strikes
+        (typically ~1-3 months, not a fixed range) since expired-contract tokens can't be resolved. Heavier, on-demand only.
       </p>
       {lastResult && (
-        <div className="text-xs text-slate-500 font-mono-ui" data-testid="prism-alpha-last-result">
-          Last live run: {lastResult.action}{lastResult.reason ? ` — ${lastResult.reason}` : ""}
+        <div className="text-xs text-slate-500 font-mono-ui space-y-0.5" data-testid="prism-alpha-last-result">
+          <div>Prism Alpha: {lastResult.prism_alpha?.action}{lastResult.prism_alpha?.reason ? ` — ${lastResult.prism_alpha.reason}` : ""}</div>
+          <div>Prism Alpha 2: {lastResult.prism_alpha_2?.action}{lastResult.prism_alpha_2?.reason ? ` — ${lastResult.prism_alpha_2.reason}` : ""}</div>
         </div>
       )}
       {lastBacktest && (
         <div className="text-xs text-slate-500 font-mono-ui mt-1" data-testid="prism-alpha-last-backtest">
-          Last backtest: {lastBacktest.trades_generated} trade(s), {lastBacktest.trading_days_evaluated} days, {lastBacktest.start_date} – {lastBacktest.end_date}.
+          Last backtest: {lastBacktest.start_date} – {lastBacktest.end_date} ({lastBacktest.spot_ticks_evaluated} spot ticks) — Prism Alpha: {lastBacktest.prism_alpha_trades} trade(s), Prism Alpha 2: {lastBacktest.prism_alpha_2_trades} trade(s).
         </div>
       )}
     </div>

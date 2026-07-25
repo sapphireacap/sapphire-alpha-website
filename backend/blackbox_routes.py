@@ -1,5 +1,6 @@
 """
-Black Box tab routes — "Prism Alpha" P&F signal system.
+Black Box tab routes — Prism Alpha (RSI + XO Zone gated) and Prism Alpha 2
+(identical pattern logic, no indicator gate — a parallel comparison track).
 
 Public routes intentionally return performance/trade-log data only — never
 conditions_met (pattern names, indicator values) or stop_shift_history's
@@ -12,12 +13,10 @@ existing shared `definedge` instance, no new auth.
 import logging
 from datetime import datetime, timezone, timedelta
 
-from typing import Optional
+from fastapi import APIRouter, HTTPException, Request, Response, Depends
 
-from fastapi import APIRouter, HTTPException, Request, Depends
-
-from blackbox_prism_alpha import evaluate_prism_alpha
-from blackbox_backtest import run_backtest
+from blackbox_prism_alpha import evaluate_prism_alpha, VARIANT_CONFIG
+from blackbox_backtest import run_backtest, BACKTEST_COLLECTIONS
 
 logger = logging.getLogger(__name__)
 IST = timezone(timedelta(hours=5, minutes=30))
@@ -48,9 +47,9 @@ def _compute_stats(trades: list) -> dict:
     }
 
 
-def _public_trade(t: dict) -> dict:
+def _public_trade(t: dict, chart_url: str = None) -> dict:
     """Entry/exit/P&L/duration only — no conditions_met, no pattern names."""
-    return {
+    out = {
         "id": t["id"],
         "date": t["date"],
         "direction": t["direction"],
@@ -64,17 +63,42 @@ def _public_trade(t: dict) -> dict:
         "pnl": t.get("pnl"),
         "status": t["status"],
     }
+    if chart_url is not None:
+        out["chart_url"] = chart_url
+    return out
 
 
 def create_blackbox_router(db, definedge, get_current_admin, cron_secret: str) -> APIRouter:
     router = APIRouter(prefix="/blackbox")
 
+    async def _status(collection_name: str):
+        today_iso = datetime.now(IST).date().isoformat()
+        trade = await db[collection_name].find_one({"date": today_iso}, {"_id": 0})
+        if not trade:
+            return {"position": "flat", "today_signal": None}
+        signal = {
+            "direction": trade["direction"],
+            "strike": trade["strike"],
+            "entry_time": trade["entry_time"],
+            "exit_time": trade.get("exit_time"),
+            "pnl": trade.get("pnl"),
+        }
+        return {"position": "in_position" if trade["status"] == "open" else "flat", "today_signal": signal}
+
+    async def _stats(collection_name: str):
+        trades = await db[collection_name].find({}, {"_id": 0}).to_list(5000)
+        return _compute_stats(trades)
+
+    async def _trades(collection_name: str):
+        trades = await db[collection_name].find({}, {"_id": 0}).sort("entry_time", -1).to_list(500)
+        return [_public_trade(t) for t in trades]
+
     @router.post("/admin/prism-alpha-evaluate")
     async def prism_alpha_evaluate_cron(request: Request):
         """External-cron entry point (same X-Cron-Key mechanism as every
         other scheduled job in this codebase) — recommend every 1 minute
-        during 09:15-15:30 IST, the tightest end of the spec's 1-5 minute
-        range, needed for prompt stop/target detection."""
+        during 09:15-15:30 IST. Runs both Prism Alpha and Prism Alpha 2 in
+        one call (they share the same underlying ATM CE/PE contracts)."""
         if not cron_secret or request.headers.get("X-Cron-Key") != cron_secret:
             raise HTTPException(status_code=401, detail="Invalid cron key")
         try:
@@ -92,66 +116,90 @@ def create_blackbox_router(db, definedge, get_current_admin, cron_secret: str) -
 
     @router.get("/prism-alpha/status")
     async def prism_alpha_status():
-        today_iso = datetime.now(IST).date().isoformat()
-        trade = await db.blackbox_prism_alpha_trades.find_one({"date": today_iso}, {"_id": 0})
-        if not trade:
-            return {"position": "flat", "today_signal": None}
-        signal = {
-            "direction": trade["direction"],
-            "strike": trade["strike"],
-            "entry_time": trade["entry_time"],
-            "exit_time": trade.get("exit_time"),
-            "pnl": trade.get("pnl"),
-        }
-        return {"position": "in_position" if trade["status"] == "open" else "flat", "today_signal": signal}
+        return await _status(VARIANT_CONFIG["prism_alpha"]["collection"])
 
     @router.get("/prism-alpha/stats")
     async def prism_alpha_stats():
-        trades = await db.blackbox_prism_alpha_trades.find({}, {"_id": 0}).to_list(5000)
-        return _compute_stats(trades)
+        return await _stats(VARIANT_CONFIG["prism_alpha"]["collection"])
 
     @router.get("/prism-alpha/trades")
     async def prism_alpha_trades():
-        trades = await db.blackbox_prism_alpha_trades.find({}, {"_id": 0}).sort("entry_time", -1).to_list(500)
-        return [_public_trade(t) for t in trades]
+        return await _trades(VARIANT_CONFIG["prism_alpha"]["collection"])
+
+    @router.get("/prism-alpha-2/status")
+    async def prism_alpha2_status():
+        return await _status(VARIANT_CONFIG["prism_alpha_2"]["collection"])
+
+    @router.get("/prism-alpha-2/stats")
+    async def prism_alpha2_stats():
+        return await _stats(VARIANT_CONFIG["prism_alpha_2"]["collection"])
+
+    @router.get("/prism-alpha-2/trades")
+    async def prism_alpha2_trades():
+        return await _trades(VARIANT_CONFIG["prism_alpha_2"]["collection"])
+
+    # ---- Backtest (intraday, real 1-minute Definedge data — see
+    # blackbox_backtest.py's module docstring for the real, verified data
+    # constraints this works around) ------------------------------------
+    async def _backtest_summary(variant: str, api_path: str):
+        latest_run = await db.blackbox_backtest_runs.find_one({}, {"_id": 0}, sort=[("run_at", -1)])
+        if not latest_run:
+            return {"run": None, "stats": _compute_stats([])}
+        collection_name = BACKTEST_COLLECTIONS[variant]
+        trades = await db[collection_name].find(
+            {"backtest_run_id": latest_run["backtest_run_id"]}, {"_id": 0, "chart_png": 0}
+        ).to_list(5000)
+        return {"run": latest_run, "stats": _compute_stats(trades)}
+
+    async def _backtest_trades(variant: str, api_path: str):
+        latest_run = await db.blackbox_backtest_runs.find_one({}, {"_id": 0}, sort=[("run_at", -1)])
+        if not latest_run:
+            return []
+        collection_name = BACKTEST_COLLECTIONS[variant]
+        trades = await db[collection_name].find(
+            {"backtest_run_id": latest_run["backtest_run_id"]}, {"_id": 0, "chart_png": 0}
+        ).sort("entry_time", -1).to_list(500)
+        return [_public_trade(t, chart_url=f"/blackbox/{api_path}/backtest/chart/{t['id']}") for t in trades]
+
+    async def _backtest_chart(variant: str, trade_id: str):
+        collection_name = BACKTEST_COLLECTIONS[variant]
+        trade = await db[collection_name].find_one({"id": trade_id}, {"_id": 0, "chart_png": 1})
+        if not trade or not trade.get("chart_png"):
+            raise HTTPException(status_code=404, detail="No chart for this trade.")
+        return Response(content=bytes(trade["chart_png"]), media_type="image/png")
 
     @router.post("/admin/prism-alpha-backtest-run")
-    async def prism_alpha_backtest_run(
-        start_date: Optional[str] = None, end_date: Optional[str] = None,
-        admin: dict = Depends(get_current_admin),
-    ):
-        """On-demand, not scheduled — a backtest run is a heavy one-off
-        computation (NSE bhavcopy fetches for every entry/exit day), not
-        something to poll on a cron. start_date/end_date default to the
-        full available real-premium window (2024-01-01 to today) if omitted."""
+    async def prism_alpha_backtest_run(admin: dict = Depends(get_current_admin)):
+        """On-demand, not scheduled — a backtest run fetches real 1-minute
+        history for every candidate strike, which is heavier than a single
+        live poll. Runs BOTH variants in one pass (see run_backtest)."""
         try:
-            sd = datetime.strptime(start_date, "%Y-%m-%d").date() if start_date else None
-            ed = datetime.strptime(end_date, "%Y-%m-%d").date() if end_date else None
-            return await run_backtest(db, definedge, start_date=sd, end_date=ed)
+            return await run_backtest(db, definedge)
         except Exception as e:  # noqa: BLE001
             raise HTTPException(status_code=502, detail=f"Backtest run failed: {e}")
 
     @router.get("/prism-alpha/backtest/summary")
     async def prism_alpha_backtest_summary():
-        """Latest run's metadata + stats — the date range, granularity and
-        trade count are surfaced prominently so it's never mistaken for a
-        full-history backtest, per the transparency requirement."""
-        latest_run = await db.blackbox_backtest_runs.find_one({}, {"_id": 0}, sort=[("run_at", -1)])
-        if not latest_run:
-            return {"run": None, "stats": _compute_stats([])}
-        trades = await db.blackbox_prism_alpha_backtest_trades.find(
-            {"backtest_run_id": latest_run["backtest_run_id"]}, {"_id": 0}
-        ).to_list(5000)
-        return {"run": latest_run, "stats": _compute_stats(trades)}
+        return await _backtest_summary("prism_alpha", "prism-alpha")
 
     @router.get("/prism-alpha/backtest/trades")
     async def prism_alpha_backtest_trades():
-        latest_run = await db.blackbox_backtest_runs.find_one({}, {"_id": 0}, sort=[("run_at", -1)])
-        if not latest_run:
-            return []
-        trades = await db.blackbox_prism_alpha_backtest_trades.find(
-            {"backtest_run_id": latest_run["backtest_run_id"]}, {"_id": 0}
-        ).sort("entry_time", -1).to_list(500)
-        return [_public_trade(t) for t in trades]
+        return await _backtest_trades("prism_alpha", "prism-alpha")
+
+    @router.get("/prism-alpha/backtest/chart/{trade_id}")
+    async def prism_alpha_backtest_chart(trade_id: str):
+        return await _backtest_chart("prism_alpha", trade_id)
+
+    @router.get("/prism-alpha-2/backtest/summary")
+    async def prism_alpha2_backtest_summary():
+        return await _backtest_summary("prism_alpha_2", "prism-alpha-2")
+
+    @router.get("/prism-alpha-2/backtest/trades")
+    async def prism_alpha2_backtest_trades():
+        return await _backtest_trades("prism_alpha_2", "prism-alpha-2")
+
+    @router.get("/prism-alpha-2/backtest/chart/{trade_id}")
+    async def prism_alpha2_backtest_chart(trade_id: str):
+        return await _backtest_chart("prism_alpha_2", trade_id)
 
     return router

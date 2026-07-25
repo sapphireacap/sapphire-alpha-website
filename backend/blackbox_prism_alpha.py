@@ -57,12 +57,16 @@ XO_ZONE_LOOKBACK = 10           # best-effort — see module docstring
 RSI_PERIOD = 7
 RSI_AVG1_PERIOD = 5             # EMA of RSI(7) — best-effort, "Average Period 1"
 RSI_AVG2_PERIOD = 14            # EMA of RSI(7) — best-effort, "Average Period 2" (logged, NOT gated on: "Avg Line 2 disabled")
-ENTRY_RSI_RANGE = (20, 40)      # applies to BOTH CE and PE — see note below
+ENTRY_RSI_RANGE = (20, 50)      # applies to BOTH CE and PE — widened from (20, 40) per explicit instruction
 TARGET_POINTS = 60              # ₹60 of OPTION PREMIUM movement from entry — confirmed: since entry/exit
                                  # now live entirely on the option's own chart, "60 points" means ₹60 on
                                  # that chart, not 60 Nifty index points (an earlier version used the
                                  # underlying here — corrected).
 ATM_STRIKE_INCREMENT = 100      # ATM = round(spot/100)*100 — strikes are multiples of 100 (24000, 24100, ...)
+ATM_DRIFT_POINTS = 100          # ATM is held fixed (while flat) until spot has moved more than this many
+                                 # points away from the anchor it was last picked at — NOT re-rounded every
+                                 # poll cycle, which would re-pick after as little as a ~50-point drift (the
+                                 # midpoint between two 100-strikes), not a genuine 100-point move.
 MAX_TRADES_PER_SESSION = 3      # once a trade closes, a new one may be taken the same session, up to this cap
 ENTRY_START_TIME = dt_time(9, 20)  # no new entries before 9:20 AM IST; exit-monitoring on an already-open
                                     # trade is never gated by this — only fresh entries are
@@ -539,30 +543,39 @@ def _parse_ts(ts: str) -> datetime:
     return datetime.strptime(ts, "%d%m%Y%H%M").replace(tzinfo=IST)
 
 
-async def _check_entry_conditions(definedge, direction: str, option_token: str) -> dict:
-    """direction: 'CE' or 'PE' — which option's own chart to analyze. Both
-    use the identical bullish setup: Low Pole + bullish follow-through +
-    XO Zone-turned-positive + RSI in ENTRY_RSI_RANGE, all computed on that
-    option's own premium series (see module docstring for why). Pure check,
-    no DB write — split out so both CE and PE can be evaluated in full
-    before deciding which (if either) to actually enter, so a same-day
-    simultaneous qualification can be detected rather than short-circuited
-    away by whichever direction happened to be checked first."""
-    now = datetime.now(IST)
-    frm = (now - timedelta(days=HISTORY_LOOKBACK_DAYS)).strftime("%d%m%Y0000")
-    to = now.strftime("%d%m%Y%H%M")
-    opt_bars = await fetch_minute_bars(definedge, "NFO", option_token, frm=frm, to=to)
+VARIANT_CONFIG = {
+    # "prism_alpha"   — full spec: pattern + XO Zone crossover + RSI in range.
+    # "prism_alpha_2" — same pattern logic, NO indicator gate at all — a
+    # parallel comparison track to see what the raw pattern signal alone
+    # would have done, per explicit instruction. Both variants watch the
+    # identical underlying ATM CE/PE contracts each poll cycle (see
+    # evaluate_prism_alpha) — only the entry gate differs.
+    "prism_alpha": {"collection": "blackbox_prism_alpha_trades", "require_indicators": True},
+    "prism_alpha_2": {"collection": "blackbox_prism_alpha2_trades", "require_indicators": False},
+}
+
+
+def _analyze_option_bars(opt_bars: list, direction: str) -> dict:
+    """Pure (no I/O) core of an entry check: build P&F columns from already-
+    fetched bars, search for a Low Pole + follow-through pair, compute XO
+    Zone and RSI. Shared by the live poll loop (_analyze_option_chart fetches
+    fresh bars then delegates here) and the backtest replay (passes its own
+    pre-sliced, no-lookahead bars directly) — the exact same pattern logic
+    either way, so a backtest result can never drift from what live would
+    have decided given the same bars. Returns {'pattern_found': False,
+    'reason': ...} or {'pattern_found': True, 'xo_ok', 'rsi_ok',
+    'entry_price', 'initial_stop', 'conditions_met'}."""
     if len(opt_bars) < 50:
-        return {"qualifies": False, "reason": f"insufficient {direction} price data"}
+        return {"pattern_found": False, "reason": f"insufficient {direction} price data"}
     columns = build_pnf_columns(opt_bars)
     if len(columns) < 4:
-        return {"qualifies": False, "reason": f"insufficient {direction} P&F column history"}
+        return {"pattern_found": False, "reason": f"insufficient {direction} P&F column history"}
 
-    # "All align on the same day" means all four conditions are checked and
-    # found true TOGETHER on the evaluation day — not that each one must
-    # have freshly triggered that exact day. That reading is structurally
-    # impossible for the pole specifically: follow-through can only occur
-    # in columns AFTER the pole's confirming column, so if the pole were
+    # "All align on the same day" means all conditions are checked and found
+    # true TOGETHER on the evaluation day — not that each one must have
+    # freshly triggered that exact day. That reading is structurally
+    # impossible for the pole specifically: follow-through can only occur in
+    # columns AFTER the pole's confirming column, so if the pole were
     # required to confirm today, there could never be a later column today
     # for the follow-through to occur in. Caught live: with that gate, every
     # single pole confirmation in a real backtest run showed "no
@@ -575,8 +588,8 @@ async def _check_entry_conditions(definedge, direction: str, option_token: str) 
     # columns later, surfaced a real bad trade in testing: price had since
     # moved far from that old pole's level, making its low a stale,
     # economically meaningless stop-loss anchor (caught by the sanity guard
-    # below, but the root cause is picking a stale pole in the first place).
-    # Walking backward and taking the first pole that already has a
+    # in _gate_entry, but the root cause is picking a stale pole in the first
+    # place). Walking backward and taking the first pole that already has a
     # follow-through after it keeps both anchored to the same, recent move.
     pole_idx = None
     follow_through = None
@@ -597,12 +610,12 @@ async def _check_entry_conditions(definedge, direction: str, option_token: str) 
             break  # freshest pole that already has a follow-through — stop here
 
     if pole_idx is None:
-        return {"qualifies": False, "reason": f"no Low Pole with a follow-through found on the {direction} chart"}
+        return {"pattern_found": False, "reason": f"no Low Pole with a follow-through found on the {direction} chart"}
 
-    # XO Zone gate: a zero-line crossover on the newest column (confirmed
-    # against Prashant Shah's P&F book, Ch. 4.5 — see module-level comment
-    # above xo_zone_series). Bullish entries need the zone to have just
-    # turned positive.
+    # XO Zone: a zero-line crossover on the newest column (confirmed against
+    # Prashant Shah's P&F book, Ch. 4.5 — see module-level comment above
+    # xo_zone_series). Computed regardless of variant — prism_alpha_2 logs it
+    # for comparison even though it doesn't gate on it.
     xo_series = xo_zone_series(columns)
     xo_now = xo_series[-1]
     xo_turn = xo_zone_turned(columns)
@@ -632,22 +645,53 @@ async def _check_entry_conditions(definedge, direction: str, option_token: str) 
         "rsi_ok": rsi_ok,
     }
 
-    if not (xo_ok and rsi_ok):
+    return {
+        "pattern_found": True,
+        "xo_ok": xo_ok,
+        "rsi_ok": rsi_ok,
+        "entry_price": opt_bars[-1]["close"],
+        "initial_stop": columns[pole_idx - 1]["low_price"] - 1,  # premium terms — directly meaningful
+        "conditions_met": conditions_met,
+    }
+
+
+async def _analyze_option_chart(definedge, direction: str, option_token: str) -> dict:
+    """Live poll-cycle wrapper: fetches fresh bars, then delegates to the
+    shared, pure _analyze_option_bars()."""
+    now = datetime.now(IST)
+    frm = (now - timedelta(days=HISTORY_LOOKBACK_DAYS)).strftime("%d%m%Y0000")
+    to = now.strftime("%d%m%Y%H%M")
+    opt_bars = await fetch_minute_bars(definedge, "NFO", option_token, frm=frm, to=to)
+    return _analyze_option_bars(opt_bars, direction)
+
+
+def _gate_entry(analysis: dict, require_indicators: bool) -> dict:
+    """Turns a shared _analyze_option_chart() result into a qualifies/not
+    decision for ONE variant — the only place require_indicators is checked,
+    so both variants reuse the exact same fetched data/pattern analysis
+    rather than hitting Definedge twice per poll cycle."""
+    if not analysis["pattern_found"]:
+        return {"qualifies": False, "reason": analysis["reason"]}
+
+    conditions_met = analysis["conditions_met"]
+    if require_indicators and not (analysis["xo_ok"] and analysis["rsi_ok"]):
         return {"qualifies": False, "reason": "pattern conditions met, indicator gates not yet aligned",
                 "conditions_met": conditions_met}
 
-    entry_price = opt_bars[-1]["close"]
-    initial_stop = columns[pole_idx - 1]["low_price"] - 1  # in premium terms — directly meaningful now
+    entry_price = analysis["entry_price"]
+    initial_stop = analysis["initial_stop"]
 
     # Sanity guard: a stop-loss can never sit at or above entry on a long
     # position. Taking "the most recent Low Pole anywhere in the window" (no
-    # same-day gate — see above) can surface a pole that price has since
-    # fallen back through, invalidating the bullish thesis the pole was
-    # supposed to represent even though a later, unrelated follow-through +
-    # XO Zone + RSI still happen to align. Caught live: a real backtest
-    # trade came out with initial_stop > entry_price, which would have
-    # triggered an exit almost immediately for a guaranteed loss. Rather
-    # than take that trade, it's rejected outright.
+    # same-day gate — see _analyze_option_chart) can surface a pole that
+    # price has since fallen back through, invalidating the bullish thesis
+    # the pole was supposed to represent even though a later, unrelated
+    # follow-through (+ indicators, if required) still happen to align.
+    # Caught live: a real backtest trade came out with initial_stop >
+    # entry_price, which would have triggered an exit almost immediately for
+    # a guaranteed loss. Rather than take that trade, it's rejected outright.
+    # Applies to BOTH variants — this isn't an indicator gate, it's basic
+    # economic sanity.
     if initial_stop >= entry_price:
         return {"qualifies": False, "reason": "pole stop would be at/above entry — stale pole, rejecting",
                 "conditions_met": conditions_met}
@@ -660,15 +704,15 @@ async def _check_entry_conditions(definedge, direction: str, option_token: str) 
     }
 
 
-async def _enter_trade(db, today_iso: str, direction: str, atm: int, expiry: str, option_token: str,
-                        check: dict, flagged_conflict: bool) -> dict:
+async def _enter_trade(db, collection_name: str, today_iso: str, direction: str, atm: int, expiry: str,
+                        option_token: str, check: dict, flagged_conflict: bool) -> dict:
     conditions_met = dict(check["conditions_met"])
     if flagged_conflict:
         conditions_met["simultaneous_signal_conflict"] = True
         conditions_met["other_direction_also_qualified"] = "PE" if direction == "CE" else "CE"
-        logger.warning("Prism Alpha: both CE and PE qualified simultaneously on %s — taking %s "
+        logger.warning("Prism Alpha (%s): both CE and PE qualified simultaneously on %s — taking %s "
                         "(checked first), flagging the conflict rather than silently dropping it.",
-                        today_iso, direction)
+                        collection_name, today_iso, direction)
 
     entry_price = check["entry_price"]
     target = entry_price + TARGET_POINTS  # premium terms — "60 points" = ₹60 of option premium, confirmed
@@ -693,26 +737,32 @@ async def _enter_trade(db, today_iso: str, direction: str, atm: int, expiry: str
         "conditions_met": conditions_met,
         "status": "open",
     }
-    await db.blackbox_prism_alpha_trades.insert_one(dict(trade))
+    await db[collection_name].insert_one(dict(trade))
     return {"action": "entered", "trade": trade}
 
 
-async def _monitor_open_trade(db, definedge, trade: dict) -> dict:
-    """Stop-loss, its trailing shifts, and the target all live entirely on
-    the option's own premium chart — target = entry_price + TARGET_POINTS
-    in premium terms (confirmed: "60 points" means ₹60 of option premium,
-    not underlying, since everything moved to the option's own chart).
-    Checked against 1-minute CLOSES only (not intrabar high/low), matching
-    the chart's own close-only sampling: "check continuously against 1-min
+def _evaluate_exit(opt_bars: list, trade: dict, now: datetime) -> dict:
+    """Pure (no I/O) stop-trail + exit-breach evaluation, shared by the live
+    poll loop and the backtest replay so exit logic can never drift between
+    them. Stop-loss, its trailing shifts, and the target all live entirely on
+    the option's own premium chart — target = entry_price + TARGET_POINTS in
+    premium terms (confirmed: "60 points" means ₹60 of option premium, not
+    underlying, since everything moved to the option's own chart). Checked
+    against 1-minute CLOSES only (not intrabar high/low), matching the
+    chart's own close-only sampling: "check continuously against 1-min
     closes... not tick-by-tick, since the chart itself is only updated once
-    per minute."""
-    now = datetime.now(IST)
-    frm = (now - timedelta(days=HISTORY_LOOKBACK_DAYS)).strftime("%d%m%Y0000")
-    to = now.strftime("%d%m%Y%H%M")
-    opt_bars = await fetch_minute_bars(definedge, "NFO", trade["option_token"], frm=frm, to=to)
+    per minute." Identical for both variants — the RSI/XO gate only affects
+    ENTRY, never exit management.
+
+    opt_bars: full chronological OHLC bars for trade['option_token'] — the
+    caller (live: fetched fresh; backtest: pre-sliced up to the simulated
+    clock, never beyond `now`) is responsible for not leaking future bars.
+    Returns {'action': 'monitoring', 'current_stop', 'shift_event': dict|None}
+    or {'action': 'exited', 'exit_reason', 'exit_price', 'pnl', 'current_stop',
+    'shift_event': dict|None}."""
     columns = build_pnf_columns(opt_bars)
 
-    entry_dt = datetime.fromisoformat(trade["entry_time"])
+    entry_dt = trade["entry_time"] if isinstance(trade["entry_time"], datetime) else datetime.fromisoformat(trade["entry_time"])
     current_stop = trade["current_stop"]
     target = trade["target"]
 
@@ -732,6 +782,7 @@ async def _monitor_open_trade(db, definedge, trade: dict) -> dict:
                 if candidate > current_stop and (best_candidate is None or candidate > best_candidate):
                     best_candidate = candidate
 
+    shift_event = None
     if best_candidate is not None:
         shift_event = {
             "timestamp": now.isoformat(),
@@ -740,10 +791,6 @@ async def _monitor_open_trade(db, definedge, trade: dict) -> dict:
             "pattern": "double_bottom_sell",
         }
         current_stop = best_candidate
-        await db.blackbox_prism_alpha_trades.update_one(
-            {"id": trade["id"]},
-            {"$set": {"current_stop": current_stop}, "$push": {"stop_shift_history": shift_event}},
-        )
 
     # 2. Stop/target breach — close-only, same series, same sampling as the
     # chart itself. First 1-min close since entry that clears either level.
@@ -756,41 +803,80 @@ async def _monitor_open_trade(db, definedge, trade: dict) -> dict:
         # without a hard session cutoff, a position with no further exit
         # trigger could otherwise sit open indefinitely.
         if now.time() >= EXIT_FORCE_TIME and opt_since_entry:
-            exit_reason = "session_end"
             exit_price = opt_since_entry[-1]["close"]
-            pnl = exit_price - trade["entry_price"]
-            await db.blackbox_prism_alpha_trades.update_one(
-                {"id": trade["id"]},
-                {"$set": {
-                    "status": "closed",
-                    "exit_time": now.isoformat(),
-                    "exit_price": exit_price,
-                    "exit_reason": exit_reason,
-                    "pnl": pnl,
-                }},
-            )
-            return {"action": "exited", "exit_reason": exit_reason, "exit_price": exit_price, "pnl": pnl}
-        return {"action": "monitoring", "trade": {**trade, "current_stop": current_stop}}
+            return {"action": "exited", "exit_reason": "session_end", "exit_price": exit_price,
+                    "pnl": exit_price - trade["entry_price"], "current_stop": current_stop, "shift_event": shift_event}
+        return {"action": "monitoring", "current_stop": current_stop, "shift_event": shift_event}
 
     exit_reason = "stop" if breach_bar["close"] <= current_stop else "target"
     exit_price = breach_bar["close"]
-    pnl = exit_price - trade["entry_price"]
+    return {"action": "exited", "exit_reason": exit_reason, "exit_price": exit_price,
+            "pnl": exit_price - trade["entry_price"], "current_stop": current_stop, "shift_event": shift_event}
 
-    await db.blackbox_prism_alpha_trades.update_one(
-        {"id": trade["id"]},
-        {"$set": {
-            "status": "closed",
-            "exit_time": now.isoformat(),
-            "exit_price": exit_price,
-            "exit_reason": exit_reason,
-            "pnl": pnl,
-        }},
+
+async def _monitor_open_trade(db, collection_name: str, definedge, trade: dict) -> dict:
+    """Live poll-cycle wrapper: fetches fresh bars, delegates the actual
+    decision to the shared, pure _evaluate_exit(), then persists it."""
+    now = datetime.now(IST)
+    frm = (now - timedelta(days=HISTORY_LOOKBACK_DAYS)).strftime("%d%m%Y0000")
+    to = now.strftime("%d%m%Y%H%M")
+    opt_bars = await fetch_minute_bars(definedge, "NFO", trade["option_token"], frm=frm, to=to)
+    result = _evaluate_exit(opt_bars, trade, now)
+
+    if result["shift_event"] is not None:
+        await db[collection_name].update_one(
+            {"id": trade["id"]},
+            {"$set": {"current_stop": result["current_stop"]}, "$push": {"stop_shift_history": result["shift_event"]}},
+        )
+
+    if result["action"] == "exited":
+        await db[collection_name].update_one(
+            {"id": trade["id"]},
+            {"$set": {
+                "status": "closed",
+                "exit_time": now.isoformat(),
+                "exit_price": result["exit_price"],
+                "exit_reason": result["exit_reason"],
+                "pnl": result["pnl"],
+            }},
+        )
+        return {"action": "exited", "exit_reason": result["exit_reason"], "exit_price": result["exit_price"], "pnl": result["pnl"]}
+
+    return {"action": "monitoring", "trade": {**trade, "current_stop": result["current_stop"]}}
+
+
+async def _resolve_atm(db, definedge, today_iso: str) -> int:
+    """ATM is picked once at the start of the session and then held fixed
+    while flat until spot has moved more than ATM_DRIFT_POINTS away from the
+    anchor it was last picked at — NOT re-rounded every poll cycle
+    (round(spot/100)*100 on every call re-picks after as little as a
+    ~50-point drift, the midpoint between two 100-strikes, not a genuine
+    100-point move). Shared by both variants, which watch identical
+    underlying CE/PE contracts; persisted per calendar day in
+    blackbox_prism_alpha_atm_state so it survives across poll cycles."""
+    spot = await definedge.spot_quote()
+    spot_ltp = float(str(spot["spot"]).replace(",", ""))
+    state = await db.blackbox_prism_alpha_atm_state.find_one({"date": today_iso})
+    if state is not None and abs(spot_ltp - state["anchor_spot"]) <= ATM_DRIFT_POINTS:
+        return state["atm"]
+    atm = round(spot_ltp / ATM_STRIKE_INCREMENT) * ATM_STRIKE_INCREMENT
+    await db.blackbox_prism_alpha_atm_state.update_one(
+        {"date": today_iso},
+        {"$set": {"date": today_iso, "atm": atm, "anchor_spot": spot_ltp}},
+        upsert=True,
     )
-    return {"action": "exited", "exit_reason": exit_reason, "exit_price": exit_price, "pnl": pnl}
+    return atm
 
 
 async def evaluate_prism_alpha(db, definedge) -> dict:
-    """The single poll-cycle entry point. READ-ONLY Definedge endpoints only:
+    """The single poll-cycle entry point — evaluates BOTH variants
+    ('prism_alpha' and 'prism_alpha_2', see VARIANT_CONFIG) and returns
+    {'prism_alpha': {...}, 'prism_alpha_2': {...}}. ATM/expiry/CE-PE tokens
+    are resolved at most once per cycle (only when at least one variant is
+    actually flat, under the session cap, and past the entry window) and
+    shared by both, since they watch identical underlying contracts and only
+    differ in whether the indicator gate applies. READ-ONLY Definedge
+    endpoints only:
       - GET .../sds/history/{segment}/{token}/minute/{from}/{to}  (CE/PE option bars)
       - GET .../dart/v1/quotes/NSE/{token}                        (Nifty spot LTP — ATM selection only)
       - GET .../public/nsefno.zip (via definedge._get_master())   (CE/PE token resolution)
@@ -798,44 +884,57 @@ async def evaluate_prism_alpha(db, definedge) -> dict:
     anywhere in this module.
     """
     today_iso = datetime.now(IST).date().isoformat()
-    todays_trades = await db.blackbox_prism_alpha_trades.find({"date": today_iso}, {"_id": 0}).to_list(MAX_TRADES_PER_SESSION + 1)
-    open_trade = next((t for t in todays_trades if t["status"] == "open"), None)
+    results = {}
+    pending = []  # variants that are flat, under the session cap, and past 9:20 — need a fresh entry check
 
-    if open_trade is not None:
-        # Once a trade is on, keep tracking that exact strike/contract until
-        # exit — never re-pick ATM mid-trade, even if spot has since drifted.
-        return await _monitor_open_trade(db, definedge, open_trade)
+    for variant, cfg in VARIANT_CONFIG.items():
+        collection_name = cfg["collection"]
+        todays_trades = await db[collection_name].find({"date": today_iso}, {"_id": 0}).to_list(MAX_TRADES_PER_SESSION + 1)
+        open_trade = next((t for t in todays_trades if t["status"] == "open"), None)
 
-    closed_count = sum(1 for t in todays_trades if t["status"] == "closed")
-    if closed_count >= MAX_TRADES_PER_SESSION:
-        return {"action": "flat", "reason": f"max {MAX_TRADES_PER_SESSION} trades already taken this session"}
+        if open_trade is not None:
+            # Once a trade is on, keep tracking that exact strike/contract
+            # until exit — never re-pick ATM mid-trade, even if the shared
+            # ATM state has since moved on for the OTHER variant.
+            results[variant] = await _monitor_open_trade(db, collection_name, definedge, open_trade)
+            continue
 
-    if datetime.now(IST).time() < ENTRY_START_TIME:
-        return {"action": "flat", "reason": "before 9:20 AM entry window"}
+        closed_count = sum(1 for t in todays_trades if t["status"] == "closed")
+        if closed_count >= MAX_TRADES_PER_SESSION:
+            results[variant] = {"action": "flat", "reason": f"max {MAX_TRADES_PER_SESSION} trades already taken this session"}
+            continue
 
-    # Spot is used ONLY to pick the current ATM strike while flat — it never
-    # feeds pattern detection, XO Zone, or RSI, all of which run on the
-    # option's own chart. Re-resolved fresh every poll cycle while flat, so
-    # ATM naturally tracks spot drift in 100-point increments until a trade
-    # is actually taken (see the "no re-pick mid-trade" note above).
-    spot = await definedge.spot_quote()
-    spot_ltp = float(str(spot["spot"]).replace(",", ""))
-    atm = round(spot_ltp / ATM_STRIKE_INCREMENT) * ATM_STRIKE_INCREMENT
+        if datetime.now(IST).time() < ENTRY_START_TIME:
+            results[variant] = {"action": "flat", "reason": "before 9:20 AM entry window"}
+            continue
 
-    df = await definedge._get_master()
-    tokens = resolve_atm_option_tokens(df, atm)
+        pending.append(variant)
 
-    # Both charts checked in full before deciding — never short-circuited —
-    # so a same-day simultaneous CE+PE qualification is actually detected
-    # instead of silently masked by whichever direction got checked first.
-    ce_check = await _check_entry_conditions(definedge, "CE", tokens["CE"])
-    pe_check = await _check_entry_conditions(definedge, "PE", tokens["PE"])
-    both_qualify = ce_check["qualifies"] and pe_check["qualifies"]
+    if pending:
+        atm = await _resolve_atm(db, definedge, today_iso)
+        df = await definedge._get_master()
+        tokens = resolve_atm_option_tokens(df, atm)
 
-    if ce_check["qualifies"]:
-        return await _enter_trade(db, today_iso, "CE", atm, tokens["expiry"], tokens["CE"], ce_check, both_qualify)
-    if pe_check["qualifies"]:
-        return await _enter_trade(db, today_iso, "PE", atm, tokens["expiry"], tokens["PE"], pe_check, both_qualify)
+        # Both charts analyzed ONCE, shared by every pending variant — never
+        # short-circuited — so a same-day simultaneous CE+PE qualification is
+        # actually detected instead of silently masked by whichever direction
+        # got checked first, and so Definedge isn't hit twice for the same data.
+        ce_analysis = await _analyze_option_chart(definedge, "CE", tokens["CE"])
+        pe_analysis = await _analyze_option_chart(definedge, "PE", tokens["PE"])
 
-    return {"action": "flat", "reason": "no entry conditions aligned",
-            "ce_reason": ce_check.get("reason"), "pe_reason": pe_check.get("reason")}
+        for variant in pending:
+            cfg = VARIANT_CONFIG[variant]
+            collection_name = cfg["collection"]
+            ce_check = _gate_entry(ce_analysis, cfg["require_indicators"])
+            pe_check = _gate_entry(pe_analysis, cfg["require_indicators"])
+            both_qualify = ce_check["qualifies"] and pe_check["qualifies"]
+
+            if ce_check["qualifies"]:
+                results[variant] = await _enter_trade(db, collection_name, today_iso, "CE", atm, tokens["expiry"], tokens["CE"], ce_check, both_qualify)
+            elif pe_check["qualifies"]:
+                results[variant] = await _enter_trade(db, collection_name, today_iso, "PE", atm, tokens["expiry"], tokens["PE"], pe_check, both_qualify)
+            else:
+                results[variant] = {"action": "flat", "reason": "no entry conditions aligned",
+                                     "ce_reason": ce_check.get("reason"), "pe_reason": pe_check.get("reason")}
+
+    return results
