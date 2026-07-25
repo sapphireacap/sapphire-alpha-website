@@ -28,11 +28,12 @@ import logging
 import math
 import uuid
 from datetime import datetime, timezone, timedelta
+from datetime import time as dt_time
 
 import httpx
 import pandas as pd
 
-from definedge_service import DefinedgeService, DefinedgeError, DATA_BASE, NIFTY_SPOT_TOKEN
+from definedge_service import DefinedgeService, DefinedgeError, DATA_BASE
 
 logger = logging.getLogger(__name__)
 
@@ -52,7 +53,14 @@ RSI_PERIOD = 7
 RSI_AVG1_PERIOD = 5             # EMA of RSI(7) — best-effort, "Average Period 1"
 RSI_AVG2_PERIOD = 14            # EMA of RSI(7) — best-effort, "Average Period 2" (logged, NOT gated on: "Avg Line 2 disabled")
 ENTRY_RSI_RANGE = (20, 40)      # applies to BOTH CE and PE — see note below
-TARGET_POINTS = 60              # Nifty index points — the one thing still measured on the underlying
+TARGET_POINTS = 60              # ₹60 of OPTION PREMIUM movement from entry — confirmed: since entry/exit
+                                 # now live entirely on the option's own chart, "60 points" means ₹60 on
+                                 # that chart, not 60 Nifty index points (an earlier version used the
+                                 # underlying here — corrected).
+ATM_STRIKE_INCREMENT = 100      # ATM = round(spot/100)*100 — strikes are multiples of 100 (24000, 24100, ...)
+MAX_TRADES_PER_SESSION = 3      # once a trade closes, a new one may be taken the same session, up to this cap
+ENTRY_START_TIME = dt_time(9, 20)  # no new entries before 9:20 AM IST; exit-monitoring on an already-open
+                                    # trade is never gated by this — only fresh entries are
 
 # The P&F chart, patterns, XO Zone, RSI and stop-loss all run on the OPTION'S
 # OWN premium chart, not the underlying index — confirmed against a live
@@ -83,22 +91,14 @@ def _box_level(price: float, box_pct: float = BOX_PCT) -> int:
     return math.floor(math.log(price) / math.log(1.0 + box_pct))
 
 
-def _bar_ticks(bar: dict):
-    """Feed both the high and low of a bar into the box state machine (not
-    just the close) so a column's high/low is more realistic than a
-    close-only series would give — order depends on whether the bar closed
-    up or down (standard P&F convention: assume the bar moved toward its
-    close, so a down bar is assumed to have touched its high before its
-    low, and vice versa)."""
-    o, h, l, c = bar["open"], bar["high"], bar["low"], bar["close"]
-    ts = bar["ts"]
-    if c >= o:
-        return [(ts, l), (ts, h)]
-    return [(ts, h), (ts, l)]
-
-
 def build_pnf_columns(bars: list, box_pct: float = BOX_PCT, reversal_boxes: int = REVERSAL_BOXES) -> list:
-    """bars: chronological [{ts, open, high, low, close}, ...] (1-minute bars).
+    """bars: chronological [{ts, open, high, low, close}, ...] (1-minute bars
+    for the live engine, daily bars for the backtest). Samples ONLY each
+    bar's close/LTP — one price point per bar, per spec ("at each 1-minute
+    close, take the option's LTP... x and o prints only if they move the
+    set % rules within 1min"). Earlier version also fed each bar's high/low
+    as separate ticks; that's intentionally gone now — a bar contributes
+    exactly one sample, matching how the chart is meant to be sampled.
     Returns a chronological list of column dicts:
       {direction: 'X'|'O', high_level, low_level, high_price, low_price,
        box_count, start_ts, end_ts}
@@ -110,9 +110,7 @@ def build_pnf_columns(bars: list, box_pct: float = BOX_PCT, reversal_boxes: int 
     if len(bars) < 2:
         return []
 
-    samples = []
-    for b in bars:
-        samples.extend(_bar_ticks(b))
+    samples = [(b["ts"], b["close"]) for b in bars]
 
     columns = []
     direction = None
@@ -502,28 +500,24 @@ def _is_today(ts: str, today_iso: str) -> bool:
     return _parse_ts(ts).date().isoformat() == today_iso
 
 
-async def _evaluate_entry(db, definedge, today_iso: str, direction: str) -> dict:
+async def _check_entry_conditions(definedge, direction: str, option_token: str, today_iso: str) -> dict:
     """direction: 'CE' or 'PE' — which option's own chart to analyze. Both
     use the identical bullish setup: Low Pole + bullish follow-through +
     XO Zone-turned-positive + RSI in ENTRY_RSI_RANGE, all computed on that
-    option's own premium series (see module docstring for why)."""
-    spot = await definedge.spot_quote()
-    spot_ltp = float(str(spot["spot"]).replace(",", ""))
-    atm = round(spot_ltp / 100) * 100
-
-    df = await definedge._get_master()
-    tokens = resolve_atm_option_tokens(df, atm)
-    option_token = tokens[direction]
-
+    option's own premium series (see module docstring for why). Pure check,
+    no DB write — split out so both CE and PE can be evaluated in full
+    before deciding which (if either) to actually enter, so a same-day
+    simultaneous qualification can be detected rather than short-circuited
+    away by whichever direction happened to be checked first."""
     now = datetime.now(IST)
     frm = (now - timedelta(days=HISTORY_LOOKBACK_DAYS)).strftime("%d%m%Y0000")
     to = now.strftime("%d%m%Y%H%M")
     opt_bars = await fetch_minute_bars(definedge, "NFO", option_token, frm=frm, to=to)
     if len(opt_bars) < 50:
-        return {"action": "flat", "reason": f"insufficient {direction} price data"}
+        return {"qualifies": False, "reason": f"insufficient {direction} price data"}
     columns = build_pnf_columns(opt_bars)
     if len(columns) < 4:
-        return {"action": "flat", "reason": f"insufficient {direction} P&F column history"}
+        return {"qualifies": False, "reason": f"insufficient {direction} P&F column history"}
 
     pole_idx = None
     for i in range(3, len(columns)):
@@ -531,7 +525,7 @@ async def _evaluate_entry(db, definedge, today_iso: str, direction: str) -> dict
             pole_idx = i  # keep overwriting -> ends as the most recent match today
 
     if pole_idx is None:
-        return {"action": "flat", "reason": f"no Low Pole confirmed today on the {direction} chart"}
+        return {"qualifies": False, "reason": f"no Low Pole confirmed today on the {direction} chart"}
 
     follow_through = None
     for j in range(pole_idx + 1, len(columns)):
@@ -542,7 +536,7 @@ async def _evaluate_entry(db, definedge, today_iso: str, direction: str) -> dict
         elif find_triple_top_buy(columns, j):
             follow_through = {"pattern": "triple_top_bottom", "column": j}
     if follow_through is None:
-        return {"action": "flat", "reason": "pole confirmed, no follow-through yet",
+        return {"qualifies": False, "reason": "pole confirmed, no follow-through yet",
                 "conditions_met": {"pole_column": pole_idx}}
 
     xo_series = xo_zone_series(columns)
@@ -569,26 +563,41 @@ async def _evaluate_entry(db, definedge, today_iso: str, direction: str) -> dict
     }
 
     if not (xo_ok and rsi_ok):
-        return {"action": "flat", "reason": "pattern conditions met, indicator gates not yet aligned",
+        return {"qualifies": False, "reason": "pattern conditions met, indicator gates not yet aligned",
                 "conditions_met": conditions_met}
 
-    entry_price = opt_bars[-1]["close"]
-    pole_col = columns[pole_idx - 1]
-    initial_stop = pole_col["low_price"] - 1  # in premium terms — directly meaningful now
-    target = spot_ltp + TARGET_POINTS if direction == "CE" else spot_ltp - TARGET_POINTS
+    return {
+        "qualifies": True,
+        "conditions_met": conditions_met,
+        "entry_price": opt_bars[-1]["close"],
+        "initial_stop": columns[pole_idx - 1]["low_price"] - 1,  # in premium terms — directly meaningful now
+    }
+
+
+async def _enter_trade(db, today_iso: str, direction: str, atm: int, expiry: str, option_token: str,
+                        check: dict, flagged_conflict: bool) -> dict:
+    conditions_met = dict(check["conditions_met"])
+    if flagged_conflict:
+        conditions_met["simultaneous_signal_conflict"] = True
+        conditions_met["other_direction_also_qualified"] = "PE" if direction == "CE" else "CE"
+        logger.warning("Prism Alpha: both CE and PE qualified simultaneously on %s — taking %s "
+                        "(checked first), flagging the conflict rather than silently dropping it.",
+                        today_iso, direction)
+
+    entry_price = check["entry_price"]
+    target = entry_price + TARGET_POINTS  # premium terms — "60 points" = ₹60 of option premium, confirmed
 
     trade = {
         "id": str(uuid.uuid4()),
         "date": today_iso,
         "direction": direction,
         "strike": atm,
-        "expiry": tokens["expiry"],
+        "expiry": expiry,
         "option_token": option_token,
-        "entry_time": now.isoformat(),
+        "entry_time": datetime.now(IST).isoformat(),
         "entry_price": entry_price,
-        "entry_spot": spot_ltp,
-        "initial_stop": initial_stop,
-        "current_stop": initial_stop,
+        "initial_stop": check["initial_stop"],
+        "current_stop": check["initial_stop"],
         "stop_shift_history": [],
         "target": target,
         "exit_time": None,
@@ -603,19 +612,21 @@ async def _evaluate_entry(db, definedge, today_iso: str, direction: str) -> dict
 
 
 async def _monitor_open_trade(db, definedge, trade: dict) -> dict:
-    """Stop-loss and its trailing shifts live entirely on the option's own
-    premium chart (Double Bottom Sell, same as the entry pole). The 60-point
-    target is the one thing still measured on the underlying, per spec —
-    so this pulls both series and checks whichever breaches first."""
+    """Stop-loss, its trailing shifts, and the target all live entirely on
+    the option's own premium chart — target = entry_price + TARGET_POINTS
+    in premium terms (confirmed: "60 points" means ₹60 of option premium,
+    not underlying, since everything moved to the option's own chart).
+    Checked against 1-minute CLOSES only (not intrabar high/low), matching
+    the chart's own close-only sampling: "check continuously against 1-min
+    closes... not tick-by-tick, since the chart itself is only updated once
+    per minute."""
     now = datetime.now(IST)
     frm = (now - timedelta(days=HISTORY_LOOKBACK_DAYS)).strftime("%d%m%Y0000")
     to = now.strftime("%d%m%Y%H%M")
     opt_bars = await fetch_minute_bars(definedge, "NFO", trade["option_token"], frm=frm, to=to)
-    underlying_bars = await fetch_minute_bars(definedge, "NSE", NIFTY_SPOT_TOKEN, frm=frm, to=to)
     columns = build_pnf_columns(opt_bars)
 
     entry_dt = datetime.fromisoformat(trade["entry_time"])
-    is_ce = trade["direction"] == "CE"
     current_stop = trade["current_stop"]
     target = trade["target"]
 
@@ -648,29 +659,16 @@ async def _monitor_open_trade(db, definedge, trade: dict) -> dict:
             {"$set": {"current_stop": current_stop}, "$push": {"stop_shift_history": shift_event}},
         )
 
-    # 2. Stop breach — option's own bar low, vs. target breach — underlying's
-    # own bar high/low. Both checked intrabar (not just close), so a level
-    # that's only briefly wicked through is still caught. The two breaches
-    # live on different time series (option premium vs. index), so whichever
-    # has the EARLIER timestamp wins if both would eventually fire.
+    # 2. Stop/target breach — close-only, same series, same sampling as the
+    # chart itself. First 1-min close since entry that clears either level.
     opt_since_entry = [b for b in opt_bars if b["dt"] >= entry_dt]
-    und_since_entry = [b for b in underlying_bars if b["dt"] >= entry_dt]
+    breach_bar = next((b for b in opt_since_entry if b["close"] <= current_stop or b["close"] >= target), None)
 
-    stop_bar = next((b for b in opt_since_entry if b["low"] <= current_stop), None)
-    target_bar = next((b for b in und_since_entry if (b["high"] >= target if is_ce else b["low"] <= target)), None)
-
-    if stop_bar is None and target_bar is None:
+    if breach_bar is None:
         return {"action": "monitoring", "trade": {**trade, "current_stop": current_stop}}
-    if stop_bar is not None and (target_bar is None or stop_bar["dt"] <= target_bar["dt"]):
-        exit_reason, breach_bar = "stop", stop_bar
-    else:
-        exit_reason, breach_bar = "target", target_bar
 
-    if exit_reason == "stop":
-        exit_price = breach_bar["close"]  # already the option's own premium
-    else:
-        at_or_after = [b for b in opt_bars if b["dt"] >= breach_bar["dt"]]
-        exit_price = at_or_after[0]["close"] if at_or_after else opt_bars[-1]["close"]
+    exit_reason = "stop" if breach_bar["close"] <= current_stop else "target"
+    exit_price = breach_bar["close"]
     pnl = exit_price - trade["entry_price"]
 
     await db.blackbox_prism_alpha_trades.update_one(
@@ -688,21 +686,51 @@ async def _monitor_open_trade(db, definedge, trade: dict) -> dict:
 
 async def evaluate_prism_alpha(db, definedge) -> dict:
     """The single poll-cycle entry point. READ-ONLY Definedge endpoints only:
-      - GET .../sds/history/{segment}/{token}/minute/{from}/{to}  (Nifty index + CE/PE bars)
-      - GET .../dart/v1/quotes/NSE/{token}                        (spot LTP at signal time)
+      - GET .../sds/history/{segment}/{token}/minute/{from}/{to}  (CE/PE option bars)
+      - GET .../dart/v1/quotes/NSE/{token}                        (Nifty spot LTP — ATM selection only)
       - GET .../public/nsefno.zip (via definedge._get_master())   (CE/PE token resolution)
     No order-placement, modification, or cancellation endpoint is referenced
     anywhere in this module.
     """
     today_iso = datetime.now(IST).date().isoformat()
-    existing = await db.blackbox_prism_alpha_trades.find_one({"date": today_iso}, {"_id": 0})
+    todays_trades = await db.blackbox_prism_alpha_trades.find({"date": today_iso}, {"_id": 0}).to_list(MAX_TRADES_PER_SESSION + 1)
+    open_trade = next((t for t in todays_trades if t["status"] == "open"), None)
 
-    if existing and existing["status"] == "open":
-        return await _monitor_open_trade(db, definedge, existing)
-    if existing and existing["status"] == "closed":
-        return {"action": "flat", "reason": "already traded today"}
+    if open_trade is not None:
+        # Once a trade is on, keep tracking that exact strike/contract until
+        # exit — never re-pick ATM mid-trade, even if spot has since drifted.
+        return await _monitor_open_trade(db, definedge, open_trade)
 
-    ce_result = await _evaluate_entry(db, definedge, today_iso, "CE")
-    if ce_result["action"] == "entered":
-        return ce_result
-    return await _evaluate_entry(db, definedge, today_iso, "PE")
+    closed_count = sum(1 for t in todays_trades if t["status"] == "closed")
+    if closed_count >= MAX_TRADES_PER_SESSION:
+        return {"action": "flat", "reason": f"max {MAX_TRADES_PER_SESSION} trades already taken this session"}
+
+    if datetime.now(IST).time() < ENTRY_START_TIME:
+        return {"action": "flat", "reason": "before 9:20 AM entry window"}
+
+    # Spot is used ONLY to pick the current ATM strike while flat — it never
+    # feeds pattern detection, XO Zone, or RSI, all of which run on the
+    # option's own chart. Re-resolved fresh every poll cycle while flat, so
+    # ATM naturally tracks spot drift in 100-point increments until a trade
+    # is actually taken (see the "no re-pick mid-trade" note above).
+    spot = await definedge.spot_quote()
+    spot_ltp = float(str(spot["spot"]).replace(",", ""))
+    atm = round(spot_ltp / ATM_STRIKE_INCREMENT) * ATM_STRIKE_INCREMENT
+
+    df = await definedge._get_master()
+    tokens = resolve_atm_option_tokens(df, atm)
+
+    # Both charts checked in full before deciding — never short-circuited —
+    # so a same-day simultaneous CE+PE qualification is actually detected
+    # instead of silently masked by whichever direction got checked first.
+    ce_check = await _check_entry_conditions(definedge, "CE", tokens["CE"], today_iso)
+    pe_check = await _check_entry_conditions(definedge, "PE", tokens["PE"], today_iso)
+    both_qualify = ce_check["qualifies"] and pe_check["qualifies"]
+
+    if ce_check["qualifies"]:
+        return await _enter_trade(db, today_iso, "CE", atm, tokens["expiry"], tokens["CE"], ce_check, both_qualify)
+    if pe_check["qualifies"]:
+        return await _enter_trade(db, today_iso, "PE", atm, tokens["expiry"], tokens["PE"], pe_check, both_qualify)
+
+    return {"action": "flat", "reason": "no entry conditions aligned",
+            "ce_reason": ce_check.get("reason"), "pe_reason": pe_check.get("reason")}

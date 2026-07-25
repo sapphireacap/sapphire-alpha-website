@@ -10,10 +10,11 @@ live brokerage endpoints:
     in this exact (UDiFF) format — verified live before building anything
     here; older dates 404. NSE's robots.txt permits general crawling.
   - Definedge's existing daily_history() (definedge_service.py, already
-    used elsewhere) for the underlying's own daily OHLC — used only to pick
-    the ATM strike and check the 60-point target, which per spec stays
-    measured on the underlying even though everything else moved to the
-    option's own chart (see below).
+    used elsewhere) for the underlying's own daily OHLC — used ONLY to pick
+    the ATM strike each day. The 60-point target is ₹60 of option premium
+    from entry (confirmed with the user), not underlying points, so it's
+    computed and checked entirely on the option's own chart like everything
+    else here.
 
 Why this window and not further back: NSE's *old* bhavcopy format (pre-2024)
 uses a different, less consistent column layout and doesn't carry the
@@ -176,6 +177,13 @@ async def run_backtest(db, definedge, start_date=None, end_date=None) -> dict:
     the live module. contract_bars carries that accumulation across days so
     a strike/expiry combination that stays ATM for several consecutive days
     keeps building real history, exactly as it would live.
+
+    The live module caps entries at MAX_TRADES_PER_SESSION (3) per day.
+    That cap isn't separately enforced here: the exit check for a given day
+    always runs before that day's entry check, so a trade opened on day D
+    can only be exited starting day D+1 at the earliest — meaning this
+    daily-bar walk-forward can never produce more than one entry per
+    calendar day in the first place, and the cap can't bind.
     """
     run_id = str(uuid.uuid4())
     start_date = start_date or DATA_START_DATE
@@ -234,13 +242,14 @@ async def run_backtest(db, definedge, start_date=None, end_date=None) -> dict:
                 })
                 open_trade["current_stop"] = best_candidate
 
-            is_ce = open_trade["direction"] == "CE"
             todays_bar = bars[-1] if bars else None
-            # Uses the day's LOW (not just close) for the stop check — same
-            # "trades through, not closes through" intent as the live
-            # module, applied at daily-bar resolution.
-            stop_hit = todays_bar is not None and todays_bar["low"] <= open_trade["current_stop"]
-            target_hit = (ub["high"] >= open_trade["target"]) if is_ce else (ub["low"] <= open_trade["target"])
+            # Close-only, same series (the option's own chart) for both stop
+            # and target — matches the live module: "check continuously
+            # against 1-min closes... not tick-by-tick, since the chart
+            # itself is only updated once per minute." At daily resolution
+            # that's the day's close.
+            stop_hit = todays_bar is not None and todays_bar["close"] <= open_trade["current_stop"]
+            target_hit = todays_bar is not None and todays_bar["close"] >= open_trade["target"]
 
             if stop_hit or target_hit:
                 exit_reason = "stop" if stop_hit else "target"
@@ -294,7 +303,7 @@ async def run_backtest(db, definedge, start_date=None, end_date=None) -> dict:
                 entry_price = contract_bars[key][-1]["close"]
                 pole_col = columns[pole_idx - 1]
                 initial_stop = pole_col["low_price"] - 1
-                target = (ub["close"] + TARGET_POINTS) if direction == "CE" else (ub["close"] - TARGET_POINTS)
+                target = entry_price + TARGET_POINTS  # ₹60 of option premium, not underlying points — matches the live module
 
                 open_trade = {
                     "id": str(uuid.uuid4()),
