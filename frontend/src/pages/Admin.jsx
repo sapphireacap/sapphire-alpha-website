@@ -429,6 +429,8 @@ const QuantLabPanel = ({ onAuthError }) => {
 const BlackBoxPanel = ({ onAuthError }) => {
   const [running, setRunning] = useState(false);
   const [lastResult, setLastResult] = useState(null);
+  const [backtesting, setBacktesting] = useState(false);
+  const [lastBacktest, setLastBacktest] = useState(null);
 
   const evaluateNow = async () => {
     setRunning(true);
@@ -444,21 +446,47 @@ const BlackBoxPanel = ({ onAuthError }) => {
     }
   };
 
+  const runBacktest = async () => {
+    setBacktesting(true);
+    try {
+      const { data } = await axios.post(`${API}/blackbox/admin/prism-alpha-backtest-run`, {}, authHeaders());
+      setLastBacktest(data);
+      toast.success(`Backtest complete — ${data.trades_generated} trade(s) over ${data.trading_days_evaluated} trading days.`);
+    } catch (err) {
+      if (err?.response?.status === 401) { onAuthError(); return; }
+      toast.error(errMsg(err, "Backtest run failed."));
+    } finally {
+      setBacktesting(false);
+    }
+  };
+
   return (
     <div className="glass rounded-2xl p-6 md:p-8 mb-10" data-testid="admin-blackbox-panel">
       <div className="flex flex-wrap items-center justify-between gap-3 mb-2">
         <h2 className="font-display text-xl font-bold text-white">Black Box — Prism Alpha</h2>
-        <button onClick={evaluateNow} disabled={running} className="btn-ghost !px-4 !py-2 text-sm disabled:opacity-50" data-testid="prism-alpha-evaluate-now-btn">
-          {running ? <><Loader2 size={16} className="animate-spin" /> Evaluating</> : <><RefreshCw size={15} /> Evaluate Now</>}
-        </button>
+        <div className="flex flex-wrap items-center gap-3">
+          <button onClick={evaluateNow} disabled={running} className="btn-ghost !px-4 !py-2 text-sm disabled:opacity-50" data-testid="prism-alpha-evaluate-now-btn">
+            {running ? <><Loader2 size={16} className="animate-spin" /> Evaluating</> : <><RefreshCw size={15} /> Evaluate Now</>}
+          </button>
+          <button onClick={runBacktest} disabled={backtesting} className="btn-ghost !px-4 !py-2 text-sm disabled:opacity-50" data-testid="prism-alpha-backtest-run-btn">
+            {backtesting ? <><Loader2 size={16} className="animate-spin" /> Backtesting</> : <><RefreshCw size={15} /> Run Backtest</>}
+          </button>
+        </div>
       </div>
       <p className="text-sm text-slate-500 mb-4">
-        Manually runs one Prism Alpha evaluation cycle (entry check if flat, stop/target/trailing-stop check if in a position).
+        "Evaluate Now" runs one live Prism Alpha cycle (entry check if flat, stop/target/trailing-stop check if in a position).
         The external cron should hit <code className="text-slate-400">/api/blackbox/admin/prism-alpha-evaluate</code> every minute during market hours.
+        "Run Backtest" re-runs the full walk-forward backtest over the real-option-price window (2024-01-01 to today) — a heavier, on-demand
+        operation (fetches NSE bhavcopy data as needed), not something to schedule on a cron.
       </p>
       {lastResult && (
         <div className="text-xs text-slate-500 font-mono-ui" data-testid="prism-alpha-last-result">
-          Last run: {lastResult.action}{lastResult.reason ? ` — ${lastResult.reason}` : ""}
+          Last live run: {lastResult.action}{lastResult.reason ? ` — ${lastResult.reason}` : ""}
+        </div>
+      )}
+      {lastBacktest && (
+        <div className="text-xs text-slate-500 font-mono-ui mt-1" data-testid="prism-alpha-last-backtest">
+          Last backtest: {lastBacktest.trades_generated} trade(s), {lastBacktest.trading_days_evaluated} days, {lastBacktest.start_date} – {lastBacktest.end_date}.
         </div>
       )}
     </div>

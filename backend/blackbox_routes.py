@@ -12,9 +12,12 @@ existing shared `definedge` instance, no new auth.
 import logging
 from datetime import datetime, timezone, timedelta
 
+from typing import Optional
+
 from fastapi import APIRouter, HTTPException, Request, Depends
 
 from blackbox_prism_alpha import evaluate_prism_alpha
+from blackbox_backtest import run_backtest
 
 logger = logging.getLogger(__name__)
 IST = timezone(timedelta(hours=5, minutes=30))
@@ -110,6 +113,45 @@ def create_blackbox_router(db, definedge, get_current_admin, cron_secret: str) -
     @router.get("/prism-alpha/trades")
     async def prism_alpha_trades():
         trades = await db.blackbox_prism_alpha_trades.find({}, {"_id": 0}).sort("entry_time", -1).to_list(500)
+        return [_public_trade(t) for t in trades]
+
+    @router.post("/admin/prism-alpha-backtest-run")
+    async def prism_alpha_backtest_run(
+        start_date: Optional[str] = None, end_date: Optional[str] = None,
+        admin: dict = Depends(get_current_admin),
+    ):
+        """On-demand, not scheduled — a backtest run is a heavy one-off
+        computation (NSE bhavcopy fetches for every entry/exit day), not
+        something to poll on a cron. start_date/end_date default to the
+        full available real-premium window (2024-01-01 to today) if omitted."""
+        try:
+            sd = datetime.strptime(start_date, "%Y-%m-%d").date() if start_date else None
+            ed = datetime.strptime(end_date, "%Y-%m-%d").date() if end_date else None
+            return await run_backtest(db, definedge, start_date=sd, end_date=ed)
+        except Exception as e:  # noqa: BLE001
+            raise HTTPException(status_code=502, detail=f"Backtest run failed: {e}")
+
+    @router.get("/prism-alpha/backtest/summary")
+    async def prism_alpha_backtest_summary():
+        """Latest run's metadata + stats — the date range, granularity and
+        trade count are surfaced prominently so it's never mistaken for a
+        full-history backtest, per the transparency requirement."""
+        latest_run = await db.blackbox_backtest_runs.find_one({}, {"_id": 0}, sort=[("run_at", -1)])
+        if not latest_run:
+            return {"run": None, "stats": _compute_stats([])}
+        trades = await db.blackbox_prism_alpha_backtest_trades.find(
+            {"backtest_run_id": latest_run["backtest_run_id"]}, {"_id": 0}
+        ).to_list(5000)
+        return {"run": latest_run, "stats": _compute_stats(trades)}
+
+    @router.get("/prism-alpha/backtest/trades")
+    async def prism_alpha_backtest_trades():
+        latest_run = await db.blackbox_backtest_runs.find_one({}, {"_id": 0}, sort=[("run_at", -1)])
+        if not latest_run:
+            return []
+        trades = await db.blackbox_prism_alpha_backtest_trades.find(
+            {"backtest_run_id": latest_run["backtest_run_id"]}, {"_id": 0}
+        ).sort("entry_time", -1).to_list(500)
         return [_public_trade(t) for t in trades]
 
     return router

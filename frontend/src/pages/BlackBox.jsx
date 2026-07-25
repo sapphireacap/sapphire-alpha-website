@@ -110,10 +110,49 @@ const TradeLogTable = ({ trades }) => (
   </div>
 );
 
+const fmtDate = (iso) => {
+  if (!iso) return "—";
+  const [y, m, d] = iso.split("-");
+  const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+  return `${d} ${MONTHS[Number(m) - 1]} ${y}`;
+};
+
+const TrackRecord = ({ stats, trades, emptyMessage }) => (
+  <>
+    <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+      <StatBlock label="Win Rate" value={stats.win_rate != null ? `${(stats.win_rate * 100).toFixed(0)}%` : "—"} />
+      <StatBlock
+        label="Avg P&L"
+        value={fmtPnl(stats.avg_pnl)}
+        valueClass={stats.avg_pnl > 0 ? "text-emerald-400" : stats.avg_pnl < 0 ? "text-red-400" : "text-white"}
+      />
+      <StatBlock label="Max Drawdown" value={stats.max_drawdown != null ? `₹${stats.max_drawdown.toFixed(2)}` : "—"} />
+      <StatBlock label="Total Trades" value={stats.total_trades} />
+    </div>
+
+    {stats.equity_curve.length > 1 ? (
+      <EquityChart equityCurve={stats.equity_curve} />
+    ) : (
+      <p className="text-sm text-slate-500 py-6 text-center" data-testid="prism-alpha-empty">{emptyMessage}</p>
+    )}
+
+    {trades.length > 0 && (
+      <div className="mt-6">
+        <p className="font-mono-ui text-[10px] uppercase tracking-[0.18em] text-slate-500 mb-3">Trade Log</p>
+        <TradeLogTable trades={trades} />
+      </div>
+    )}
+  </>
+);
+
 const PrismAlphaCard = () => {
+  const [tab, setTab] = useState("live");
   const [status, setStatus] = useState(null);
   const [stats, setStats] = useState(null);
   const [trades, setTrades] = useState([]);
+  const [backtestRun, setBacktestRun] = useState(null);
+  const [backtestStats, setBacktestStats] = useState(null);
+  const [backtestTrades, setBacktestTrades] = useState([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -123,12 +162,17 @@ const PrismAlphaCard = () => {
         axios.get(`${API}/blackbox/prism-alpha/status`),
         axios.get(`${API}/blackbox/prism-alpha/stats`),
         axios.get(`${API}/blackbox/prism-alpha/trades`),
+        axios.get(`${API}/blackbox/prism-alpha/backtest/summary`),
+        axios.get(`${API}/blackbox/prism-alpha/backtest/trades`),
       ])
-        .then(([s, st, tr]) => {
+        .then(([s, st, tr, bs, bt]) => {
           if (cancelled) return;
           setStatus(s.data);
           setStats(st.data);
           setTrades(tr.data);
+          setBacktestRun(bs.data.run);
+          setBacktestStats(bs.data.stats);
+          setBacktestTrades(bt.data);
         })
         .catch(() => {})
         .finally(() => { if (!cancelled) setLoading(false); });
@@ -166,33 +210,50 @@ const PrismAlphaCard = () => {
         )}
       </div>
 
-      {!loading && stats && (
-        <>
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
-            <StatBlock label="Win Rate" value={stats.win_rate != null ? `${(stats.win_rate * 100).toFixed(0)}%` : "—"} />
-            <StatBlock
-              label="Avg P&L"
-              value={fmtPnl(stats.avg_pnl)}
-              valueClass={stats.avg_pnl > 0 ? "text-emerald-400" : stats.avg_pnl < 0 ? "text-red-400" : "text-white"}
-            />
-            <StatBlock label="Max Drawdown" value={stats.max_drawdown != null ? `₹${stats.max_drawdown.toFixed(2)}` : "—"} />
-            <StatBlock label="Total Trades" value={stats.total_trades} />
-          </div>
+      <div className="flex gap-2 mb-6 border-b border-white/10" data-testid="prism-alpha-tabs">
+        {[{ key: "live", label: "Live" }, { key: "backtest", label: "Backtest" }].map((t) => (
+          <button
+            key={t.key}
+            onClick={() => setTab(t.key)}
+            className={`px-4 py-2 font-mono-ui text-xs uppercase tracking-[0.14em] border-b-2 transition-colors duration-200 ${
+              tab === t.key ? "border-sapphire-light text-sapphire-light" : "border-transparent text-slate-500 hover:text-slate-300"
+            }`}
+            data-testid={`prism-alpha-tab-${t.key}`}
+          >
+            {t.label}
+          </button>
+        ))}
+      </div>
 
-          {stats.equity_curve.length > 1 ? (
-            <EquityChart equityCurve={stats.equity_curve} />
+      {!loading && tab === "live" && stats && (
+        <TrackRecord stats={stats} trades={trades} emptyMessage="No closed trades yet — track record will appear here once Prism Alpha has completed live trades." />
+      )}
+
+      {!loading && tab === "backtest" && (
+        <>
+          {backtestRun ? (
+            <div className="mb-6 rounded-xl border border-white/10 bg-white/[0.03] px-4 py-3" data-testid="prism-alpha-backtest-meta">
+              <p className="text-xs text-slate-400">
+                Backtest window: <span className="text-white font-medium">{fmtDate(backtestRun.start_date)} – {fmtDate(backtestRun.end_date)}</span>
+                {" · "}Data: <span className="text-white font-medium">daily (end-of-day) real option prices</span>
+                {" · "}{backtestRun.trading_days_evaluated} trading days evaluated
+              </p>
+            </div>
           ) : (
-            <p className="text-sm text-slate-500 py-6 text-center" data-testid="prism-alpha-empty">
-              No closed trades yet — track record will appear here once Prism Alpha has completed trades.
+            <p className="text-sm text-slate-500 py-6 text-center" data-testid="prism-alpha-backtest-none">
+              No backtest has been run yet.
             </p>
           )}
-
-          {trades.length > 0 && (
-            <div className="mt-6">
-              <p className="font-mono-ui text-[10px] uppercase tracking-[0.18em] text-slate-500 mb-3">Trade Log</p>
-              <TradeLogTable trades={trades} />
-            </div>
+          {backtestStats && (
+            <TrackRecord
+              stats={backtestStats}
+              trades={backtestTrades}
+              emptyMessage="No trades were generated in this backtest window — Prism Alpha's entry conditions are strict and didn't align on any simulated day, which is a real result, not an error."
+            />
           )}
+          <p className="text-[11px] font-light text-amber-400/70 mt-6" data-testid="prism-alpha-backtest-disclaimer">
+            Backtested results are hypothetical and computed from daily end-of-day data with real historical option prices — they do not reflect intraday execution the way the live 1-minute strategy runs, are subject to the data limitations noted above, and do not guarantee live performance.
+          </p>
         </>
       )}
 

@@ -1063,6 +1063,9 @@ async def on_startup():
         await db.gmp_history.create_index([("ipo_id", 1), ("source", 1)])
         await db.blackbox_prism_alpha_trades.create_index("date")
         await db.blackbox_prism_alpha_trades.create_index("status")
+        await db.blackbox_prism_alpha_backtest_trades.create_index("backtest_run_id")
+        await db.blackbox_backtest_runs.create_index("run_at")
+        await db.blackbox_backtest_bhavcopy_cache.create_index("date", unique=True)
     except Exception as e:  # noqa: BLE001
         logger.warning(f"Index creation: {e}")
 
