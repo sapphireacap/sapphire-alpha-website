@@ -10,9 +10,10 @@ live brokerage endpoints:
     in this exact (UDiFF) format — verified live before building anything
     here; older dates 404. NSE's robots.txt permits general crawling.
   - Definedge's existing daily_history() (definedge_service.py, already
-    used elsewhere) for the underlying's own daily OHLC — the bhavcopy only
-    carries a single reference price per day (UndrlygPric), not a full O/H/L,
-    and the P&F engine needs real daily highs/lows.
+    used elsewhere) for the underlying's own daily OHLC — used only to pick
+    the ATM strike and check the 60-point target, which per spec stays
+    measured on the underlying even though everything else moved to the
+    option's own chart (see below).
 
 Why this window and not further back: NSE's *old* bhavcopy format (pre-2024)
 uses a different, less consistent column layout and doesn't carry the
@@ -21,20 +22,35 @@ judged more complexity than the marginal ~2 extra years were worth for a
 first version — this is a known, documented scoping choice, not a discovered
 limit like the live-API window was.
 
-This is why it matters: real historical option premiums genuinely exist for
-this whole window (unlike the live Definedge API, which only retains ~4-8
-weeks and can't even discover tokens for already-expired weekly contracts —
-see blackbox_prism_alpha.py's module docstring). The backtest deliberately
-reuses the exact same pattern-detection and RSI/XO-Zone functions the live
-strategy uses (imported, not reimplemented) so it can never drift out of
-sync with what's actually trading live.
+Mid-build correction, matching the live module: the P&F chart, patterns,
+XO Zone, RSI and stop-loss all run on the OPTION'S OWN premium (a real
+Definedge chart screenshot showed premium-scale price levels, not index-
+scale), and both CE and PE watch for the identical bullish Low-Pole setup
+on their own chart rather than a bearish mirror. This backtest reuses the
+live module's exact pattern-detection functions (imported, not
+reimplemented) so it can never drift out of sync with what's actually
+trading live — the same requirement is why this file had to be reworked
+the moment the live logic changed, not left on the old underlying-based
+design.
+
+Structural consequence worth stating plainly: because the ATM strike (and
+therefore which specific option contract is "the chart") changes as the
+underlying moves and as weekly expiry rolls, a given contract's own P&F
+chart in this backtest often only accumulates a handful of days before the
+tracked strike/expiry changes and a fresh, near-empty chart starts for the
+new one. Forming a 4-column Low Pole took roughly 30+ calendar days on
+average even on the continuous, never-resetting Nifty index chart (see the
+live module's dry-run notes). A per-contract chart that resets every few
+days is structurally unlikely to accumulate that much history before
+rolling — so a low (or zero) trade count from this backtest is an expected
+consequence of matching the live logic faithfully, not a bug to chase.
 
 Caveat that must stay visible in the UI: this is DAILY (EOD) data, not the
 1-minute data the live strategy uses. A 1%-box/3-box-reversal P&F chart
-built from daily bars is coarser — it can miss intraday reversals a 1-minute
-chart would catch, so backtest results are not a faithful reproduction of
-what the live minute-based engine would have done on the same dates, only
-the closest approximation possible from data that genuinely exists.
+built from daily bars is coarser than one built from 1-minute bars, so
+backtest results are the closest approximation possible from data that
+genuinely exists, not a faithful reproduction of what the live engine would
+have done on the same dates.
 """
 import io
 import logging
@@ -46,11 +62,11 @@ import httpx
 import pandas as pd
 
 from blackbox_prism_alpha import (
-    IST, TARGET_POINTS, CE_RSI_RANGE, PE_RSI_RANGE,
-    build_pnf_columns, find_low_pole, find_high_pole, find_aft_immediate,
-    find_turtle_breakout, find_triple_top_buy, find_triple_bottom_sell,
-    is_double_bottom_sell, is_double_top_buy, xo_zone_series,
-    compute_rsi_snapshot, _parse_ts, _is_today,
+    IST, TARGET_POINTS, ENTRY_RSI_RANGE,
+    build_pnf_columns, find_low_pole, find_aft_immediate,
+    find_turtle_breakout, find_triple_top_buy,
+    is_double_bottom_sell, xo_zone_series, compute_rsi_snapshot,
+    _parse_ts, _is_today,
 )
 from definedge_service import NIFTY_SPOT_TOKEN
 
@@ -114,7 +130,16 @@ def _pick_weekly_expiry(expiries: list, as_of_date) -> "object | None":
     """Same Mon/Tue-roll rule as the live strategy's expiry resolution
     (DefinedgeService._pick_expiry), reimplemented here only because the
     live one is a staticmethod bound to Definedge's master-file data shape,
-    not bhavcopy's — the RULE itself is identical, not reinvented."""
+    not bhavcopy's — the RULE itself is identical, not reinvented.
+
+    expiries may be `date` objects (fresh bhavcopy fetch) or ISO strings
+    (cached rows, serialized for Mongo) — normalized to `date` here so a
+    cache hit doesn't silently compare str >= date and crash. Caught live:
+    a fresh 3-month backtest run worked, but the exact same range failed on
+    any day whose bhavcopy came from cache instead of a live download."""
+    def _as_date(e):
+        return e if isinstance(e, type(as_of_date)) else datetime.strptime(str(e), "%Y-%m-%d").date()
+    expiries = [_as_date(e) for e in expiries]
     fut = sorted(e for e in expiries if e >= as_of_date)
     if not fut:
         return None
@@ -124,21 +149,33 @@ def _pick_weekly_expiry(expiries: list, as_of_date) -> "object | None":
     return fut[idx]
 
 
-def _option_price(day_df: "pd.DataFrame", expiry_iso: str, strike: float, opt_type: str, field: str):
-    """field: 'open'|'high'|'low'|'close'. Falls back gracefully (None) if
-    that exact strike/expiry/type didn't trade that day rather than raising
-    — a single missing contract shouldn't abort the whole backtest."""
+def _option_ohlc(day_df: "pd.DataFrame", expiry_iso: str, strike: float, opt_type: str):
+    """Full OHLC dict for one contract on one day, or None if it didn't
+    trade that day — a single missing contract-day shouldn't abort anything."""
     row = day_df[(day_df["expiry"] == expiry_iso) & (day_df["strike"] == strike) & (day_df["opt_type"] == opt_type)]
     if row.empty:
         return None
-    val = row.iloc[0][field]
-    return float(val) if val not in (None, 0) or field == "close" else None
+    r = row.iloc[0]
+    close = float(r["close"])
+    if close <= 0:
+        return None
+    # illiquid strikes often report 0 for open/high/low with only a real
+    # close/settlement price — fall back to close so the bar is still usable
+    # rather than dropping the day entirely.
+    o, h, l = float(r["open"]), float(r["high"]), float(r["low"])
+    return {"open": o or close, "high": h or close, "low": l or close, "close": close}
 
 
 async def run_backtest(db, definedge, start_date=None, end_date=None) -> dict:
     """Walk-forward, no lookahead: on each simulated day D, only bars up to
-    and including D are ever used to build the P&F chart or evaluate
+    and including D are ever used to build a P&F chart or evaluate
     conditions. Reuses the live module's exact pattern-detection functions.
+
+    Each of CE/PE's P&F chart is built from that SPECIFIC (strike, expiry)
+    contract's own accumulated daily bars — not the underlying — mirroring
+    the live module. contract_bars carries that accumulation across days so
+    a strike/expiry combination that stays ATM for several consecutive days
+    keeps building real history, exactly as it would live.
     """
     run_id = str(uuid.uuid4())
     start_date = start_date or DATA_START_DATE
@@ -148,64 +185,70 @@ async def run_backtest(db, definedge, start_date=None, end_date=None) -> dict:
     underlying_by_date = {b["date"]: b for b in underlying_bars_raw if start_date.isoformat() <= b["date"] <= end_date.isoformat()}
     trading_days = sorted(underlying_by_date.keys())
 
-    daily_bars = []       # growing, walk-forward-safe underlying OHLC series
-    open_trade = None     # at most one open simulated position at a time
+    contract_bars = {}     # (opt_type, strike, expiry) -> growing list of {ts, open, high, low, close}
+    open_trade = None      # at most one open simulated position at a time
     trades = []
 
     for date_iso in trading_days:
         d = datetime.strptime(date_iso, "%Y-%m-%d").date()
         ub = underlying_by_date[date_iso]
-        daily_bars.append({"ts": _eod_ts(d), "open": ub["open"], "high": ub["high"], "low": ub["low"], "close": ub["close"]})
-        columns = build_pnf_columns(daily_bars)
 
-        opt_day = None  # fetched lazily, only if actually needed this day
+        opt_day = await get_nifty_option_day(db, d)
+        if opt_day is None:
+            continue  # no options data at all this day (holiday/gap) — nothing to evaluate
+
+        atm = round(ub["close"] / 100) * 100
+        expiry_date = _pick_weekly_expiry(sorted(set(opt_day["expiry"].tolist())), d)
+        if expiry_date is None:
+            continue
+        expiry = expiry_date.isoformat()  # back to string — day_df's expiry column is always string-typed
+
+        # Accumulate today's bar for whichever CE/PE contract is ATM today —
+        # a strike that stays ATM across consecutive days keeps growing the
+        # same series; a new strike starts a fresh, near-empty one.
+        for opt_type in ("CE", "PE"):
+            ohlc = _option_ohlc(opt_day, expiry, float(atm), opt_type)
+            if ohlc is None:
+                continue
+            key = (opt_type, atm, expiry)
+            contract_bars.setdefault(key, []).append({"ts": _eod_ts(d), **ohlc})
 
         # ---- exit check for an open position -------------------------------
         if open_trade is not None:
-            is_ce = open_trade["direction"] == "CE"
+            key = (open_trade["direction"], open_trade["strike"], open_trade["expiry"])
+            bars = contract_bars.get(key, [])
+            columns = build_pnf_columns(bars)
 
             entry_idx = next((i for i, c in enumerate(columns) if _parse_ts(c["end_ts"]).date() >= open_trade["_entry_date"]), None)
             best_candidate = None
             if entry_idx is not None:
                 for j in range(entry_idx, len(columns)):
-                    if is_ce and is_double_bottom_sell(columns, j):
+                    if is_double_bottom_sell(columns, j):
                         cand = columns[j]["low_price"] - 1
                         if cand > open_trade["current_stop"] and (best_candidate is None or cand > best_candidate):
-                            best_candidate = cand
-                    elif not is_ce and is_double_top_buy(columns, j):
-                        cand = columns[j]["high_price"] + 1
-                        if cand < open_trade["current_stop"] and (best_candidate is None or cand < best_candidate):
                             best_candidate = cand
             if best_candidate is not None:
                 open_trade["stop_shift_history"].append({
                     "timestamp": _eod_ts(d), "old_stop": open_trade["current_stop"],
-                    "new_stop": best_candidate, "pattern": "double_bottom_sell" if is_ce else "double_top_buy",
+                    "new_stop": best_candidate, "pattern": "double_bottom_sell",
                 })
                 open_trade["current_stop"] = best_candidate
 
-            breach = None
-            if is_ce:
-                if ub["low"] <= open_trade["current_stop"]:
-                    breach = "stop"
-                elif ub["high"] >= open_trade["target"]:
-                    breach = "target"
-            else:
-                if ub["high"] >= open_trade["current_stop"]:
-                    breach = "stop"
-                elif ub["low"] <= open_trade["target"]:
-                    breach = "target"
+            is_ce = open_trade["direction"] == "CE"
+            todays_bar = bars[-1] if bars else None
+            # Uses the day's LOW (not just close) for the stop check — same
+            # "trades through, not closes through" intent as the live
+            # module, applied at daily-bar resolution.
+            stop_hit = todays_bar is not None and todays_bar["low"] <= open_trade["current_stop"]
+            target_hit = (ub["high"] >= open_trade["target"]) if is_ce else (ub["low"] <= open_trade["target"])
 
-            if breach:
-                opt_day = await get_nifty_option_day(db, d)
-                exit_price = None
-                if opt_day is not None:
-                    exit_price = _option_price(opt_day, open_trade["expiry"], open_trade["strike"], open_trade["direction"], "close")
-                if exit_price is None:
-                    exit_price = open_trade["entry_price"]  # best-effort — no trade that day for this exact contract
+            if stop_hit or target_hit:
+                exit_reason = "stop" if stop_hit else "target"
+                exit_price = todays_bar["close"] if todays_bar is not None else open_trade["entry_price"]
                 open_trade["status"] = "closed"
                 open_trade["exit_time"] = _eod_ts(d)
                 open_trade["exit_price"] = exit_price
-                open_trade["exit_reason"] = breach
+                open_trade["exit_reason"] = exit_reason
                 open_trade["pnl"] = exit_price - open_trade["entry_price"]
                 open_trade.pop("_entry_date")
                 trades.append(open_trade)
@@ -213,54 +256,46 @@ async def run_backtest(db, definedge, start_date=None, end_date=None) -> dict:
                 continue  # no same-day re-entry, matches live strategy's rule
 
         # ---- entry check when flat ------------------------------------------
-        if open_trade is None and len(columns) >= 4:
+        if open_trade is None:
             for direction in ("CE", "PE"):
-                is_ce = direction == "CE"
-                find_pole = find_low_pole if is_ce else find_high_pole
-                col_dir = "X" if is_ce else "O"
+                key = (direction, atm, expiry)
+                columns = build_pnf_columns(contract_bars.get(key, []))
+                if len(columns) < 4:
+                    continue
 
                 pole_idx = None
                 for i in range(3, len(columns)):
-                    pole = find_pole(columns, i)
-                    if pole and _is_today(columns[i]["end_ts"], date_iso):
+                    if find_low_pole(columns, i) and _is_today(columns[i]["end_ts"], date_iso):
                         pole_idx = i
                 if pole_idx is None:
                     continue
 
                 follow_through = None
                 for j in range(pole_idx + 1, len(columns)):
-                    if find_aft_immediate(columns, j, col_dir):
+                    if find_aft_immediate(columns, j, "X"):
                         follow_through = "aft_immediate"
-                    elif find_turtle_breakout(columns, j, col_dir):
+                    elif find_turtle_breakout(columns, j, "X"):
                         follow_through = "turtle_breakout"
-                    elif (find_triple_top_buy if is_ce else find_triple_bottom_sell)(columns, j):
+                    elif find_triple_top_buy(columns, j):
                         follow_through = "triple_top_bottom"
                 if follow_through is None:
                     continue
 
                 xo_series = xo_zone_series(columns)
-                xo_ok = (xo_series[pole_idx] <= 0 and xo_series[-1] > 0) if is_ce else (xo_series[pole_idx] >= 0 and xo_series[-1] < 0)
+                xo_ok = xo_series[pole_idx] <= 0 and xo_series[-1] > 0
 
-                closes = [b["close"] for b in daily_bars]
+                closes = [b["close"] for b in contract_bars[key]]
                 rsi_snapshot = compute_rsi_snapshot(closes)
-                lo, hi = CE_RSI_RANGE if is_ce else PE_RSI_RANGE
-                rsi_ok = rsi_snapshot["rsi7"] is not None and lo < rsi_snapshot["rsi7"] < hi
+                rsi_ok = rsi_snapshot["rsi7"] is not None and ENTRY_RSI_RANGE[0] < rsi_snapshot["rsi7"] < ENTRY_RSI_RANGE[1]
 
                 if not (xo_ok and rsi_ok):
                     continue
 
-                opt_day = opt_day if opt_day is not None else await get_nifty_option_day(db, d)
-                if opt_day is None:
-                    continue
-                atm = round(ub["close"] / 100) * 100
-                expiry = _pick_weekly_expiry(sorted(set(opt_day["expiry"].tolist())), d)
-                if expiry is None:
-                    continue
-                entry_price = _option_price(opt_day, expiry, float(atm), direction, "close")
-                if entry_price is None:
-                    continue
-
+                entry_price = contract_bars[key][-1]["close"]
                 pole_col = columns[pole_idx - 1]
+                initial_stop = pole_col["low_price"] - 1
+                target = (ub["close"] + TARGET_POINTS) if direction == "CE" else (ub["close"] - TARGET_POINTS)
+
                 open_trade = {
                     "id": str(uuid.uuid4()),
                     "backtest_run_id": run_id,
@@ -271,10 +306,10 @@ async def run_backtest(db, definedge, start_date=None, end_date=None) -> dict:
                     "expiry": expiry,
                     "entry_time": _eod_ts(d),
                     "entry_price": entry_price,
-                    "initial_stop": (pole_col["low_price"] - 1) if is_ce else (pole_col["high_price"] + 1),
-                    "current_stop": (pole_col["low_price"] - 1) if is_ce else (pole_col["high_price"] + 1),
+                    "initial_stop": initial_stop,
+                    "current_stop": initial_stop,
                     "stop_shift_history": [],
-                    "target": (ub["close"] + TARGET_POINTS) if is_ce else (ub["close"] - TARGET_POINTS),
+                    "target": target,
                     "exit_time": None, "exit_price": None, "exit_reason": None, "pnl": None,
                     "conditions_met": {"pole_column": pole_idx, "follow_through_pattern": follow_through,
                                        "xo_zone_now": xo_series[-1], "rsi7": rsi_snapshot["rsi7"]},
