@@ -740,6 +740,30 @@ async def reorder_stocks(payload: ReorderRequest, admin: dict = Depends(get_curr
     return {"status": "ok"}
 
 
+class ScannerReplaceRequest(BaseModel):
+    scanner: str = "momentum"
+    stocks: List[StockCreate]
+
+
+@api_router.post("/admin/terminal/scanner/replace")
+async def replace_scanner_stocks(payload: ScannerReplaceRequest, admin: dict = Depends(get_current_admin)):
+    """Atomic full replace of one scanner's rows — for automation (e.g. the
+    daily momentum CSV sync) that recomputes a fresh top-N each run rather
+    than diffing against what's already there. One request instead of a
+    GET + several DELETEs + several POSTs, which is safer over a flaky
+    connection: either this succeeds and the scanner is fully replaced, or
+    it fails and nothing was touched."""
+    _validate_scanner(payload.scanner)
+    await db.terminal_stocks.delete_many({"scanner": payload.scanner})
+    docs = [
+        Stock(**{**s.model_dump(), "scanner": payload.scanner}, order=i).model_dump()
+        for i, s in enumerate(payload.stocks)
+    ]
+    if docs:
+        await db.terminal_stocks.insert_many(docs)
+    return {"status": "ok", "count": len(docs)}
+
+
 # ---------------------------------------------------------------------------
 # Straddle Compass — Nifty directional bias indicator
 # ---------------------------------------------------------------------------
