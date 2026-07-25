@@ -11,11 +11,16 @@ Every pattern definition below is derived directly from Definedge's own
 published library (definedgesecurities.com/library/...), worked through
 column-by-column against their exact wording — not textbook P&F. Two
 conditions (XO Zone's numeric "setting", and the specific dual-EMA-average
-RSI variant) are NOT in Definedge's public docs — those are best-effort
-interpretations, explicitly flagged below, meant to be validated against a
-live Definedge chart during the CE-only dry run. If they can't be
-reconciled with real platform behavior, the instruction was to remove them
-from entry logic entirely rather than ship a guess permanently.
+RSI variant) are NOT in Definedge's public docs. XO Zone's formula and
+trading usage (zero-line crossover) were subsequently cross-checked against
+Prashant Shah's "Trading the Markets the Point & Figure Way" (a general P&F
+reference, not Definedge-specific) and confirmed to match exactly — no
+longer a guess. RSI's specific dual-EMA variant remains unconfirmed; the
+same book confirmed P&F indicators (including RSI) should be computed on
+one price per column (see column_close_prices()), which this module now
+does, but the exact Period-7/dual-EMA settings are still best-effort. If
+RSI still can't be reconciled with real platform behavior, remove it from
+entry logic rather than ship a guess permanently.
 
 P&F construction: percentage-box log grid, box 1%, reversal 3 boxes — same
 box-math approach as the existing pnf_trend() in definedge_service.py, but
@@ -61,6 +66,16 @@ ATM_STRIKE_INCREMENT = 100      # ATM = round(spot/100)*100 — strikes are mult
 MAX_TRADES_PER_SESSION = 3      # once a trade closes, a new one may be taken the same session, up to this cap
 ENTRY_START_TIME = dt_time(9, 20)  # no new entries before 9:20 AM IST; exit-monitoring on an already-open
                                     # trade is never gated by this — only fresh entries are
+EXIT_FORCE_TIME = dt_time(15, 10)  # every trade must be flat by this time — no overnight holding. If
+                                    # neither target nor stop has hit by 15:10 IST, force-close at the
+                                    # latest available close, exit_reason="session_end".
+POLE_SEARCH_WINDOW = 60         # backward pole/follow-through search only looks this many columns back.
+                                 # A pole further back than this would almost always be rejected by the
+                                 # stale-pole sanity guard anyway (price has typically moved too far from
+                                 # it by then), so this just bounds the cost on long-lived contracts —
+                                 # caught live: an uncapped search made a real backtest run take 30+
+                                 # minutes without finishing on a contract that accumulated hundreds of
+                                 # columns over a long backfilled history.
 
 # The P&F chart, patterns, XO Zone, RSI and stop-loss all run on the OPTION'S
 # OWN premium chart, not the underlying index — confirmed against a live
@@ -85,10 +100,19 @@ ENTRY_START_TIME = dt_time(9, 20)  # no new entries before 9:20 AM IST; exit-mon
 # ---------------------------------------------------------------------------
 # Point & Figure engine — retains full column history (pure, unit-testable)
 # ---------------------------------------------------------------------------
-def _box_level(price: float, box_pct: float = BOX_PCT) -> int:
-    """Same log-grid box-level function as pnf_trend() in definedge_service.py,
-    reused for consistency between the two P&F approximations in this codebase."""
-    return math.floor(math.log(price) / math.log(1.0 + box_pct))
+def _box_level(price: float, anchor: float, box_pct: float = BOX_PCT) -> int:
+    """Box level RELATIVE to `anchor` (the chart's own starting price), not an
+    absolute grid anchored at price=1. Anchoring at 1 (the earlier version's
+    bug — same one still present in pnf_trend()'s independent implementation)
+    puts box boundaries at essentially arbitrary offsets that only coincide
+    with clean round-number moves by luck: verified live that a chart
+    starting at 100 flipped to the next box at ~100.5, not 101. Anchoring to
+    the chart's own start makes each box exactly box_pct away from the LAST
+    LOCKED price, compounding forward (100 -> 101 -> 102.01 -> 103.03 -> ...)
+    — confirmed against the user's own description of how the real chart
+    locks boxes. The `+ 1e-9` guards against float error landing a price
+    that's exactly on a boundary just under its true integer level."""
+    return math.floor(math.log(price / anchor) / math.log(1.0 + box_pct) + 1e-9)
 
 
 def build_pnf_columns(bars: list, box_pct: float = BOX_PCT, reversal_boxes: int = REVERSAL_BOXES) -> list:
@@ -114,8 +138,8 @@ def build_pnf_columns(bars: list, box_pct: float = BOX_PCT, reversal_boxes: int 
 
     columns = []
     direction = None
-    base_level = _box_level(float(samples[0][1]), box_pct)
     base_price = float(samples[0][1])
+    base_level = 0  # by construction: _box_level(base_price, anchor=base_price) == 0
     base_ts = samples[0][0]
 
     cur_high_level = cur_low_level = base_level
@@ -137,7 +161,7 @@ def build_pnf_columns(bars: list, box_pct: float = BOX_PCT, reversal_boxes: int 
 
     for ts, raw_p in samples[1:]:
         p = float(raw_p)
-        lv = _box_level(p, box_pct)
+        lv = _box_level(p, base_price, box_pct)
 
         if direction is None:
             if lv >= base_level + 1:
@@ -320,11 +344,21 @@ def find_turtle_breakout(columns: list, i: int, direction: str) -> bool:
 
 
 # ---------------------------------------------------------------------------
-# Indicators — XO Zone and RSI are BEST-EFFORT (see module docstring): the
-# exact Definedge formulas for these two aren't in public docs. Both are
-# computed and logged for every signal so they can be checked against a live
-# Definedge chart during the CE-only dry run; drop from entry logic if they
-# don't reconcile with real platform behavior.
+# Indicators. XO Zone's formula and usage are confirmed against Prashant
+# Shah's "Trading the Markets the Point & Figure Way" (Ch. 4.5): XO Zone =
+# (total X-boxes - total O-boxes) over a trailing N columns, and the
+# documented trading usage is a zero-line CROSSOVER on the newest reading —
+# not a "net positive since some earlier column" condition. An earlier
+# version of this module gated entries on the latter (self-invented, no
+# source), which mechanically vetoed ~100% of real setups since a Low Pole is
+# by definition preceded by a large O column that dominates the window right
+# when follow-through confirms. xo_zone_turned() below is the correct
+# reading and is what entries actually gate on now.
+# RSI's exact Definedge dual-EMA variant is still undocumented publicly (see
+# module docstring) — logged for audit, not gated on for that part — but the
+# book confirms P&F indicators including RSI are computed on ONE PRICE PER
+# COLUMN (closing-price method: X column's high, O column's low), not on the
+# raw underlying bars. See column_close_prices() below.
 # ---------------------------------------------------------------------------
 def xo_zone_series(columns: list, lookback: int = XO_ZONE_LOOKBACK) -> list:
     """Rolling (total X-boxes - total O-boxes) over the trailing `lookback`
@@ -340,7 +374,8 @@ def xo_zone_series(columns: list, lookback: int = XO_ZONE_LOOKBACK) -> list:
 
 def xo_zone_turned(columns: list, lookback: int = XO_ZONE_LOOKBACK) -> str:
     """'positive' | 'negative' | None — whether the zone crossed zero on the
-    newest column (vs. its value one column back)."""
+    newest column (vs. its value one column back). This is the textbook
+    "XO zone crossover" reading and what entries actually gate on."""
     series = xo_zone_series(columns, lookback)
     if len(series) < 2:
         return None
@@ -350,6 +385,14 @@ def xo_zone_turned(columns: list, lookback: int = XO_ZONE_LOOKBACK) -> str:
     if prev >= 0 > cur:
         return "negative"
     return None
+
+
+def column_close_prices(columns: list) -> list:
+    """P&F 'closing price method' proxy price for each column: high price
+    for X (rising), low price for O (falling) — per the book's definition,
+    used as the single input price for every column-based indicator (RSI,
+    moving averages, etc.), not the raw underlying bars."""
+    return [c["high_price"] if c["direction"] == "X" else c["low_price"] for c in columns]
 
 
 def _ema(values: list, period: int):
@@ -496,11 +539,7 @@ def _parse_ts(ts: str) -> datetime:
     return datetime.strptime(ts, "%d%m%Y%H%M").replace(tzinfo=IST)
 
 
-def _is_today(ts: str, today_iso: str) -> bool:
-    return _parse_ts(ts).date().isoformat() == today_iso
-
-
-async def _check_entry_conditions(definedge, direction: str, option_token: str, today_iso: str) -> dict:
+async def _check_entry_conditions(definedge, direction: str, option_token: str) -> dict:
     """direction: 'CE' or 'PE' — which option's own chart to analyze. Both
     use the identical bullish setup: Low Pole + bullish follow-through +
     XO Zone-turned-positive + RSI in ENTRY_RSI_RANGE, all computed on that
@@ -519,32 +558,63 @@ async def _check_entry_conditions(definedge, direction: str, option_token: str, 
     if len(columns) < 4:
         return {"qualifies": False, "reason": f"insufficient {direction} P&F column history"}
 
+    # "All align on the same day" means all four conditions are checked and
+    # found true TOGETHER on the evaluation day — not that each one must
+    # have freshly triggered that exact day. That reading is structurally
+    # impossible for the pole specifically: follow-through can only occur
+    # in columns AFTER the pole's confirming column, so if the pole were
+    # required to confirm today, there could never be a later column today
+    # for the follow-through to occur in. Caught live: with that gate, every
+    # single pole confirmation in a real backtest run showed "no
+    # follow-through yet" — 100% of the time, by construction, not chance.
+    #
+    # Search backward from the newest column for the freshest (pole,
+    # follow-through) PAIR — not "the single most recent pole ever, then any
+    # follow-through however much later." Taking the absolute latest pole
+    # regardless of how long ago it was, paired with a follow-through many
+    # columns later, surfaced a real bad trade in testing: price had since
+    # moved far from that old pole's level, making its low a stale,
+    # economically meaningless stop-loss anchor (caught by the sanity guard
+    # below, but the root cause is picking a stale pole in the first place).
+    # Walking backward and taking the first pole that already has a
+    # follow-through after it keeps both anchored to the same, recent move.
     pole_idx = None
-    for i in range(3, len(columns)):
-        if find_low_pole(columns, i) and _is_today(columns[i]["end_ts"], today_iso):
-            pole_idx = i  # keep overwriting -> ends as the most recent match today
+    follow_through = None
+    search_floor = max(2, len(columns) - 1 - POLE_SEARCH_WINDOW)
+    for i in range(len(columns) - 1, search_floor, -1):
+        if not find_low_pole(columns, i):
+            continue
+        candidate_ft = None
+        for j in range(i + 1, len(columns)):
+            if find_aft_immediate(columns, j, "X"):
+                candidate_ft = {"pattern": "aft_immediate", "column": j}
+            elif find_turtle_breakout(columns, j, "X"):
+                candidate_ft = {"pattern": "turtle_breakout", "column": j}
+            elif find_triple_top_buy(columns, j):
+                candidate_ft = {"pattern": "triple_top_bottom", "column": j}
+        if candidate_ft is not None:
+            pole_idx, follow_through = i, candidate_ft
+            break  # freshest pole that already has a follow-through — stop here
 
     if pole_idx is None:
-        return {"qualifies": False, "reason": f"no Low Pole confirmed today on the {direction} chart"}
+        return {"qualifies": False, "reason": f"no Low Pole with a follow-through found on the {direction} chart"}
 
-    follow_through = None
-    for j in range(pole_idx + 1, len(columns)):
-        if find_aft_immediate(columns, j, "X"):
-            follow_through = {"pattern": "aft_immediate", "column": j}
-        elif find_turtle_breakout(columns, j, "X"):
-            follow_through = {"pattern": "turtle_breakout", "column": j}
-        elif find_triple_top_buy(columns, j):
-            follow_through = {"pattern": "triple_top_bottom", "column": j}
-    if follow_through is None:
-        return {"qualifies": False, "reason": "pole confirmed, no follow-through yet",
-                "conditions_met": {"pole_column": pole_idx}}
-
+    # XO Zone gate: a zero-line crossover on the newest column (confirmed
+    # against Prashant Shah's P&F book, Ch. 4.5 — see module-level comment
+    # above xo_zone_series). Bullish entries need the zone to have just
+    # turned positive.
     xo_series = xo_zone_series(columns)
-    xo_now, xo_at_pole = xo_series[-1], xo_series[pole_idx]
-    xo_ok = xo_at_pole <= 0 and xo_now > 0
+    xo_now = xo_series[-1]
+    xo_turn = xo_zone_turned(columns)
+    xo_ok = xo_turn == "positive"
 
-    closes = [b["close"] for b in opt_bars]
-    rsi_snapshot = compute_rsi_snapshot(closes)
+    # RSI(7) computed on column closing-price-method values (X->high,
+    # O->low), per the book's confirmation that P&F indicators use one price
+    # per column, not raw bars. Definedge's exact dual-EMA variant is still
+    # undocumented (see module docstring) — the two EMA overlays are logged
+    # for audit, not gated on.
+    col_closes = column_close_prices(columns)
+    rsi_snapshot = compute_rsi_snapshot(col_closes)
     rsi7 = rsi_snapshot["rsi7"]
     rsi_ok = rsi7 is not None and ENTRY_RSI_RANGE[0] < rsi7 < ENTRY_RSI_RANGE[1]
 
@@ -553,8 +623,8 @@ async def _check_entry_conditions(definedge, direction: str, option_token: str, 
         "pole_price": columns[pole_idx - 1]["low_price"],
         "follow_through_pattern": follow_through["pattern"],
         "follow_through_column": follow_through["column"],
-        "xo_zone_at_pole": xo_at_pole,
         "xo_zone_now": xo_now,
+        "xo_zone_turned": xo_turn,
         "xo_zone_ok": xo_ok,
         "rsi7": rsi7,
         "rsi_avg1_ema5": rsi_snapshot["rsi_avg1_ema5"],
@@ -566,11 +636,27 @@ async def _check_entry_conditions(definedge, direction: str, option_token: str, 
         return {"qualifies": False, "reason": "pattern conditions met, indicator gates not yet aligned",
                 "conditions_met": conditions_met}
 
+    entry_price = opt_bars[-1]["close"]
+    initial_stop = columns[pole_idx - 1]["low_price"] - 1  # in premium terms — directly meaningful now
+
+    # Sanity guard: a stop-loss can never sit at or above entry on a long
+    # position. Taking "the most recent Low Pole anywhere in the window" (no
+    # same-day gate — see above) can surface a pole that price has since
+    # fallen back through, invalidating the bullish thesis the pole was
+    # supposed to represent even though a later, unrelated follow-through +
+    # XO Zone + RSI still happen to align. Caught live: a real backtest
+    # trade came out with initial_stop > entry_price, which would have
+    # triggered an exit almost immediately for a guaranteed loss. Rather
+    # than take that trade, it's rejected outright.
+    if initial_stop >= entry_price:
+        return {"qualifies": False, "reason": "pole stop would be at/above entry — stale pole, rejecting",
+                "conditions_met": conditions_met}
+
     return {
         "qualifies": True,
         "conditions_met": conditions_met,
-        "entry_price": opt_bars[-1]["close"],
-        "initial_stop": columns[pole_idx - 1]["low_price"] - 1,  # in premium terms — directly meaningful now
+        "entry_price": entry_price,
+        "initial_stop": initial_stop,
     }
 
 
@@ -665,6 +751,25 @@ async def _monitor_open_trade(db, definedge, trade: dict) -> dict:
     breach_bar = next((b for b in opt_since_entry if b["close"] <= current_stop or b["close"] >= target), None)
 
     if breach_bar is None:
+        # 3. No overnight holding — force flat by 15:10 IST if neither
+        # target nor stop has hit yet. Also closes a real gap this caught:
+        # without a hard session cutoff, a position with no further exit
+        # trigger could otherwise sit open indefinitely.
+        if now.time() >= EXIT_FORCE_TIME and opt_since_entry:
+            exit_reason = "session_end"
+            exit_price = opt_since_entry[-1]["close"]
+            pnl = exit_price - trade["entry_price"]
+            await db.blackbox_prism_alpha_trades.update_one(
+                {"id": trade["id"]},
+                {"$set": {
+                    "status": "closed",
+                    "exit_time": now.isoformat(),
+                    "exit_price": exit_price,
+                    "exit_reason": exit_reason,
+                    "pnl": pnl,
+                }},
+            )
+            return {"action": "exited", "exit_reason": exit_reason, "exit_price": exit_price, "pnl": pnl}
         return {"action": "monitoring", "trade": {**trade, "current_stop": current_stop}}
 
     exit_reason = "stop" if breach_bar["close"] <= current_stop else "target"
@@ -723,8 +828,8 @@ async def evaluate_prism_alpha(db, definedge) -> dict:
     # Both charts checked in full before deciding — never short-circuited —
     # so a same-day simultaneous CE+PE qualification is actually detected
     # instead of silently masked by whichever direction got checked first.
-    ce_check = await _check_entry_conditions(definedge, "CE", tokens["CE"], today_iso)
-    pe_check = await _check_entry_conditions(definedge, "PE", tokens["PE"], today_iso)
+    ce_check = await _check_entry_conditions(definedge, "CE", tokens["CE"])
+    pe_check = await _check_entry_conditions(definedge, "PE", tokens["PE"])
     both_qualify = ce_check["qualifies"] and pe_check["qualifies"]
 
     if ce_check["qualifies"]:

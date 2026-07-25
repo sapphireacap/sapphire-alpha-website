@@ -63,7 +63,7 @@ const IpoTable = ({ rows, onOpen }) => (
       <table className="w-full text-left">
         <thead>
           <tr className="border-b border-white/10">
-            {["Company", "Exchange", "Price Band", "GMP 1", "GMP 2", "Opens", "Closes", "Status"].map((h) => (
+            {["Company", "Exchange", "Price Band", "Resource 1", "Resource 2", "Opens", "Closes", "Status"].map((h) => (
               <th key={h} className="px-6 py-5 font-mono-ui text-[11px] uppercase tracking-[0.18em] text-slate-500 font-semibold whitespace-nowrap">
                 {h}
               </th>
@@ -120,11 +120,11 @@ const IpoTable = ({ rows, onOpen }) => (
               <span className="font-mono-ui text-slate-300">{fmtPrice(r.price_band)}</span>
             </div>
             <div>
-              <p className="font-mono-ui text-[10px] uppercase tracking-[0.18em] text-slate-500 mb-1">GMP 1</p>
+              <p className="font-mono-ui text-[10px] uppercase tracking-[0.18em] text-slate-500 mb-1">Resource 1</p>
               <GmpValue gmp={r.gmp} />
             </div>
             <div>
-              <p className="font-mono-ui text-[10px] uppercase tracking-[0.18em] text-slate-500 mb-1">GMP 2</p>
+              <p className="font-mono-ui text-[10px] uppercase tracking-[0.18em] text-slate-500 mb-1">Resource 2</p>
               <GmpValue gmp={r.gmp2} />
             </div>
             <div>
@@ -211,7 +211,7 @@ export default function Ipos() {
             )}
 
             <p className="mt-8 text-xs font-light text-slate-500 leading-relaxed max-w-4xl" data-testid="ipos-disclaimer">
-              Listing data is aggregated from public exchange sources and may lag or occasionally be incomplete. AI-generated reports are summaries of public RHP filings for research and educational purposes only — not investment advice.
+              Listing data is aggregated from public exchange sources and may lag or occasionally be incomplete. Automated reports are summaries of public RHP filings for research and educational purposes only — not investment advice.
             </p>
             <p className="mt-2 text-xs font-light text-slate-500 leading-relaxed max-w-4xl" data-testid="ipos-gmp-disclaimer">
               {GMP_DISCLAIMER}

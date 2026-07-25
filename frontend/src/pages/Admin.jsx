@@ -468,7 +468,7 @@ const BlackBoxPanel = ({ onAuthError }) => {
           <button onClick={evaluateNow} disabled={running} className="btn-ghost !px-4 !py-2 text-sm disabled:opacity-50" data-testid="prism-alpha-evaluate-now-btn">
             {running ? <><Loader2 size={16} className="animate-spin" /> Evaluating</> : <><RefreshCw size={15} /> Evaluate Now</>}
           </button>
-          <button onClick={runBacktest} disabled={backtesting} className="btn-ghost !px-4 !py-2 text-sm disabled:opacity-50" data-testid="prism-alpha-backtest-run-btn">
+          <button onClick={runBacktest} disabled title="Temporarily disabled" className="btn-ghost !px-4 !py-2 text-sm disabled:opacity-50" data-testid="prism-alpha-backtest-run-btn">
             {backtesting ? <><Loader2 size={16} className="animate-spin" /> Backtesting</> : <><RefreshCw size={15} /> Run Backtest</>}
           </button>
         </div>
@@ -477,7 +477,8 @@ const BlackBoxPanel = ({ onAuthError }) => {
         "Evaluate Now" runs one live Prism Alpha cycle (entry check if flat, stop/target/trailing-stop check if in a position).
         The external cron should hit <code className="text-slate-400">/api/blackbox/admin/prism-alpha-evaluate</code> every minute during market hours.
         "Run Backtest" re-runs the full walk-forward backtest over the real-option-price window (2024-01-01 to today) — a heavier, on-demand
-        operation (fetches NSE bhavcopy data as needed), not something to schedule on a cron.
+        operation (fetches NSE bhavcopy data as needed), not something to schedule on a cron. Temporarily disabled — EOD-granularity backtest
+        results are still being refined.
       </p>
       {lastResult && (
         <div className="text-xs text-slate-500 font-mono-ui" data-testid="prism-alpha-last-result">
@@ -624,7 +625,7 @@ const IpoPanel = ({ onAuthError }) => {
       <p className="text-sm text-slate-500 mb-6">
         Company name/dates/price band/issue size auto-populate from NSE, listing date from the SEBI T+3 rule (or
         NSE's own confirmed date once known), the RHP link from SEBI's public filings (mainboard company IPOs, not
-        InvITs/REITs — triggers the AI report), and lot size from Zerodha's public IPO pages. Sector stays
+        InvITs/REITs — triggers the automated report), and lot size from Zerodha's public IPO pages. Sector stays
         admin-only — add it manually if you want it shown.
       </p>
 
@@ -739,7 +740,7 @@ const IpoPanel = ({ onAuthError }) => {
             <div className="col-span-2 md:col-span-4">
               <label className="font-mono-ui text-[10px] uppercase tracking-[0.18em] text-slate-500 block mb-1.5">RHP PDF URL</label>
               <input value={editing.rhp_url} onChange={setField("rhp_url")} className={fld} placeholder="https://..." data-testid="ipo-form-rhp-url" />
-              <p className="text-[11px] text-slate-600 mt-1">Saving a new or changed link kicks off AI report generation in the background — usually ready within a couple minutes.</p>
+              <p className="text-[11px] text-slate-600 mt-1">Saving a new or changed link kicks off automated report generation in the background — usually ready within a couple minutes.</p>
             </div>
           </div>
           <div className="flex items-center gap-3">

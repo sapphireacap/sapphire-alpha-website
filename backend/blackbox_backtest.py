@@ -30,28 +30,31 @@ scale), and both CE and PE watch for the identical bullish Low-Pole setup
 on their own chart rather than a bearish mirror. This backtest reuses the
 live module's exact pattern-detection functions (imported, not
 reimplemented) so it can never drift out of sync with what's actually
-trading live — the same requirement is why this file had to be reworked
-the moment the live logic changed, not left on the old underlying-based
-design.
+trading live.
 
-Structural consequence worth stating plainly: because the ATM strike (and
-therefore which specific option contract is "the chart") changes as the
-underlying moves and as weekly expiry rolls, a given contract's own P&F
-chart in this backtest often only accumulates a handful of days before the
-tracked strike/expiry changes and a fresh, near-empty chart starts for the
-new one. Forming a 4-column Low Pole took roughly 30+ calendar days on
-average even on the continuous, never-resetting Nifty index chart (see the
-live module's dry-run notes). A per-contract chart that resets every few
-days is structurally unlikely to accumulate that much history before
-rolling — so a low (or zero) trade count from this backtest is an expected
-consequence of matching the live logic faithfully, not a bug to chase.
+Second correction: every trade must exit the SAME session it's entered
+("exit every trade at 3:10pm if target or stop isn't hit" — no overnight
+holding). At daily-bar resolution this reshapes the whole walk: entry
+conditions are checked using data through YESTERDAY's close only (today
+isn't known yet at session open), entry executes at TODAY's open, and the
+position resolves using TODAY's close — either because close crossed
+stop/target, or because there's no more data left in the session and it's
+forced flat there regardless (exit_reason "session_end"). This also fixes
+a real bug the first version of this same-session logic had: a trade
+tracked via a shared ATM-keyed accumulator silently stopped receiving
+price updates the moment ATM drifted away from its strike, leaving it
+"open" forever with stale data — single-session trades sidestep that
+entirely since a trade never needs data beyond the day it was opened.
 
 Caveat that must stay visible in the UI: this is DAILY (EOD) data, not the
 1-minute data the live strategy uses. A 1%-box/3-box-reversal P&F chart
-built from daily bars is coarser than one built from 1-minute bars, so
-backtest results are the closest approximation possible from data that
-genuinely exists, not a faithful reproduction of what the live engine would
-have done on the same dates.
+built from daily bars is coarser than one built from 1-minute bars, and the
+live module's trailing stop (which needs days/hours of room to develop a
+NEW Double Bottom Sell after entry) can't meaningfully operate within a
+single EOD session — so stop_shift_history stays empty here even though
+the live module does exercise it. Backtest results are the closest
+approximation possible from data that genuinely exists, not a faithful
+reproduction of what the live engine would have done on the same dates.
 """
 import io
 import logging
@@ -63,11 +66,10 @@ import httpx
 import pandas as pd
 
 from blackbox_prism_alpha import (
-    IST, TARGET_POINTS, ENTRY_RSI_RANGE,
+    IST, TARGET_POINTS, ENTRY_RSI_RANGE, POLE_SEARCH_WINDOW,
     build_pnf_columns, find_low_pole, find_aft_immediate,
     find_turtle_breakout, find_triple_top_buy,
-    is_double_bottom_sell, xo_zone_series, compute_rsi_snapshot,
-    _parse_ts, _is_today,
+    xo_zone_series, xo_zone_turned, column_close_prices, compute_rsi_snapshot,
 )
 from definedge_service import NIFTY_SPOT_TOKEN
 
@@ -82,8 +84,8 @@ DATA_START_DATE = datetime(2024, 1, 1).date()  # earliest date this archive form
 
 def _eod_ts(d) -> str:
     """Same ddmmyyyyHHMM shape the live module's minute timestamps use (with
-    a fixed end-of-day marker), so _parse_ts/_is_today work unmodified on
-    daily bars — one timestamp format for both engines, no parallel helpers."""
+    a fixed end-of-day marker), so downstream helpers work unmodified on
+    daily bars — one timestamp format for both engines, no parallel ones."""
     return f"{d.day:02d}{d.month:02d}{d.year}1530"
 
 
@@ -168,22 +170,16 @@ def _option_ohlc(day_df: "pd.DataFrame", expiry_iso: str, strike: float, opt_typ
 
 
 async def run_backtest(db, definedge, start_date=None, end_date=None) -> dict:
-    """Walk-forward, no lookahead: on each simulated day D, only bars up to
-    and including D are ever used to build a P&F chart or evaluate
-    conditions. Reuses the live module's exact pattern-detection functions.
+    """Walk-forward, no lookahead, ONE SESSION PER TRADE — see module
+    docstring. Entry conditions are checked using contract_bars as they
+    stand BEFORE today's bar is appended (i.e. through yesterday's close
+    only); entry executes at today's open; the trade resolves same-day
+    using today's close (stop/target breach, or forced "session_end" if
+    neither hit) before moving to the next day.
 
-    Each of CE/PE's P&F chart is built from that SPECIFIC (strike, expiry)
-    contract's own accumulated daily bars — not the underlying — mirroring
-    the live module. contract_bars carries that accumulation across days so
-    a strike/expiry combination that stays ATM for several consecutive days
-    keeps building real history, exactly as it would live.
-
-    The live module caps entries at MAX_TRADES_PER_SESSION (3) per day.
-    That cap isn't separately enforced here: the exit check for a given day
-    always runs before that day's entry check, so a trade opened on day D
-    can only be exited starting day D+1 at the earliest — meaning this
-    daily-bar walk-forward can never produce more than one entry per
-    calendar day in the first place, and the cap can't bind.
+    MAX_TRADES_PER_SESSION (3) isn't separately enforced here: only one
+    entry decision is made per calendar day, so this walk can never
+    produce more than one trade per day and the cap can't bind.
     """
     run_id = str(uuid.uuid4())
     start_date = start_date or DATA_START_DATE
@@ -194,7 +190,14 @@ async def run_backtest(db, definedge, start_date=None, end_date=None) -> dict:
     trading_days = sorted(underlying_by_date.keys())
 
     contract_bars = {}     # (opt_type, strike, expiry) -> growing list of {ts, open, high, low, close}
-    open_trade = None      # at most one open simulated position at a time
+    all_days_data = []     # [(date_iso, opt_day_df), ...] — every day's full option chain already fetched,
+                            # kept in memory so a contract that JUST became ATM can be backfilled with its
+                            # real prior trading history instead of starting from zero. Not lookahead (every
+                            # day here is <= today) — mirrors the live module, which fetches up to 90 days
+                            # of that SPECIFIC token's history regardless of how recently it became ATM (a
+                            # strike that became ATM today may already have weeks of real trading behind
+                            # it — verified live). Without this backfill, every contract's chart here
+                            # started from nothing, which is why the very first version never traded.
     trades = []
 
     for date_iso in trading_days:
@@ -205,131 +208,135 @@ async def run_backtest(db, definedge, start_date=None, end_date=None) -> dict:
         if opt_day is None:
             continue  # no options data at all this day (holiday/gap) — nothing to evaluate
 
-        atm = round(ub["close"] / 100) * 100
+        atm = round(ub["open"] / 100) * 100  # today's OPEN — what's actually known at session start
         expiry_date = _pick_weekly_expiry(sorted(set(opt_day["expiry"].tolist())), d)
         if expiry_date is None:
             continue
         expiry = expiry_date.isoformat()  # back to string — day_df's expiry column is always string-typed
 
-        # Accumulate today's bar for whichever CE/PE contract is ATM today —
-        # a strike that stays ATM across consecutive days keeps growing the
-        # same series; a new strike starts a fresh, near-empty one.
-        for opt_type in ("CE", "PE"):
-            ohlc = _option_ohlc(opt_day, expiry, float(atm), opt_type)
-            if ohlc is None:
+        # ---- entry check, using data through YESTERDAY only ----------------
+        # (contract_bars hasn't had today's bar appended yet — that happens
+        # further below, after this decision, so today's own close can never
+        # influence whether we entered at today's open.)
+        for direction in ("CE", "PE"):
+            key = (direction, atm, expiry)
+            columns = build_pnf_columns(contract_bars.get(key, []))
+            if len(columns) < 4:
                 continue
-            key = (opt_type, atm, expiry)
-            contract_bars.setdefault(key, []).append({"ts": _eod_ts(d), **ohlc})
 
-        # ---- exit check for an open position -------------------------------
-        if open_trade is not None:
-            key = (open_trade["direction"], open_trade["strike"], open_trade["expiry"])
-            bars = contract_bars.get(key, [])
-            columns = build_pnf_columns(bars)
-
-            entry_idx = next((i for i, c in enumerate(columns) if _parse_ts(c["end_ts"]).date() >= open_trade["_entry_date"]), None)
-            best_candidate = None
-            if entry_idx is not None:
-                for j in range(entry_idx, len(columns)):
-                    if is_double_bottom_sell(columns, j):
-                        cand = columns[j]["low_price"] - 1
-                        if cand > open_trade["current_stop"] and (best_candidate is None or cand > best_candidate):
-                            best_candidate = cand
-            if best_candidate is not None:
-                open_trade["stop_shift_history"].append({
-                    "timestamp": _eod_ts(d), "old_stop": open_trade["current_stop"],
-                    "new_stop": best_candidate, "pattern": "double_bottom_sell",
-                })
-                open_trade["current_stop"] = best_candidate
-
-            todays_bar = bars[-1] if bars else None
-            # Close-only, same series (the option's own chart) for both stop
-            # and target — matches the live module: "check continuously
-            # against 1-min closes... not tick-by-tick, since the chart
-            # itself is only updated once per minute." At daily resolution
-            # that's the day's close.
-            stop_hit = todays_bar is not None and todays_bar["close"] <= open_trade["current_stop"]
-            target_hit = todays_bar is not None and todays_bar["close"] >= open_trade["target"]
-
-            if stop_hit or target_hit:
-                exit_reason = "stop" if stop_hit else "target"
-                exit_price = todays_bar["close"] if todays_bar is not None else open_trade["entry_price"]
-                open_trade["status"] = "closed"
-                open_trade["exit_time"] = _eod_ts(d)
-                open_trade["exit_price"] = exit_price
-                open_trade["exit_reason"] = exit_reason
-                open_trade["pnl"] = exit_price - open_trade["entry_price"]
-                open_trade.pop("_entry_date")
-                trades.append(open_trade)
-                open_trade = None
-                continue  # no same-day re-entry, matches live strategy's rule
-
-        # ---- entry check when flat ------------------------------------------
-        if open_trade is None:
-            for direction in ("CE", "PE"):
-                key = (direction, atm, expiry)
-                columns = build_pnf_columns(contract_bars.get(key, []))
-                if len(columns) < 4:
+            # Search backward for the freshest (pole, follow-through) PAIR —
+            # not "the single most recent pole ever paired with any later
+            # follow-through," which surfaced a real bad trade in testing
+            # (stale pole, price long since moved away — see the sanity
+            # guard below). Same fix as the live module.
+            pole_idx = None
+            follow_through = None
+            search_floor = max(2, len(columns) - 1 - POLE_SEARCH_WINDOW)
+            for i in range(len(columns) - 1, search_floor, -1):
+                if not find_low_pole(columns, i):
                     continue
-
-                pole_idx = None
-                for i in range(3, len(columns)):
-                    if find_low_pole(columns, i) and _is_today(columns[i]["end_ts"], date_iso):
-                        pole_idx = i
-                if pole_idx is None:
-                    continue
-
-                follow_through = None
-                for j in range(pole_idx + 1, len(columns)):
+                candidate_ft = None
+                for j in range(i + 1, len(columns)):
                     if find_aft_immediate(columns, j, "X"):
-                        follow_through = "aft_immediate"
+                        candidate_ft = "aft_immediate"
                     elif find_turtle_breakout(columns, j, "X"):
-                        follow_through = "turtle_breakout"
+                        candidate_ft = "turtle_breakout"
                     elif find_triple_top_buy(columns, j):
-                        follow_through = "triple_top_bottom"
-                if follow_through is None:
-                    continue
+                        candidate_ft = "triple_top_bottom"
+                if candidate_ft is not None:
+                    pole_idx, follow_through = i, candidate_ft
+                    break
+            if pole_idx is None or follow_through is None:
+                continue
 
-                xo_series = xo_zone_series(columns)
-                xo_ok = xo_series[pole_idx] <= 0 and xo_series[-1] > 0
+            # XO Zone gate: zero-line crossover on the newest column, matching
+            # blackbox_prism_alpha.py's xo_zone_turned() — confirmed against
+            # Prashant Shah's P&F book (Ch. 4.5) as the correct textbook
+            # reading, replacing an earlier self-invented "net positive since
+            # the pole" condition that mechanically vetoed every real setup.
+            xo_now = xo_zone_series(columns)[-1]
+            xo_ok = xo_zone_turned(columns) == "positive"
 
-                closes = [b["close"] for b in contract_bars[key]]
-                rsi_snapshot = compute_rsi_snapshot(closes)
-                rsi_ok = rsi_snapshot["rsi7"] is not None and ENTRY_RSI_RANGE[0] < rsi_snapshot["rsi7"] < ENTRY_RSI_RANGE[1]
+            # RSI(7) on column closing-price-method values (X->high, O->low),
+            # per the book's confirmation that P&F indicators run on one
+            # price per column, not raw bars — matches the live module.
+            col_closes = column_close_prices(columns)
+            rsi_snapshot = compute_rsi_snapshot(col_closes)
+            rsi_ok = rsi_snapshot["rsi7"] is not None and ENTRY_RSI_RANGE[0] < rsi_snapshot["rsi7"] < ENTRY_RSI_RANGE[1]
 
-                if not (xo_ok and rsi_ok):
-                    continue
+            if not (xo_ok and rsi_ok):
+                continue
 
-                entry_price = contract_bars[key][-1]["close"]
-                pole_col = columns[pole_idx - 1]
-                initial_stop = pole_col["low_price"] - 1
-                target = entry_price + TARGET_POINTS  # ₹60 of option premium, not underlying points — matches the live module
+            todays_ohlc = _option_ohlc(opt_day, expiry, float(atm), direction)
+            if todays_ohlc is None:
+                continue
+            entry_price = todays_ohlc["open"]
+            pole_col = columns[pole_idx - 1]
+            initial_stop = pole_col["low_price"] - 1
 
-                open_trade = {
-                    "id": str(uuid.uuid4()),
-                    "backtest_run_id": run_id,
-                    "data_source_granularity": "daily_eod",
-                    "date": date_iso,
-                    "direction": direction,
-                    "strike": atm,
-                    "expiry": expiry,
-                    "entry_time": _eod_ts(d),
-                    "entry_price": entry_price,
-                    "initial_stop": initial_stop,
-                    "current_stop": initial_stop,
-                    "stop_shift_history": [],
-                    "target": target,
-                    "exit_time": None, "exit_price": None, "exit_reason": None, "pnl": None,
-                    "conditions_met": {"pole_column": pole_idx, "follow_through_pattern": follow_through,
-                                       "xo_zone_now": xo_series[-1], "rsi7": rsi_snapshot["rsi7"]},
-                    "status": "open",
-                    "_entry_date": d,
-                }
-                break  # only one direction can enter per day
+            # Sanity guard: a stop can never sit at/above entry on a long
+            # position — see the matching note in the live module. The
+            # "most recent pole anywhere in the window" can still be stale
+            # relative to where price has since moved even when a later
+            # follow-through + XO Zone + RSI still align.
+            if initial_stop >= entry_price:
+                continue
 
-    if open_trade is not None:
-        open_trade.pop("_entry_date")
-        trades.append(open_trade)  # still-open at the end of the window — reported as-is
+            target = entry_price + TARGET_POINTS  # ₹60 of option premium, not underlying points
+
+            # ---- resolve same-day, using today's close (or forced) ---------
+            exit_price = todays_ohlc["close"]
+            if exit_price <= initial_stop:
+                exit_reason = "stop"
+            elif exit_price >= target:
+                exit_reason = "target"
+            else:
+                exit_reason = "session_end"  # 15:10 cutoff — neither hit, forced flat same day
+
+            trades.append({
+                "id": str(uuid.uuid4()),
+                "backtest_run_id": run_id,
+                "data_source_granularity": "daily_eod",
+                "date": date_iso,
+                "direction": direction,
+                "strike": atm,
+                "expiry": expiry,
+                "entry_time": _eod_ts(d),
+                "entry_price": entry_price,
+                "initial_stop": initial_stop,
+                "current_stop": initial_stop,
+                "stop_shift_history": [],  # needs multi-day room to develop a NEW Double Bottom Sell after
+                                            # entry — structurally can't happen within a single EOD session
+                                            # (see module docstring); the live module's intraday version
+                                            # does exercise it.
+                "target": target,
+                "exit_time": _eod_ts(d),
+                "exit_price": exit_price,
+                "exit_reason": exit_reason,
+                "pnl": exit_price - entry_price,
+                "conditions_met": {"pole_column": pole_idx, "follow_through_pattern": follow_through,
+                                   "xo_zone_now": xo_now, "rsi7": rsi_snapshot["rsi7"]},
+                "status": "closed",
+            })
+            break  # only one direction enters per day
+
+        # ---- accumulate today's bar for every contract we're tracking ------
+        for opt_type in ("CE", "PE"):
+            key = (opt_type, atm, expiry)
+            if key not in contract_bars:
+                backfill = []
+                for prev_date_iso, prev_df in all_days_data:
+                    prev_ohlc = _option_ohlc(prev_df, expiry, float(atm), opt_type)
+                    if prev_ohlc is not None:
+                        prev_d = datetime.strptime(prev_date_iso, "%Y-%m-%d").date()
+                        backfill.append({"ts": _eod_ts(prev_d), **prev_ohlc})
+                contract_bars[key] = backfill
+
+            ohlc = _option_ohlc(opt_day, expiry, float(atm), opt_type)
+            if ohlc is not None:
+                contract_bars[key].append({"ts": _eod_ts(d), **ohlc})
+
+        all_days_data.append((date_iso, opt_day))
 
     if trades:
         await db.blackbox_prism_alpha_backtest_trades.insert_many([dict(t) for t in trades])

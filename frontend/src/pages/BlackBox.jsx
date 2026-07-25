@@ -191,7 +191,7 @@ const PrismAlphaCard = () => {
         <div>
           <span className="font-mono-ui text-xs text-sapphire-light mb-1 block">01</span>
           <h4 className="font-display text-2xl font-bold text-white">Prism Alpha</h4>
-          <p className="text-sm font-light text-slate-500 mt-1">Systematic P&F pattern-based Nifty options signals</p>
+          <p className="text-sm font-light text-slate-500 mt-1">Quantitative options signal engine</p>
         </div>
         {loading ? (
           <div className="flex items-center gap-2 text-slate-500 text-sm"><Loader2 className="animate-spin" size={14} /> Loading</div>

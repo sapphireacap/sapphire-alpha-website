@@ -36,7 +36,7 @@ const fmtDateTime = (iso) => {
   return d.toLocaleString("en-IN", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" });
 };
 
-const GMP_SOURCE_LABELS = { ipowatch: "Source 1", investorgain: "Source 2" };
+const GMP_SOURCE_LABELS = { ipowatch: "Resource 1", investorgain: "Resource 2" };
 const GMP_SOURCE_COLORS = { ipowatch: "#437EEB", investorgain: "#F59E0B" };
 
 const GmpChart = ({ history }) => {
@@ -138,7 +138,7 @@ const ReportSection = ({ ipo }) => {
         <p className="font-mono-ui text-[10px] uppercase tracking-[0.24em] text-slate-500 mb-3">Report Generating</p>
         <p className="text-sm text-slate-400 leading-relaxed max-w-md mx-auto">
           {ipo.rhp_url
-            ? "The AI-generated report for this IPO is being prepared from its RHP filing. Check back shortly — refreshing this page will pick it up once it's ready."
+            ? "The automated report for this IPO is being prepared from its RHP filing. Check back shortly — refreshing this page will pick it up once it's ready."
             : "No RHP filing has been linked for this IPO yet, so a report hasn't been generated."}
         </p>
       </div>
@@ -148,7 +148,7 @@ const ReportSection = ({ ipo }) => {
     <div className="glass rounded-2xl p-6 md:p-8" data-testid="ipo-report">
       <div className="flex items-center gap-3 mb-5">
         <FileText size={16} className="text-sapphire-light" />
-        <span className="font-mono-ui text-[10px] uppercase tracking-[0.22em] text-slate-500">AI-Generated RHP Summary</span>
+        <span className="font-mono-ui text-[10px] uppercase tracking-[0.22em] text-slate-500">Automated RHP Summary</span>
       </div>
       <div className="space-y-4">
         {ipo.short_report.split(/\n\s*\n/).map((para, i) => (
@@ -156,7 +156,7 @@ const ReportSection = ({ ipo }) => {
         ))}
       </div>
       <p className="text-[11px] font-light text-slate-600 mt-6 pt-4 border-t border-white/10">
-        AI-generated summary of the public RHP filing, for research and educational purposes only — not investment advice. Always verify against the original RHP linked above.
+        Automated summary of the public RHP filing, for research and educational purposes only — not investment advice. Always verify against the original RHP linked above.
       </p>
     </div>
   );
