@@ -289,4 +289,12 @@ def create_blackbox_router(db, definedge, get_current_admin, cron_secret: str) -
     async def lumen_sip_backtest_signals():
         return await db.blackbox_lumen_sip_backtest_signals.find({}, {"_id": 0}).sort("date", -1).to_list(2000)
 
+    @router.get("/lumen-sip/backtest/metrics")
+    async def lumen_sip_backtest_metrics():
+        """Institutional-grade metrics (XIRR, max drawdown, round-trip trade
+        stats, vanilla-SIP benchmark) — precomputed once per backtest run
+        (see run_lumen_sip_backtest), not recalculated on every page view."""
+        doc = await db.blackbox_lumen_sip_backtest_metrics.find_one({"id": "current"}, {"_id": 0})
+        return doc or {"has_data": False}
+
     return router

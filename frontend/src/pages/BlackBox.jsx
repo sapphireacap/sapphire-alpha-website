@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import axios from "axios";
 import { motion } from "framer-motion";
-import { Clock, Loader2 } from "lucide-react";
+import { Clock, Loader2, Bell } from "lucide-react";
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
 import Navbar from "../components/site/Navbar";
 import Footer from "../components/site/Footer";
@@ -292,24 +292,44 @@ const PhaseBadge = ({ label, phase }) => (
   </span>
 );
 
-const LumenSipEquityChart = ({ portfolio }) => {
-  // ~2400 daily snapshots is more resolution than a long-term equity curve
-  // needs on screen — sample down to keep the chart responsive, always
-  // keeping the most recent point.
-  const step = Math.max(1, Math.floor(portfolio.length / 300));
-  const series = portfolio
-    .filter((_, i) => i % step === 0 || i === portfolio.length - 1)
-    .map((p) => ({
-      date: fmtDate(p.date),
-      total_value: p.total_value,
-      cash: p.niftybees_cash + p.goldbees_cash,
-      invested: p.total_value - (p.niftybees_cash + p.goldbees_cash),
-    }));
+const fmtINR = (n, decimals = 0) =>
+  n == null ? "—" : `₹${n.toLocaleString("en-IN", { minimumFractionDigits: decimals, maximumFractionDigits: decimals })}`;
+
+const fmtSignedPct = (n, decimals = 1) => {
+  if (n == null) return "—";
+  const sign = n > 0 ? "+" : "";
+  return `${sign}${n.toFixed(decimals)}%`;
+};
+
+// Merges the strategy's own (brick-event-dated) equity curve with the
+// vanilla-SIP benchmark's (daily-dated) curve onto one shared timeline —
+// the two have different date samplings, so this looks up the closest
+// vanilla point at-or-before each strategy point rather than assuming
+// matching indices/dates.
+const mergeWithVanilla = (portfolio, vanillaCurve) => {
+  if (!vanillaCurve?.length) return portfolio.map((p) => ({ ...p, vanilla_value: null }));
+  let vi = 0;
+  return portfolio.map((p) => {
+    while (vi + 1 < vanillaCurve.length && vanillaCurve[vi + 1].date <= p.date) vi++;
+    return { ...p, vanilla_value: vanillaCurve[vi].date <= p.date ? vanillaCurve[vi].value : null };
+  });
+};
+
+const LumenSipEquityChart = ({ portfolio, vanillaCurve }) => {
+  // ~2400 daily/brick snapshots is more resolution than the chart needs —
+  // sample down, always keeping the most recent point.
+  const step = Math.max(1, Math.floor(portfolio.length / 350));
+  const sampled = portfolio.filter((_, i) => i % step === 0 || i === portfolio.length - 1);
+  const merged = mergeWithVanilla(sampled, vanillaCurve).map((p) => ({
+    date: fmtDate(p.date),
+    total_value: p.total_value,
+    vanilla_value: p.vanilla_value,
+  }));
 
   return (
-    <div className="h-64" data-testid="lumen-sip-equity-chart">
+    <div className="h-72" data-testid="lumen-sip-equity-chart">
       <ResponsiveContainer width="100%" height="100%">
-        <LineChart data={series} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
+        <LineChart data={merged} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
           <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" vertical={false} />
           <XAxis dataKey="date" tick={{ fill: "#64748B", fontSize: 10 }} axisLine={{ stroke: "rgba(255,255,255,0.1)" }} tickLine={false} minTickGap={50} />
           <YAxis tick={{ fill: "#64748B", fontSize: 11 }} axisLine={false} tickLine={false} domain={["auto", "auto"]} width={64}
@@ -318,124 +338,107 @@ const LumenSipEquityChart = ({ portfolio }) => {
             contentStyle={{ background: "#0A0D18", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 8, fontSize: 12 }}
             labelStyle={{ color: "#94A3B8" }}
             itemStyle={{ color: "#E2E8F0" }}
-            formatter={(v, name) => [`₹${v.toLocaleString("en-IN", { maximumFractionDigits: 0 })}`, name]}
+            formatter={(v, name) => [v == null ? "—" : `₹${v.toLocaleString("en-IN", { maximumFractionDigits: 0 })}`, name]}
           />
-          <Line type="monotone" dataKey="total_value" name="Portfolio Value" stroke="#437EEB" strokeWidth={1.5} dot={false} isAnimationActive={false} />
-          <Line type="monotone" dataKey="invested" name="Invested" stroke="#34D399" strokeWidth={1} dot={false} isAnimationActive={false} />
-          <Line type="monotone" dataKey="cash" name="Cash" stroke="#94A3B8" strokeWidth={1} dot={false} isAnimationActive={false} />
+          <Line type="monotone" dataKey="total_value" name="Lumen SIP" stroke="#437EEB" strokeWidth={2} dot={false} isAnimationActive={false} />
+          <Line type="monotone" dataKey="vanilla_value" name="Vanilla SIP" stroke="#D9A441" strokeWidth={1.5} strokeDasharray="5 4" dot={false} isAnimationActive={false} />
         </LineChart>
       </ResponsiveContainer>
     </div>
   );
 };
 
-const LumenSipSignalTable = ({ signals }) => (
-  <div className="overflow-x-auto" data-testid="lumen-sip-signal-log">
-    <table className="w-full text-left min-w-[500px]">
-      <thead>
-        <tr className="border-b border-white/10">
-          {["Date", "Instrument", "Signal", "Price"].map((h) => (
-            <th key={h} className="px-4 py-3 font-mono-ui text-[10px] uppercase tracking-[0.16em] text-slate-500 font-semibold whitespace-nowrap">
-              {h}
-            </th>
-          ))}
-        </tr>
-      </thead>
-      <tbody>
-        {signals.slice(0, 20).map((s, i) => (
-          <tr key={`${s.instrument}-${s.date}-${i}`} className="border-b border-white/[0.05] last:border-0">
-            <td className="px-4 py-3 text-sm text-slate-300 whitespace-nowrap">{fmtDate(s.date)}</td>
-            <td className="px-4 py-3 text-sm text-slate-300 whitespace-nowrap">{s.instrument}</td>
-            <td className="px-4 py-3 text-sm whitespace-nowrap">
-              <span className={s.signal_type === "buy" ? "text-emerald-400" : "text-red-400"}>{s.signal_type?.toUpperCase()}</span>
-            </td>
-            <td className="px-4 py-3 font-mono-ui text-sm text-slate-300 whitespace-nowrap">₹{s.price?.toFixed(2)}</td>
-          </tr>
-        ))}
-      </tbody>
-    </table>
-  </div>
-);
+const LumenSipTradeTable = ({ signals, instrument }) => {
+  const sigs = signals.filter((s) => s.instrument === instrument);
+  const trips = [];
+  let buy = null;
+  for (const s of sigs) {
+    if (s.signal_type === "buy") buy = s;
+    else if (s.signal_type === "sell" && buy) { trips.push([buy, s]); buy = null; }
+  }
+  trips.reverse();
 
-const LumenSipPanel = ({ label, note, status, portfolio, signals, loading, testId }) => {
-  const hasData = status?.has_data;
+  if (trips.length === 0) return <p className="text-sm text-slate-500 py-4 text-center">No completed round-trips yet.</p>;
 
   return (
-    <div className="rounded-xl border border-white/10 bg-white/[0.02] p-5" data-testid={testId}>
-      <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
-        <div>
-          <p className="font-mono-ui text-[10px] uppercase tracking-[0.18em] text-sapphire-light">{label}</p>
-          <p className="text-xs font-light text-slate-500 mt-0.5">{note}</p>
-        </div>
-        {loading ? (
-          <Loader2 className="animate-spin text-slate-500" size={14} />
-        ) : hasData ? (
-          <div className="flex flex-wrap gap-2">
-            <PhaseBadge label="NIFTYBEES" phase={status.instruments.niftybees.phase} />
-            <PhaseBadge label="GOLDBEES" phase={status.instruments.goldbees.phase} />
-          </div>
-        ) : null}
+    <div className="overflow-x-auto" data-testid={`lumen-sip-trades-${instrument.toLowerCase()}`}>
+      <table className="w-full text-left min-w-[420px]">
+        <thead>
+          <tr className="border-b border-white/10">
+            {["Buy", "Sell", "Hold", "Return"].map((h) => (
+              <th key={h} className="px-3 py-2.5 font-mono-ui text-[10px] uppercase tracking-[0.14em] text-slate-500 font-semibold whitespace-nowrap">
+                {h}
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {trips.map(([b, s], i) => {
+            const ret = ((s.price - b.price) / b.price) * 100;
+            const days = Math.round((new Date(s.date) - new Date(b.date)) / 86400000);
+            return (
+              <tr key={i} className="border-b border-white/[0.05] last:border-0">
+                <td className="px-3 py-2 font-mono-ui text-xs text-slate-300 whitespace-nowrap">{fmtDate(b.date)} · ₹{b.price.toFixed(2)}</td>
+                <td className="px-3 py-2 font-mono-ui text-xs text-slate-300 whitespace-nowrap">{fmtDate(s.date)} · ₹{s.price.toFixed(2)}</td>
+                <td className="px-3 py-2 font-mono-ui text-xs text-slate-400 whitespace-nowrap">{days}d</td>
+                <td className={`px-3 py-2 font-mono-ui text-xs whitespace-nowrap ${ret >= 0 ? "text-emerald-400" : "text-red-400"}`}>
+                  {fmtSignedPct(ret, 2)}
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
+  );
+};
+
+const LumenSipInstrumentCard = ({ label, m, signals, accentClass }) => {
+  const ts = m.trade_stats;
+  return (
+    <div className="rounded-xl border border-white/10 bg-white/[0.02] p-5" data-testid={`lumen-sip-instrument-${label.toLowerCase()}`}>
+      <div className="flex items-center justify-between mb-1">
+        <span className={`font-mono-ui font-bold text-sm tracking-wide ${accentClass}`}>{label}</span>
+        <span className="font-mono-ui text-xs text-slate-500">{m.allocation_pct.toFixed(0)}% allocation</span>
+      </div>
+      <p className="text-xs text-slate-500 mb-4">{fmtINR(m.total_invested)} invested → {fmtINR(m.final_value)} today</p>
+
+      <div className="grid grid-cols-2 gap-3 mb-4">
+        <StatBlock label="XIRR" value={fmtSignedPct(m.xirr_pct)} valueClass="text-emerald-400" />
+        <StatBlock label="Max Drawdown" value={`-${m.max_drawdown_pct.toFixed(1)}%`} valueClass="text-red-400" />
+        <StatBlock label="Time in Market" value={`${m.time_in_market_pct.toFixed(0)}%`} />
+        <StatBlock label="Trades / Win Rate" value={ts.count ? `${ts.count} · ${ts.win_rate_pct.toFixed(0)}%` : "—"} />
       </div>
 
-      {!loading && hasData && (
-        <>
-          <div className="grid grid-cols-2 gap-4 mb-5">
-            <StatBlock label="Portfolio Value" value={`₹${status.total_value.toLocaleString("en-IN", { maximumFractionDigits: 0 })}`} />
-            <StatBlock label="As Of" value={fmtDate(status.as_of)} />
-            <StatBlock
-              label="NIFTYBEES Alloc"
-              value={`${(status.instruments.niftybees.allocation_pct * 100).toFixed(0)}%`}
-              valueClass={status.instruments.niftybees.phase === "buy" ? "text-emerald-400" : "text-slate-400"}
-            />
-            <StatBlock
-              label="GOLDBEES Alloc"
-              value={`${(status.instruments.goldbees.allocation_pct * 100).toFixed(0)}%`}
-              valueClass={status.instruments.goldbees.phase === "buy" ? "text-emerald-400" : "text-slate-400"}
-            />
-          </div>
+      <div className="h-1.5 rounded-full bg-white/5 overflow-hidden mb-5">
+        <div className={`h-full rounded-full ${accentClass.replace("text-", "bg-")}`} style={{ width: `${m.time_in_market_pct}%` }} />
+      </div>
 
-          {portfolio.length > 1 ? (
-            <LumenSipEquityChart portfolio={portfolio} />
-          ) : (
-            <p className="text-sm text-slate-500 py-6 text-center">Just seeded — the equity curve will build up over time.</p>
-          )}
-
-          {signals.length > 0 && (
-            <div className="mt-5">
-              <p className="font-mono-ui text-[10px] uppercase tracking-[0.18em] text-slate-500 mb-3">Signal Log</p>
-              <LumenSipSignalTable signals={signals} />
-            </div>
-          )}
-        </>
-      )}
-
-      {!loading && !hasData && (
-        <p className="text-sm text-slate-500 py-6 text-center">No data yet — will appear here once evaluated.</p>
-      )}
+      <p className="font-mono-ui text-[10px] uppercase tracking-[0.16em] text-slate-500 mb-2">Round-Trip Trade Log ({ts.count})</p>
+      <LumenSipTradeTable signals={signals} instrument={label} />
     </div>
   );
 };
 
 const LumenSIPCard = () => {
-  const [live, setLive] = useState({ status: null, portfolio: [], signals: [] });
-  const [backtest, setBacktest] = useState({ status: null, portfolio: [], signals: [] });
+  const [metrics, setMetrics] = useState(null);
+  const [portfolio, setPortfolio] = useState([]);
+  const [signals, setSignals] = useState([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     let cancelled = false;
     const load = () => {
       Promise.all([
-        axios.get(`${API}/blackbox/lumen-sip/status`),
-        axios.get(`${API}/blackbox/lumen-sip/portfolio`),
-        axios.get(`${API}/blackbox/lumen-sip/signals`),
-        axios.get(`${API}/blackbox/lumen-sip/backtest/status`),
+        axios.get(`${API}/blackbox/lumen-sip/backtest/metrics`),
         axios.get(`${API}/blackbox/lumen-sip/backtest/portfolio`),
         axios.get(`${API}/blackbox/lumen-sip/backtest/signals`),
       ])
-        .then(([s, p, sg, bs, bp, bsg]) => {
+        .then(([m, p, sg]) => {
           if (cancelled) return;
-          setLive({ status: s.data, portfolio: p.data, signals: sg.data });
-          setBacktest({ status: bs.data, portfolio: bp.data, signals: bsg.data });
+          setMetrics(m.data);
+          setPortfolio(p.data);
+          setSignals(sg.data);
         })
         .catch(() => {})
         .finally(() => { if (!cancelled) setLoading(false); });
@@ -445,34 +448,107 @@ const LumenSIPCard = () => {
     return () => { cancelled = true; clearInterval(interval); };
   }, []);
 
+  const hasData = metrics?.has_data;
+
   return (
     <div className="glass rounded-2xl p-6 md:p-8 mb-4" data-testid="lumen-sip-card">
-      <div className="mb-6">
-        <span className="font-mono-ui text-xs text-sapphire-light mb-1 block">03</span>
-        <h4 className="font-display text-2xl font-bold text-white">Lumen SIP</h4>
-        <p className="text-sm font-light text-slate-500 mt-1">Long-term ETF trend-following allocation — NIFTYBEES &amp; GOLDBEES</p>
+      <div className="flex flex-wrap items-start justify-between gap-4 mb-6">
+        <div>
+          <span className="font-mono-ui text-xs text-sapphire-light mb-1 block">03</span>
+          <h4 className="font-display text-2xl font-bold text-white">Lumen SIP</h4>
+          <p className="text-sm font-light text-slate-500 mt-1">Long-term ETF trend-following allocation — NIFTYBEES &amp; GOLDBEES</p>
+        </div>
+        <button
+          type="button"
+          disabled
+          title="Coming soon"
+          className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.03] px-4 py-2 text-xs font-medium text-slate-500 cursor-not-allowed whitespace-nowrap"
+          data-testid="lumen-sip-alerts-btn"
+        >
+          <Bell size={14} />
+          Get Alerts — Coming Soon
+        </button>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        <LumenSipPanel
-          label="Live"
-          note="Real, forward-only tracking — starts from the day this went live"
-          status={live.status}
-          portfolio={live.portfolio}
-          signals={live.signals}
-          loading={loading}
-          testId="lumen-sip-live-panel"
-        />
-        <LumenSipPanel
-          label="Backtest"
-          note="Illustrative replay since inception (up to 10 years), rebuilt from a zero starting portfolio"
-          status={backtest.status}
-          portfolio={backtest.portfolio}
-          signals={backtest.signals}
-          loading={loading}
-          testId="lumen-sip-backtest-panel"
-        />
-      </div>
+      {loading && (
+        <div className="flex items-center gap-2 text-slate-500 text-sm py-10 justify-center">
+          <Loader2 className="animate-spin" size={14} /> Loading
+        </div>
+      )}
+
+      {!loading && hasData && (
+        <>
+          <div className="flex flex-wrap gap-2 mb-6">
+            <PhaseBadge label="NIFTYBEES" phase={metrics.current_phase.NIFTYBEES} />
+            <PhaseBadge label="GOLDBEES" phase={metrics.current_phase.GOLDBEES} />
+            <span className="font-mono-ui text-[11px] text-slate-500 self-center ml-1">
+              {metrics.period.months} months · {fmtDate(metrics.period.start)} → {fmtDate(metrics.period.end)}
+            </span>
+          </div>
+
+          <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-6">
+            <StatBlock label="Total Invested" value={fmtINR(metrics.portfolio.total_invested)} />
+            <StatBlock label="Final Value" value={fmtINR(metrics.portfolio.final_value)} valueClass="text-emerald-400" />
+            <StatBlock label="Absolute Return" value={fmtSignedPct(metrics.portfolio.absolute_return_pct)} valueClass="text-emerald-400" />
+            <StatBlock label="XIRR" value={fmtSignedPct(metrics.portfolio.xirr_pct)} valueClass="text-emerald-400" />
+            <StatBlock label="Max Drawdown" value={`-${metrics.portfolio.max_drawdown_pct.toFixed(1)}%`} valueClass="text-red-400" />
+          </div>
+
+          {portfolio.length > 1 && (
+            <LumenSipEquityChart portfolio={portfolio} vanillaCurve={metrics.vanilla_sip.curve} />
+          )}
+          <div className="flex flex-wrap gap-4 mt-3 mb-8 font-mono-ui text-[11px] text-slate-500">
+            <span className="inline-flex items-center gap-1.5"><i className="h-2.5 w-2.5 rounded-sm inline-block bg-[#437EEB]" />Lumen SIP</span>
+            <span className="inline-flex items-center gap-1.5"><i className="h-2.5 w-2.5 rounded-sm inline-block bg-[#D9A441]" />Vanilla SIP (no signal, dashed)</span>
+          </div>
+
+          <div className="mb-8">
+            <p className="font-mono-ui text-[10px] uppercase tracking-[0.18em] text-slate-500 mb-3">Strategy vs. Vanilla SIP</p>
+            <p className="text-xs text-slate-500 mb-3">Same ₹5,000/month, same 75/25 split, same period — vanilla just buys every month with no signal at all.</p>
+            <div className="overflow-x-auto">
+              <table className="w-full text-left min-w-[560px]">
+                <thead>
+                  <tr className="border-b border-white/10">
+                    {["", "Invested", "Final Value", "Return", "XIRR", "Max Drawdown"].map((h) => (
+                      <th key={h} className="px-3 py-2.5 font-mono-ui text-[10px] uppercase tracking-[0.14em] text-slate-500 font-semibold whitespace-nowrap">{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr className="border-b border-white/[0.05]">
+                    <td className="px-3 py-2.5 text-sm text-white whitespace-nowrap">Lumen SIP (this strategy)</td>
+                    <td className="px-3 py-2.5 font-mono-ui text-xs text-slate-300 whitespace-nowrap">{fmtINR(metrics.portfolio.total_invested)}</td>
+                    <td className="px-3 py-2.5 font-mono-ui text-xs text-emerald-400 whitespace-nowrap">{fmtINR(metrics.portfolio.final_value)}</td>
+                    <td className="px-3 py-2.5 font-mono-ui text-xs text-emerald-400 whitespace-nowrap">{fmtSignedPct(metrics.portfolio.absolute_return_pct)}</td>
+                    <td className="px-3 py-2.5 font-mono-ui text-xs text-emerald-400 whitespace-nowrap">{fmtSignedPct(metrics.portfolio.xirr_pct)}</td>
+                    <td className="px-3 py-2.5 font-mono-ui text-xs text-red-400 whitespace-nowrap">-{metrics.portfolio.max_drawdown_pct.toFixed(1)}%</td>
+                  </tr>
+                  <tr>
+                    <td className="px-3 py-2.5 text-sm text-slate-300 whitespace-nowrap">Vanilla monthly SIP</td>
+                    <td className="px-3 py-2.5 font-mono-ui text-xs text-slate-300 whitespace-nowrap">{fmtINR(metrics.vanilla_sip.total_invested)}</td>
+                    <td className="px-3 py-2.5 font-mono-ui text-xs text-slate-300 whitespace-nowrap">{fmtINR(metrics.vanilla_sip.final_value)}</td>
+                    <td className="px-3 py-2.5 font-mono-ui text-xs text-slate-300 whitespace-nowrap">{fmtSignedPct(metrics.vanilla_sip.absolute_return_pct)}</td>
+                    <td className="px-3 py-2.5 font-mono-ui text-xs text-slate-300 whitespace-nowrap">{fmtSignedPct(metrics.vanilla_sip.xirr_pct)}</td>
+                    <td className="px-3 py-2.5 font-mono-ui text-xs text-red-400/80 whitespace-nowrap">-{metrics.vanilla_sip.max_drawdown_pct.toFixed(1)}%</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <p className="font-mono-ui text-[10px] uppercase tracking-[0.18em] text-slate-500 mb-3">Per-Instrument Breakdown</p>
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            <LumenSipInstrumentCard label="NIFTYBEES" m={metrics.niftybees} signals={signals} accentClass="text-sapphire-light" />
+            <LumenSipInstrumentCard label="GOLDBEES" m={metrics.goldbees} signals={signals} accentClass="text-amber-400" />
+          </div>
+        </>
+      )}
+
+      {!loading && !hasData && (
+        <p className="text-sm text-slate-500 py-10 text-center" data-testid="lumen-sip-empty">
+          No backtest data yet — will appear here once evaluated.
+        </p>
+      )}
 
       <p className="text-[11px] font-light text-slate-600 mt-6 pt-4 border-t border-white/10" data-testid="lumen-sip-disclaimer">
         This is a systematic long-term allocation framework based on publicly available research (Definedge), not a personalized

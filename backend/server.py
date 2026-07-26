@@ -1073,6 +1073,7 @@ async def on_startup():
         await db.blackbox_lumen_sip_portfolio.create_index("date", unique=True)
         await db.blackbox_lumen_sip_backtest_signals.create_index([("instrument", 1), ("date", 1)])
         await db.blackbox_lumen_sip_backtest_portfolio.create_index("date", unique=True)
+        await db.blackbox_lumen_sip_backtest_metrics.create_index("id", unique=True)
     except Exception as e:  # noqa: BLE001
         logger.warning(f"Index creation: {e}")
 

@@ -76,6 +76,8 @@ combining with objective price patterns (Prism-Alpha-style), not relevant
 to Lumen SIP's simpler always-in/always-out design, so phase just holds
 while price is inside the band.
 """
+from datetime import date
+
 from blackbox_renko import build_renko_bricks
 
 # ---------------------------------------------------------------------------
@@ -272,12 +274,20 @@ async def _fetch_daily_bars(definedge, symbol: str, segment: str) -> list:
     return await definedge.daily_history(segment, token, years=10)
 
 
+async def _fetch_all_bars(definedge) -> dict:
+    """Raw daily OHLC bars per instrument — the shared source both the
+    signal engine (evaluate_instrument_series) and the vanilla-SIP
+    benchmark (_simulate_vanilla_sip) derive from, fetched once per
+    backtest run rather than duplicating the Definedge calls."""
+    return {
+        symbol: await _fetch_daily_bars(definedge, symbol, cfg["segment"])
+        for symbol, cfg in INSTRUMENTS.items()
+    }
+
+
 async def _fetch_per_instrument_series(definedge) -> dict:
-    per_instrument_series = {}
-    for symbol, cfg in INSTRUMENTS.items():
-        bars = await _fetch_daily_bars(definedge, symbol, cfg["segment"])
-        per_instrument_series[symbol] = evaluate_instrument_series(bars)
-    return per_instrument_series
+    all_bars = await _fetch_all_bars(definedge)
+    return {symbol: evaluate_instrument_series(bars) for symbol, bars in all_bars.items()}
 
 
 # ---------------------------------------------------------------------------
@@ -378,6 +388,239 @@ def _walk_portfolio(per_instrument_series: dict, dates: list, units: dict, cash:
 
 
 # ---------------------------------------------------------------------------
+# Institutional-grade metrics — XIRR, max drawdown, round-trip trade stats,
+# and a vanilla (no-signal) monthly-SIP benchmark over the identical period/
+# amount/split. Computed once per backtest run and persisted, not
+# recomputed on every page view (the vanilla benchmark needs the full raw
+# price history, not just the signal series).
+# ---------------------------------------------------------------------------
+def _months_between(start_iso: str, end_iso: str) -> list:
+    start_d, end_d = date.fromisoformat(start_iso), date.fromisoformat(end_iso)
+    months = []
+    cur = date(start_d.year, start_d.month, 1)
+    while cur <= end_d:
+        months.append(cur)
+        cur = date(cur.year + 1, 1, 1) if cur.month == 12 else date(cur.year, cur.month + 1, 1)
+    return months
+
+
+def _xirr(cash_flows: list) -> float:
+    """cash_flows: [(date_iso, amount)] — negative = outflow, positive =
+    inflow. Newton-Raphson solve for the annualized rate where NPV=0 — the
+    correct return metric for a periodic-contribution SIP (unlike CAGR,
+    which assumes a single lump-sum entry)."""
+    parsed = [(date.fromisoformat(d), amt) for d, amt in cash_flows]
+    d0 = parsed[0][0]
+
+    def npv(rate):
+        return sum(amt / (1 + rate) ** ((d - d0).days / 365.0) for d, amt in parsed)
+
+    def dnpv(rate):
+        return sum(-((d - d0).days / 365.0) * amt / (1 + rate) ** ((d - d0).days / 365.0 + 1) for d, amt in parsed)
+
+    rate = 0.1
+    for _ in range(200):
+        f, fp = npv(rate), dnpv(rate)
+        if abs(fp) < 1e-12:
+            break
+        new_rate = rate - f / fp
+        if abs(new_rate - rate) < 1e-8:
+            rate = new_rate
+            break
+        rate = new_rate
+    return rate
+
+
+def _max_drawdown(values: list) -> dict:
+    """values: [(date_iso, value)]. Peak-to-trough decline of the running
+    high-water mark."""
+    peak, peak_date = values[0][1], values[0][0]
+    max_dd = 0.0
+    worst_peak_date = worst_trough_date = values[0][0]
+    for d, v in values:
+        if v > peak:
+            peak, peak_date = v, d
+        dd = (peak - v) / peak if peak > 0 else 0.0
+        if dd > max_dd:
+            max_dd = dd
+            worst_peak_date, worst_trough_date = peak_date, d
+    return {"max_drawdown_pct": max_dd * 100, "dd_peak_date": worst_peak_date, "dd_trough_date": worst_trough_date}
+
+
+def _round_trip_stats(signals: list, symbol: str) -> dict:
+    sigs = [s for s in signals if s["instrument"] == symbol]
+    trips, buy = [], None
+    for s in sigs:
+        if s["signal_type"] == "buy":
+            buy = s
+        elif s["signal_type"] == "sell" and buy is not None:
+            trips.append((buy, s))
+            buy = None
+    if not trips:
+        return {"count": 0, "win_rate_pct": None, "avg_return_pct": None, "best_pct": None, "worst_pct": None, "avg_hold_days": None}
+    rets = [(s["price"] - b["price"]) / b["price"] for b, s in trips]
+    holds = [(date.fromisoformat(s["date"]) - date.fromisoformat(b["date"])).days for b, s in trips]
+    wins = sum(1 for r in rets if r > 0)
+    return {
+        "count": len(trips),
+        "win_rate_pct": wins / len(trips) * 100,
+        "avg_return_pct": sum(rets) / len(rets) * 100,
+        "best_pct": max(rets) * 100,
+        "worst_pct": min(rets) * 100,
+        "avg_hold_days": sum(holds) / len(holds),
+    }
+
+
+def _simulate_vanilla_sip(all_bars: dict, start_iso: str, end_iso: str) -> dict:
+    """The benchmark: identical ₹/month, identical 75/25 split, identical
+    period — but no signal at all. Every month's contribution buys units
+    immediately and is simply held. Isolates exactly what the Renko+MAST
+    timing adds (or costs) versus doing nothing but showing up monthly."""
+    start_d, end_d = date.fromisoformat(start_iso), date.fromisoformat(end_iso)
+    months = _months_between(start_iso, end_iso)
+
+    px, ordered_dates = {}, {}
+    for symbol, bars in all_bars.items():
+        filtered = {date.fromisoformat(b["date"]): b["close"] for b in bars if date.fromisoformat(b["date"]) >= start_d}
+        px[symbol] = filtered
+        ordered_dates[symbol] = sorted(filtered.keys())
+
+    def price_on_or_after(symbol, target):
+        for d in ordered_dates[symbol]:
+            if d >= target:
+                return d, px[symbol][d]
+        return None, None
+
+    units = {symbol: 0.0 for symbol in INSTRUMENTS}
+    cash_flows = {symbol: [] for symbol in INSTRUMENTS}
+    combined_flows = []
+
+    for m in months:
+        month_total = 0.0
+        for symbol, cfg in INSTRUMENTS.items():
+            d, p = price_on_or_after(symbol, m)
+            if d is None:
+                continue
+            contrib = MONTHLY_SIP_TOTAL * cfg["allocation"]
+            units[symbol] += contrib / p
+            cash_flows[symbol].append((d.isoformat(), -contrib))
+            month_total += contrib
+        combined_flows.append((m.isoformat(), -month_total))
+
+    # daily mark-to-market curve, only over dates both instruments have prices
+    common_dates = sorted(set(ordered_dates["NIFTYBEES"]) & set(ordered_dates["GOLDBEES"]))
+    u = {symbol: 0.0 for symbol in INSTRUMENTS}
+    month_idx = 0
+    curve = []
+    for d in common_dates:
+        while month_idx < len(months) and months[month_idx] <= d:
+            for symbol, cfg in INSTRUMENTS.items():
+                md, mp = price_on_or_after(symbol, months[month_idx])
+                if md is not None and d >= md:
+                    u[symbol] += (MONTHLY_SIP_TOTAL * cfg["allocation"]) / mp
+            month_idx += 1
+        total = sum(u[s] * px[s][d] for s in INSTRUMENTS if d in px[s])
+        curve.append((d.isoformat(), total))
+
+    final_price = {symbol: px[symbol][ordered_dates[symbol][-1]] for symbol in INSTRUMENTS}
+    final_value = {symbol: units[symbol] * final_price[symbol] for symbol in INSTRUMENTS}
+    total_final = sum(final_value.values())
+
+    for symbol in INSTRUMENTS:
+        cash_flows[symbol].append((end_iso, final_value[symbol]))
+    combined_flows.append((end_iso, total_final))
+
+    total_invested = len(months) * MONTHLY_SIP_TOTAL
+    dd = _max_drawdown(curve)
+
+    result = {
+        "total_invested": total_invested,
+        "final_value": total_final,
+        "absolute_return_pct": (total_final / total_invested - 1) * 100 if total_invested else 0.0,
+        "xirr_pct": _xirr(combined_flows) * 100,
+        **dd,
+    }
+    for symbol, cfg in INSTRUMENTS.items():
+        inv = len(months) * MONTHLY_SIP_TOTAL * cfg["allocation"]
+        result[symbol.lower()] = {
+            "total_invested": inv,
+            "final_value": final_value[symbol],
+            "absolute_return_pct": (final_value[symbol] / inv - 1) * 100 if inv else 0.0,
+            "xirr_pct": _xirr(cash_flows[symbol]) * 100,
+        }
+
+    step = max(1, len(curve) // 300)
+    sampled = [curve[i] for i in range(0, len(curve), step)]
+    if sampled[-1] != curve[-1]:
+        sampled.append(curve[-1])
+    result["curve"] = [{"date": d, "value": round(v, 2)} for d, v in sampled]
+
+    return result
+
+
+def _compute_backtest_metrics(portfolio_snapshots: list, signals: list, all_bars: dict) -> dict:
+    if not portfolio_snapshots:
+        return {"has_data": False}
+
+    start_iso, end_iso = portfolio_snapshots[0]["date"], portfolio_snapshots[-1]["date"]
+    months = _months_between(start_iso, end_iso)
+    final = portfolio_snapshots[-1]
+    total_days = len(portfolio_snapshots)
+
+    total_values = [(p["date"], p["total_value"]) for p in portfolio_snapshots]
+    nifty_values = [(p["date"], p["niftybees_value"]) for p in portfolio_snapshots]
+    gold_values = [(p["date"], p["goldbees_value"]) for p in portfolio_snapshots]
+
+    combined_flows = [(m.isoformat(), -MONTHLY_SIP_TOTAL) for m in months]
+    combined_flows.append((end_iso, final["total_value"]))
+    nifty_flows = [(m.isoformat(), -MONTHLY_SIP_TOTAL * NIFTYBEES_ALLOCATION) for m in months]
+    nifty_flows.append((end_iso, final["niftybees_value"]))
+    gold_flows = [(m.isoformat(), -MONTHLY_SIP_TOTAL * GOLDBEES_ALLOCATION) for m in months]
+    gold_flows.append((end_iso, final["goldbees_value"]))
+
+    total_invested = len(months) * MONTHLY_SIP_TOTAL
+    total_invested_n = len(months) * MONTHLY_SIP_TOTAL * NIFTYBEES_ALLOCATION
+    total_invested_g = len(months) * MONTHLY_SIP_TOTAL * GOLDBEES_ALLOCATION
+
+    n_buy_days = sum(1 for p in portfolio_snapshots if p["niftybees_phase"] == "buy")
+    g_buy_days = sum(1 for p in portfolio_snapshots if p["goldbees_phase"] == "buy")
+
+    return {
+        "has_data": True,
+        "period": {"start": start_iso, "end": end_iso, "months": len(months)},
+        "current_phase": {"NIFTYBEES": final["niftybees_phase"], "GOLDBEES": final["goldbees_phase"]},
+        "portfolio": {
+            "total_invested": total_invested,
+            "final_value": final["total_value"],
+            "absolute_return_pct": (final["total_value"] / total_invested - 1) * 100,
+            "xirr_pct": _xirr(combined_flows) * 100,
+            **_max_drawdown(total_values),
+        },
+        "niftybees": {
+            "allocation_pct": NIFTYBEES_ALLOCATION * 100,
+            "total_invested": total_invested_n,
+            "final_value": final["niftybees_value"],
+            "absolute_return_pct": (final["niftybees_value"] / total_invested_n - 1) * 100,
+            "xirr_pct": _xirr(nifty_flows) * 100,
+            "time_in_market_pct": n_buy_days / total_days * 100,
+            **_max_drawdown(nifty_values),
+            "trade_stats": _round_trip_stats(signals, "NIFTYBEES"),
+        },
+        "goldbees": {
+            "allocation_pct": GOLDBEES_ALLOCATION * 100,
+            "total_invested": total_invested_g,
+            "final_value": final["goldbees_value"],
+            "absolute_return_pct": (final["goldbees_value"] / total_invested_g - 1) * 100,
+            "xirr_pct": _xirr(gold_flows) * 100,
+            "time_in_market_pct": g_buy_days / total_days * 100,
+            **_max_drawdown(gold_values),
+            "trade_stats": _round_trip_stats(signals, "GOLDBEES"),
+        },
+        "vanilla_sip": _simulate_vanilla_sip(all_bars, start_iso, end_iso),
+    }
+
+
+# ---------------------------------------------------------------------------
 # Backtest — full since-inception (up to 10y) hypothetical replay, always
 # rebuilt from a zero starting portfolio. Illustrative track record, NOT
 # the live account (see evaluate_lumen_sip_live) — exactly the same
@@ -388,10 +631,11 @@ async def run_lumen_sip_backtest(db, definedge) -> dict:
     """Re-fetches full history for every enabled instrument and replays the
     whole thing from a zero starting portfolio, rewriting
     blackbox_lumen_sip_backtest_signals / blackbox_lumen_sip_backtest_portfolio
-    from scratch each time (idempotent — always the same hypothetical
-    "SIP had started at inception" replay, not tied to any real elapsed
-    time)."""
-    per_instrument_series = await _fetch_per_instrument_series(definedge)
+    / blackbox_lumen_sip_backtest_metrics from scratch each time (idempotent
+    — always the same hypothetical "SIP had started at inception" replay,
+    not tied to any real elapsed time)."""
+    all_bars = await _fetch_all_bars(definedge)
+    per_instrument_series = {symbol: evaluate_instrument_series(bars) for symbol, bars in all_bars.items()}
 
     all_dates = sorted(set().union(*[
         {row["date"] for row in series} for series in per_instrument_series.values()
@@ -403,10 +647,15 @@ async def run_lumen_sip_backtest(db, definedge) -> dict:
 
     await db.blackbox_lumen_sip_backtest_signals.delete_many({})
     await db.blackbox_lumen_sip_backtest_portfolio.delete_many({})
+    await db.blackbox_lumen_sip_backtest_metrics.delete_many({})
     if signals:
         await db.blackbox_lumen_sip_backtest_signals.insert_many(signals)
     if portfolio_snapshots:
         await db.blackbox_lumen_sip_backtest_portfolio.insert_many(portfolio_snapshots)
+
+    metrics = _compute_backtest_metrics(portfolio_snapshots, signals, all_bars)
+    if metrics.get("has_data"):
+        await db.blackbox_lumen_sip_backtest_metrics.insert_one({"id": "current", **metrics})
 
     return {
         "instruments_evaluated": list(INSTRUMENTS.keys()),
