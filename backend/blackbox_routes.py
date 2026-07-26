@@ -17,6 +17,7 @@ from fastapi import APIRouter, HTTPException, Request, Response, Depends
 
 from blackbox_prism_alpha import evaluate_prism_alpha, VARIANT_CONFIG
 from blackbox_backtest import run_backtest, BACKTEST_COLLECTIONS
+from blackbox_lumen_sip import evaluate_lumen_sip_live, run_lumen_sip_backtest, INSTRUMENTS as LUMEN_SIP_INSTRUMENTS
 
 logger = logging.getLogger(__name__)
 IST = timezone(timedelta(hours=5, minutes=30))
@@ -201,5 +202,91 @@ def create_blackbox_router(db, definedge, get_current_admin, cron_secret: str) -
     @router.get("/prism-alpha-2/backtest/chart/{trade_id}")
     async def prism_alpha2_backtest_chart(trade_id: str):
         return await _backtest_chart("prism_alpha_2", trade_id)
+
+    # ---- Lumen SIP (Renko + MAST-cloud long-term ETF SIP allocation) -----
+    # Phase is intentionally NOT concealed here — the underlying mechanics
+    # come from a public Definedge education source, not a proprietary
+    # pattern engine, so no field-stripping like Prism Alpha's _public_trade.
+    #
+    # LIVE (blackbox_lumen_sip_*) is a real, forward-only portfolio that
+    # resumes from its last state. BACKTEST (blackbox_lumen_sip_backtest_*)
+    # is an illustrative "since inception" replay, always rebuilt from zero
+    # — same live/backtest split as Prism Alpha, just daily-bar-cadence
+    # instead of per-minute.
+    async def _lumen_sip_status(collection_name: str):
+        latest = await db[collection_name].find_one({}, {"_id": 0}, sort=[("date", -1)])
+        if not latest:
+            return {"has_data": False}
+        total = latest["total_value"] or 1.0  # guard div-by-zero on an all-cash, zero-value start
+        return {
+            "has_data": True,
+            "as_of": latest["date"],
+            "total_value": latest["total_value"],
+            "instruments": {
+                symbol.lower(): {
+                    "phase": latest[f"{symbol.lower()}_phase"],
+                    "units": latest[f"{symbol.lower()}_units"],
+                    "cash": latest[f"{symbol.lower()}_cash"],
+                    "value": latest[f"{symbol.lower()}_value"],
+                    "allocation_pct": latest[f"{symbol.lower()}_value"] / total,
+                }
+                for symbol in LUMEN_SIP_INSTRUMENTS
+            },
+        }
+
+    @router.post("/admin/lumen-sip-evaluate")
+    async def lumen_sip_evaluate_cron(request: Request):
+        """External-cron entry point for LIVE tracking — daily-bar strategy,
+        recommend once/day after market close, not per-minute like Prism
+        Alpha. Resumes from the last recorded live snapshot; safe to run
+        even if a day or more was missed (catches up)."""
+        if not cron_secret or request.headers.get("X-Cron-Key") != cron_secret:
+            raise HTTPException(status_code=401, detail="Invalid cron key")
+        try:
+            return await evaluate_lumen_sip_live(db, definedge)
+        except Exception as e:  # noqa: BLE001
+            raise HTTPException(status_code=502, detail=f"Lumen SIP evaluation failed: {e}")
+
+    @router.post("/admin/lumen-sip-evaluate-now")
+    async def lumen_sip_evaluate_admin(admin: dict = Depends(get_current_admin)):
+        """Same live evaluation, for manual testing from the admin panel."""
+        try:
+            return await evaluate_lumen_sip_live(db, definedge)
+        except Exception as e:  # noqa: BLE001
+            raise HTTPException(status_code=502, detail=f"Lumen SIP evaluation failed: {e}")
+
+    @router.post("/admin/lumen-sip-backtest-run")
+    async def lumen_sip_backtest_run(admin: dict = Depends(get_current_admin)):
+        """On-demand only — replays the full available history (up to 10y)
+        from a zero starting portfolio. Heavier than a live evaluation
+        (re-fetches full history), not scheduled."""
+        try:
+            return await run_lumen_sip_backtest(db, definedge)
+        except Exception as e:  # noqa: BLE001
+            raise HTTPException(status_code=502, detail=f"Lumen SIP backtest run failed: {e}")
+
+    @router.get("/lumen-sip/status")
+    async def lumen_sip_status():
+        return await _lumen_sip_status("blackbox_lumen_sip_portfolio")
+
+    @router.get("/lumen-sip/portfolio")
+    async def lumen_sip_portfolio():
+        return await db.blackbox_lumen_sip_portfolio.find({}, {"_id": 0}).sort("date", 1).to_list(5000)
+
+    @router.get("/lumen-sip/signals")
+    async def lumen_sip_signals():
+        return await db.blackbox_lumen_sip_signals.find({}, {"_id": 0}).sort("date", -1).to_list(2000)
+
+    @router.get("/lumen-sip/backtest/status")
+    async def lumen_sip_backtest_status():
+        return await _lumen_sip_status("blackbox_lumen_sip_backtest_portfolio")
+
+    @router.get("/lumen-sip/backtest/portfolio")
+    async def lumen_sip_backtest_portfolio():
+        return await db.blackbox_lumen_sip_backtest_portfolio.find({}, {"_id": 0}).sort("date", 1).to_list(5000)
+
+    @router.get("/lumen-sip/backtest/signals")
+    async def lumen_sip_backtest_signals():
+        return await db.blackbox_lumen_sip_backtest_signals.find({}, {"_id": 0}).sort("date", -1).to_list(2000)
 
     return router

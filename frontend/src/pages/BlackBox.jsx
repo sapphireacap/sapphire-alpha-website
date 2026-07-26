@@ -12,7 +12,6 @@ const EASE = [0.16, 1, 0.3, 1];
 const STATUS_POLL_MS = 60000;
 
 const STRATEGIES = [
-  { no: "03", title: "Strategy 03" },
   { no: "04", title: "Strategy 04" },
 ];
 
@@ -279,6 +278,210 @@ const PrismAlphaCard = ({ no, apiPath, title, subtitle, testId }) => {
   );
 };
 
+const PhaseBadge = ({ label, phase }) => (
+  <span
+    className={`inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-medium ${
+      phase === "buy"
+        ? "border-emerald-400/30 bg-emerald-400/10 text-emerald-300"
+        : "border-slate-400/25 bg-slate-400/10 text-slate-300"
+    }`}
+    data-testid={`lumen-sip-phase-${label.toLowerCase()}`}
+  >
+    <span className={`h-1.5 w-1.5 rounded-full ${phase === "buy" ? "bg-emerald-400" : "bg-slate-400"}`} />
+    {label} — {phase === "buy" ? "SIP Active" : "Cash"}
+  </span>
+);
+
+const LumenSipEquityChart = ({ portfolio }) => {
+  // ~2400 daily snapshots is more resolution than a long-term equity curve
+  // needs on screen — sample down to keep the chart responsive, always
+  // keeping the most recent point.
+  const step = Math.max(1, Math.floor(portfolio.length / 300));
+  const series = portfolio
+    .filter((_, i) => i % step === 0 || i === portfolio.length - 1)
+    .map((p) => ({
+      date: fmtDate(p.date),
+      total_value: p.total_value,
+      cash: p.niftybees_cash + p.goldbees_cash,
+      invested: p.total_value - (p.niftybees_cash + p.goldbees_cash),
+    }));
+
+  return (
+    <div className="h-64" data-testid="lumen-sip-equity-chart">
+      <ResponsiveContainer width="100%" height="100%">
+        <LineChart data={series} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
+          <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" vertical={false} />
+          <XAxis dataKey="date" tick={{ fill: "#64748B", fontSize: 10 }} axisLine={{ stroke: "rgba(255,255,255,0.1)" }} tickLine={false} minTickGap={50} />
+          <YAxis tick={{ fill: "#64748B", fontSize: 11 }} axisLine={false} tickLine={false} domain={["auto", "auto"]} width={64}
+            tickFormatter={(v) => `₹${(v / 1000).toFixed(0)}k`} />
+          <Tooltip
+            contentStyle={{ background: "#0A0D18", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 8, fontSize: 12 }}
+            labelStyle={{ color: "#94A3B8" }}
+            itemStyle={{ color: "#E2E8F0" }}
+            formatter={(v, name) => [`₹${v.toLocaleString("en-IN", { maximumFractionDigits: 0 })}`, name]}
+          />
+          <Line type="monotone" dataKey="total_value" name="Portfolio Value" stroke="#437EEB" strokeWidth={1.5} dot={false} isAnimationActive={false} />
+          <Line type="monotone" dataKey="invested" name="Invested" stroke="#34D399" strokeWidth={1} dot={false} isAnimationActive={false} />
+          <Line type="monotone" dataKey="cash" name="Cash" stroke="#94A3B8" strokeWidth={1} dot={false} isAnimationActive={false} />
+        </LineChart>
+      </ResponsiveContainer>
+    </div>
+  );
+};
+
+const LumenSipSignalTable = ({ signals }) => (
+  <div className="overflow-x-auto" data-testid="lumen-sip-signal-log">
+    <table className="w-full text-left min-w-[500px]">
+      <thead>
+        <tr className="border-b border-white/10">
+          {["Date", "Instrument", "Signal", "Price"].map((h) => (
+            <th key={h} className="px-4 py-3 font-mono-ui text-[10px] uppercase tracking-[0.16em] text-slate-500 font-semibold whitespace-nowrap">
+              {h}
+            </th>
+          ))}
+        </tr>
+      </thead>
+      <tbody>
+        {signals.slice(0, 20).map((s, i) => (
+          <tr key={`${s.instrument}-${s.date}-${i}`} className="border-b border-white/[0.05] last:border-0">
+            <td className="px-4 py-3 text-sm text-slate-300 whitespace-nowrap">{fmtDate(s.date)}</td>
+            <td className="px-4 py-3 text-sm text-slate-300 whitespace-nowrap">{s.instrument}</td>
+            <td className="px-4 py-3 text-sm whitespace-nowrap">
+              <span className={s.signal_type === "buy" ? "text-emerald-400" : "text-red-400"}>{s.signal_type?.toUpperCase()}</span>
+            </td>
+            <td className="px-4 py-3 font-mono-ui text-sm text-slate-300 whitespace-nowrap">₹{s.price?.toFixed(2)}</td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  </div>
+);
+
+const LumenSipPanel = ({ label, note, status, portfolio, signals, loading, testId }) => {
+  const hasData = status?.has_data;
+
+  return (
+    <div className="rounded-xl border border-white/10 bg-white/[0.02] p-5" data-testid={testId}>
+      <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+        <div>
+          <p className="font-mono-ui text-[10px] uppercase tracking-[0.18em] text-sapphire-light">{label}</p>
+          <p className="text-xs font-light text-slate-500 mt-0.5">{note}</p>
+        </div>
+        {loading ? (
+          <Loader2 className="animate-spin text-slate-500" size={14} />
+        ) : hasData ? (
+          <div className="flex flex-wrap gap-2">
+            <PhaseBadge label="NIFTYBEES" phase={status.instruments.niftybees.phase} />
+            <PhaseBadge label="GOLDBEES" phase={status.instruments.goldbees.phase} />
+          </div>
+        ) : null}
+      </div>
+
+      {!loading && hasData && (
+        <>
+          <div className="grid grid-cols-2 gap-4 mb-5">
+            <StatBlock label="Portfolio Value" value={`₹${status.total_value.toLocaleString("en-IN", { maximumFractionDigits: 0 })}`} />
+            <StatBlock label="As Of" value={fmtDate(status.as_of)} />
+            <StatBlock
+              label="NIFTYBEES Alloc"
+              value={`${(status.instruments.niftybees.allocation_pct * 100).toFixed(0)}%`}
+              valueClass={status.instruments.niftybees.phase === "buy" ? "text-emerald-400" : "text-slate-400"}
+            />
+            <StatBlock
+              label="GOLDBEES Alloc"
+              value={`${(status.instruments.goldbees.allocation_pct * 100).toFixed(0)}%`}
+              valueClass={status.instruments.goldbees.phase === "buy" ? "text-emerald-400" : "text-slate-400"}
+            />
+          </div>
+
+          {portfolio.length > 1 ? (
+            <LumenSipEquityChart portfolio={portfolio} />
+          ) : (
+            <p className="text-sm text-slate-500 py-6 text-center">Just seeded — the equity curve will build up over time.</p>
+          )}
+
+          {signals.length > 0 && (
+            <div className="mt-5">
+              <p className="font-mono-ui text-[10px] uppercase tracking-[0.18em] text-slate-500 mb-3">Signal Log</p>
+              <LumenSipSignalTable signals={signals} />
+            </div>
+          )}
+        </>
+      )}
+
+      {!loading && !hasData && (
+        <p className="text-sm text-slate-500 py-6 text-center">No data yet — will appear here once evaluated.</p>
+      )}
+    </div>
+  );
+};
+
+const LumenSIPCard = () => {
+  const [live, setLive] = useState({ status: null, portfolio: [], signals: [] });
+  const [backtest, setBacktest] = useState({ status: null, portfolio: [], signals: [] });
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let cancelled = false;
+    const load = () => {
+      Promise.all([
+        axios.get(`${API}/blackbox/lumen-sip/status`),
+        axios.get(`${API}/blackbox/lumen-sip/portfolio`),
+        axios.get(`${API}/blackbox/lumen-sip/signals`),
+        axios.get(`${API}/blackbox/lumen-sip/backtest/status`),
+        axios.get(`${API}/blackbox/lumen-sip/backtest/portfolio`),
+        axios.get(`${API}/blackbox/lumen-sip/backtest/signals`),
+      ])
+        .then(([s, p, sg, bs, bp, bsg]) => {
+          if (cancelled) return;
+          setLive({ status: s.data, portfolio: p.data, signals: sg.data });
+          setBacktest({ status: bs.data, portfolio: bp.data, signals: bsg.data });
+        })
+        .catch(() => {})
+        .finally(() => { if (!cancelled) setLoading(false); });
+    };
+    load();
+    const interval = setInterval(load, STATUS_POLL_MS);
+    return () => { cancelled = true; clearInterval(interval); };
+  }, []);
+
+  return (
+    <div className="glass rounded-2xl p-6 md:p-8 mb-4" data-testid="lumen-sip-card">
+      <div className="mb-6">
+        <span className="font-mono-ui text-xs text-sapphire-light mb-1 block">03</span>
+        <h4 className="font-display text-2xl font-bold text-white">Lumen SIP</h4>
+        <p className="text-sm font-light text-slate-500 mt-1">Long-term ETF trend-following allocation — NIFTYBEES &amp; GOLDBEES</p>
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        <LumenSipPanel
+          label="Live"
+          note="Real, forward-only tracking — starts from the day this went live"
+          status={live.status}
+          portfolio={live.portfolio}
+          signals={live.signals}
+          loading={loading}
+          testId="lumen-sip-live-panel"
+        />
+        <LumenSipPanel
+          label="Backtest"
+          note="Illustrative replay since inception (up to 10 years), rebuilt from a zero starting portfolio"
+          status={backtest.status}
+          portfolio={backtest.portfolio}
+          signals={backtest.signals}
+          loading={loading}
+          testId="lumen-sip-backtest-panel"
+        />
+      </div>
+
+      <p className="text-[11px] font-light text-slate-600 mt-6 pt-4 border-t border-white/10" data-testid="lumen-sip-disclaimer">
+        This is a systematic long-term allocation framework based on publicly available research (Definedge), not a personalized
+        investment recommendation; backtested/simulated results are hypothetical and past performance does not guarantee future results.
+      </p>
+    </div>
+  );
+};
+
 export default function BlackBox() {
   useEffect(() => { window.scrollTo(0, 0); }, []);
 
@@ -327,6 +530,7 @@ export default function BlackBox() {
               subtitle="Quantitative options signal engine — comparison track"
               testId="prism-alpha-2-card"
             />
+            <LumenSIPCard />
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4" data-testid="black-box-strategies">
               {STRATEGIES.map((s) => <StrategyCard key={s.no} strategy={s} />)}
             </div>

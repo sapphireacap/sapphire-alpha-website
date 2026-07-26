@@ -431,6 +431,10 @@ const BlackBoxPanel = ({ onAuthError }) => {
   const [lastResult, setLastResult] = useState(null);
   const [backtesting, setBacktesting] = useState(false);
   const [lastBacktest, setLastBacktest] = useState(null);
+  const [lumenRunning, setLumenRunning] = useState(false);
+  const [lastLumenResult, setLastLumenResult] = useState(null);
+  const [lumenBacktesting, setLumenBacktesting] = useState(false);
+  const [lastLumenBacktest, setLastLumenBacktest] = useState(null);
 
   const evaluateNow = async () => {
     setRunning(true);
@@ -458,6 +462,34 @@ const BlackBoxPanel = ({ onAuthError }) => {
       toast.error(errMsg(err, "Backtest run failed."));
     } finally {
       setBacktesting(false);
+    }
+  };
+
+  const evaluateLumenSip = async () => {
+    setLumenRunning(true);
+    try {
+      const { data } = await axios.post(`${API}/blackbox/admin/lumen-sip-evaluate-now`, {}, authHeaders());
+      setLastLumenResult(data);
+      toast.success(`Lumen SIP live evaluated — NIFTYBEES: ${data.current_phase?.NIFTYBEES}, GOLDBEES: ${data.current_phase?.GOLDBEES} (${data.signals_logged} new signal(s)).`);
+    } catch (err) {
+      if (err?.response?.status === 401) { onAuthError(); return; }
+      toast.error(errMsg(err, "Lumen SIP evaluation failed."));
+    } finally {
+      setLumenRunning(false);
+    }
+  };
+
+  const runLumenSipBacktest = async () => {
+    setLumenBacktesting(true);
+    try {
+      const { data } = await axios.post(`${API}/blackbox/admin/lumen-sip-backtest-run`, {}, authHeaders());
+      setLastLumenBacktest(data);
+      toast.success(`Lumen SIP backtest rebuilt — ${data.portfolio_snapshots} daily snapshots, ${data.signals_logged} signals.`);
+    } catch (err) {
+      if (err?.response?.status === 401) { onAuthError(); return; }
+      toast.error(errMsg(err, "Lumen SIP backtest run failed."));
+    } finally {
+      setLumenBacktesting(false);
     }
   };
 
@@ -492,6 +524,40 @@ const BlackBoxPanel = ({ onAuthError }) => {
       {lastBacktest && (
         <div className="text-xs text-slate-500 font-mono-ui mt-1" data-testid="prism-alpha-last-backtest">
           Last backtest: {lastBacktest.start_date} – {lastBacktest.end_date} ({lastBacktest.spot_ticks_evaluated} spot ticks) — Prism Alpha: {lastBacktest.prism_alpha_trades} trade(s), Prism Alpha 2: {lastBacktest.prism_alpha_2_trades} trade(s).
+        </div>
+      )}
+
+      <div className="flex flex-wrap items-center justify-between gap-3 mt-8 mb-2 pt-6 border-t border-white/10">
+        <h2 className="font-display text-xl font-bold text-white">Black Box — Lumen SIP</h2>
+        <div className="flex flex-wrap items-center gap-3">
+          <button onClick={evaluateLumenSip} disabled={lumenRunning} className="btn-ghost !px-4 !py-2 text-sm disabled:opacity-50" data-testid="lumen-sip-evaluate-now-btn">
+            {lumenRunning ? <><Loader2 size={16} className="animate-spin" /> Evaluating</> : <><RefreshCw size={15} /> Evaluate Now (Live)</>}
+          </button>
+          <button onClick={runLumenSipBacktest} disabled={lumenBacktesting} className="btn-ghost !px-4 !py-2 text-sm disabled:opacity-50" data-testid="lumen-sip-backtest-run-btn">
+            {lumenBacktesting ? <><Loader2 size={16} className="animate-spin" /> Backtesting</> : <><RefreshCw size={15} /> Run Backtest</>}
+          </button>
+        </div>
+      </div>
+      <p className="text-sm text-slate-500 mb-4">
+        "Evaluate Now (Live)" resumes the REAL portfolio from its last recorded state and walks forward only through any new
+        trading day(s) — rewrites nothing, just appends to <code className="text-slate-400">blackbox_lumen_sip_signals</code> /{" "}
+        <code className="text-slate-400">blackbox_lumen_sip_portfolio</code>. The external cron should hit{" "}
+        <code className="text-slate-400">/api/blackbox/admin/lumen-sip-evaluate</code> once/day after market close.
+        "Run Backtest" re-fetches 10 years of daily NIFTYBEES/GOLDBEES history and replays the full Renko + MAST-cloud walk-forward
+        simulation from a zero starting portfolio — an illustrative "since inception" track record, always rebuilt from scratch into{" "}
+        <code className="text-slate-400">blackbox_lumen_sip_backtest_signals</code> /{" "}
+        <code className="text-slate-400">blackbox_lumen_sip_backtest_portfolio</code>, separate from the live collections. Heavier, on-demand only.
+      </p>
+      {lastLumenResult && (
+        <div className="text-xs text-slate-500 font-mono-ui space-y-0.5" data-testid="lumen-sip-last-result">
+          <div>Live — NIFTYBEES: {lastLumenResult.current_phase?.NIFTYBEES} · GOLDBEES: {lastLumenResult.current_phase?.GOLDBEES}</div>
+          <div>{lastLumenResult.signals_logged} new signal(s), {lastLumenResult.portfolio_snapshots} new snapshot(s).</div>
+        </div>
+      )}
+      {lastLumenBacktest && (
+        <div className="text-xs text-slate-500 font-mono-ui space-y-0.5 mt-1" data-testid="lumen-sip-last-backtest">
+          <div>Backtest — NIFTYBEES: {lastLumenBacktest.current_phase?.NIFTYBEES} · GOLDBEES: {lastLumenBacktest.current_phase?.GOLDBEES}</div>
+          <div>{lastLumenBacktest.signals_logged} signals, {lastLumenBacktest.portfolio_snapshots} daily snapshots.</div>
         </div>
       )}
     </div>
