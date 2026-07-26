@@ -52,11 +52,20 @@ from definedge_service import DefinedgeService, DefinedgeError, NIFTY_SPOT_TOKEN
 
 logger = logging.getLogger(__name__)
 
-BACKTEST_LOOKBACK_DAYS = 100  # requested window; REAL achieved depth is whatever
-                               # Definedge actually returns per contract (verified
-                               # live up to ~80 days for the then-current ATM
-                               # strike) — the run summary reports the actual
-                               # achieved date range, not this request window.
+BACKTEST_LOOKBACK_DAYS = 14  # ~1-2 weeks, per explicit instruction — deliberately
+                               # short, not just a data-availability cap. The live
+                               # strategy rolls to a NEW weekly expiry contract every
+                               # week (DefinedgeService._pick_expiry's Mon/Tue-roll
+                               # rule), but this backtest is fixed on ONE expiry for
+                               # its whole walk (expired contracts' tokens can't be
+                               # resolved — see module docstring). A long window on
+                               # that one fixed expiry would silently drift away from
+                               # what live actually does the further back it goes
+                               # (reusing one aging contract's strikes across many
+                               # real weekly cycles it was never actually "current"
+                               # for). Staying within ~1-2 weeks keeps the backtest
+                               # inside (at most) a single real weekly cycle, the
+                               # only window that's honestly comparable to live.
 CHART_CONTEXT_BARS = 300      # bars of pre-entry context kept in each trade's PNG,
                                # so the chart shows the pattern forming into entry
                                # without plotting a whole multi-week history.

@@ -128,7 +128,7 @@ const DefinedgeConnect = ({ onAuthError, onSignalUpdate }) => {
     setVerifyingOtp(true);
     try {
       await axios.post(`${API}/admin/definedge/otp-verify`, { otp, otp_token: otpToken }, authHeaders());
-      toast.success("Definedge connected.");
+      toast.success("Connected.");
       setOtp("");
       setOtpToken(null);
       await loadStatus();
@@ -185,7 +185,7 @@ const DefinedgeConnect = ({ onAuthError, onSignalUpdate }) => {
   return (
     <div className="glass rounded-2xl p-6 md:p-8 mb-6" data-testid="definedge-connect-panel">
       <div className="flex flex-wrap items-center justify-between gap-3 mb-2">
-        <h2 className="font-display text-xl font-bold text-white">Definedge Live Connection</h2>
+        <h2 className="font-display text-xl font-bold text-white">Market Data Connection</h2>
         <span className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 font-mono-ui text-[10px] uppercase tracking-[0.18em] ${pill.cls}`} data-testid="definedge-status-pill">
           <span className={`h-1.5 w-1.5 rounded-full ${pill.dot}`} />
           <PillIcon size={12} /> {pill.label}
@@ -478,9 +478,10 @@ const BlackBoxPanel = ({ onAuthError }) => {
         "Evaluate Now" runs one live cycle for BOTH Prism Alpha (RSI + XO Zone gated) and Prism Alpha 2 (pattern-only, no indicator gate) —
         entry check if flat, stop/target/trailing-stop check if in a position. The external cron should hit{" "}
         <code className="text-slate-400">/api/blackbox/admin/prism-alpha-evaluate</code> every minute during market hours.
-        "Run Backtest" replays real 1-minute Definedge data (Nifty spot + option premium — no daily/EOD approximation) for both variants;
-        the real achievable window is limited to however far back Definedge's option data actually goes for currently-listed strikes
-        (typically ~1-3 months, not a fixed range) since expired-contract tokens can't be resolved. Heavier, on-demand only.
+        "Run Backtest" replays real 1-minute data (Nifty spot + option premium — no daily/EOD approximation) for both variants,
+        deliberately kept to the last ~1-2 weeks — that's the widest window that stays inside a single real weekly expiry cycle
+        (the live strategy rolls to a new expiry every week; expired-contract data can't be resolved to replay that roll here).
+        Heavier, on-demand only.
       </p>
       {lastResult && (
         <div className="text-xs text-slate-500 font-mono-ui space-y-0.5" data-testid="prism-alpha-last-result">

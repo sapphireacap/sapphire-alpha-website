@@ -243,7 +243,7 @@ const PrismAlphaCard = ({ no, apiPath, title, subtitle, testId }) => {
             <div className="mb-6 rounded-xl border border-white/10 bg-white/[0.03] px-4 py-3" data-testid={`${testId}-backtest-meta`}>
               <p className="text-xs text-slate-400">
                 Backtest window: <span className="text-white font-medium">{fmtDate(backtestRun.start_date)} – {fmtDate(backtestRun.end_date)}</span>
-                {" · "}Data: <span className="text-white font-medium">real 1-minute Definedge premium data</span>
+                {" · "}Data: <span className="text-white font-medium">real 1-minute premium data</span>
                 {" · "}{backtestRun.spot_ticks_evaluated} minute ticks evaluated
               </p>
             </div>
@@ -261,9 +261,9 @@ const PrismAlphaCard = ({ no, apiPath, title, subtitle, testId }) => {
             />
           )}
           <p className="text-[11px] font-light text-amber-400/70 mt-6" data-testid={`${testId}-backtest-disclaimer`}>
-            Backtested results are hypothetical, computed from real intraday option premium data over whatever window Definedge's own history
-            currently allows (expired-contract data can't be recovered, so the window shrinks/shifts over time) — they do not guarantee live
-            performance.
+            Backtested results are hypothetical, computed from real intraday option premium data over roughly the last 1-2 weeks — kept short
+            so it stays within a single real weekly expiry cycle, matching how the live strategy actually rolls contracts — and do not
+            guarantee live performance.
           </p>
         </>
       )}
