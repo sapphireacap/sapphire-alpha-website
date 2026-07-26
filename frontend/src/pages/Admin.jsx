@@ -270,7 +270,14 @@ const BIAS_OPTS = ["Neutral", "Bullish", "Bearish"];
 const TREND_OPTS = ["Neutral", "Bullish", "Bearish"];
 
 const SignalPanel = ({ onAuthError, signal }) => {
-  const empty = { bias: "Neutral", spot: "", atm: "", up_strike: "", up_trend: "Neutral", down_strike: "", down_trend: "Neutral", note: "", source: "manual" };
+  const empty = {
+    bias: "Neutral", spot: "", atm: "", up_strike: "", down_strike: "",
+    weekly_expiry: "", monthly_expiry: "",
+    weekly_up_trend: "Neutral", weekly_down_trend: "Neutral",
+    monthly_up_trend: "Neutral", monthly_down_trend: "Neutral",
+    monthly_atm_ce_trend: "Neutral", monthly_atm_pe_trend: "Neutral",
+    note: "", source: "manual",
+  };
   const [sig, setSig] = useState(empty);
   const [saving, setSaving] = useState(false);
 
@@ -297,58 +304,64 @@ const SignalPanel = ({ onAuthError, signal }) => {
 
   const fld = "w-full bg-white/5 border border-white/10 rounded-md px-3 py-2 text-sm text-white outline-none focus:border-sapphire-light transition-colors";
   const sel = fld + " [color-scheme:dark]";
+  const TrendSelect = (key, testId) => (
+    <select value={sig[key]} onChange={set(key)} style={{ colorScheme: "dark" }} className={sel} data-testid={testId}>
+      {TREND_OPTS.map((t) => <option key={t} value={t} className="bg-surface">{t === "Bullish" ? "Rising" : t === "Bearish" ? "Falling" : "Flat"}</option>)}
+    </select>
+  );
+  const Field = ({ label, children }) => (
+    <div>
+      <label className="font-mono-ui text-[10px] uppercase tracking-[0.18em] text-slate-500 block mb-1.5">{label}</label>
+      {children}
+    </div>
+  );
 
   return (
     <div className="glass rounded-2xl p-6 md:p-8 mb-10" data-testid="admin-signal-panel">
       <div className="flex items-center gap-3 mb-2">
         <h2 className="font-display text-xl font-bold text-white">Sapphire Nifty Vector</h2>
-        <span className="font-mono-ui text-[10px] uppercase tracking-[0.2em] text-sapphire-light">Nifty Bias</span>
+        <span className="font-mono-ui text-[10px] uppercase tracking-[0.2em] text-sapphire-light">6-Chart Confluence</span>
       </div>
       <p className="text-sm text-slate-500 mb-6">
-        Set the ATM ±200 straddle trends. Leave Bias on <em>Neutral</em> to auto-derive it from the two legs
-        (falling +200 &amp; rising −200 ⇒ Bullish).
+        Leave Bias on <em>Neutral</em> to auto-derive it from all six legs. Bullish needs +200 falling &amp; −200 rising
+        on BOTH weekly and monthly, AND monthly ATM CE rising &amp; PE falling — mirror image for Bearish. Any single leg
+        out of line stays Neutral.
       </p>
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-5">
-        <div>
-          <label className="font-mono-ui text-[10px] uppercase tracking-[0.18em] text-slate-500 block mb-1.5">Bias</label>
+
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-5 mb-6">
+        <Field label="Bias">
           <select value={sig.bias} onChange={set("bias")} style={{ colorScheme: "dark" }} className={sel} data-testid="signal-bias">
             {BIAS_OPTS.map((b) => <option key={b} value={b} className="bg-surface">{b === "Neutral" ? "Neutral (auto)" : b}</option>)}
           </select>
-        </div>
-        <div>
-          <label className="font-mono-ui text-[10px] uppercase tracking-[0.18em] text-slate-500 block mb-1.5">Spot</label>
-          <input value={sig.spot} onChange={set("spot")} className={fld} placeholder="24,000" data-testid="signal-spot" />
-        </div>
-        <div>
-          <label className="font-mono-ui text-[10px] uppercase tracking-[0.18em] text-slate-500 block mb-1.5">ATM</label>
-          <input value={sig.atm} onChange={set("atm")} className={fld} placeholder="24000" data-testid="signal-atm" />
-        </div>
+        </Field>
+        <Field label="Spot"><input value={sig.spot} onChange={set("spot")} className={fld} placeholder="24,000" data-testid="signal-spot" /></Field>
+        <Field label="ATM"><input value={sig.atm} onChange={set("atm")} className={fld} placeholder="24000" data-testid="signal-atm" /></Field>
         <div className="hidden md:block" />
-        <div>
-          <label className="font-mono-ui text-[10px] uppercase tracking-[0.18em] text-slate-500 block mb-1.5">ATM +200 strike</label>
-          <input value={sig.up_strike} onChange={set("up_strike")} className={fld} placeholder="24200" data-testid="signal-up-strike" />
-        </div>
-        <div>
-          <label className="font-mono-ui text-[10px] uppercase tracking-[0.18em] text-slate-500 block mb-1.5">+200 straddle trend</label>
-          <select value={sig.up_trend} onChange={set("up_trend")} style={{ colorScheme: "dark" }} className={sel} data-testid="signal-up-trend">
-            {TREND_OPTS.map((t) => <option key={t} value={t} className="bg-surface">{t === "Bullish" ? "Rising" : t === "Bearish" ? "Falling" : "Flat"}</option>)}
-          </select>
-        </div>
-        <div>
-          <label className="font-mono-ui text-[10px] uppercase tracking-[0.18em] text-slate-500 block mb-1.5">ATM −200 strike</label>
-          <input value={sig.down_strike} onChange={set("down_strike")} className={fld} placeholder="23800" data-testid="signal-down-strike" />
-        </div>
-        <div>
-          <label className="font-mono-ui text-[10px] uppercase tracking-[0.18em] text-slate-500 block mb-1.5">−200 straddle trend</label>
-          <select value={sig.down_trend} onChange={set("down_trend")} style={{ colorScheme: "dark" }} className={sel} data-testid="signal-down-trend">
-            {TREND_OPTS.map((t) => <option key={t} value={t} className="bg-surface">{t === "Bullish" ? "Rising" : t === "Bearish" ? "Falling" : "Flat"}</option>)}
-          </select>
-        </div>
+        <Field label="ATM +200 strike"><input value={sig.up_strike} onChange={set("up_strike")} className={fld} placeholder="24200" data-testid="signal-up-strike" /></Field>
+        <Field label="ATM −200 strike"><input value={sig.down_strike} onChange={set("down_strike")} className={fld} placeholder="23800" data-testid="signal-down-strike" /></Field>
+        <Field label="Weekly expiry"><input value={sig.weekly_expiry} onChange={set("weekly_expiry")} className={fld} placeholder="2026-07-28" data-testid="signal-weekly-expiry" /></Field>
+        <Field label="Monthly expiry"><input value={sig.monthly_expiry} onChange={set("monthly_expiry")} className={fld} placeholder="2026-08-25" data-testid="signal-monthly-expiry" /></Field>
       </div>
-      <div className="mt-5">
-        <label className="font-mono-ui text-[10px] uppercase tracking-[0.18em] text-slate-500 block mb-1.5">Note (optional)</label>
-        <input value={sig.note} onChange={set("note")} className={fld} placeholder="Context shown under the bias" data-testid="signal-note" />
+
+      <p className="font-mono-ui text-[10px] uppercase tracking-[0.18em] text-sapphire-light mb-2">Weekly Straddle (0.5% × 3)</p>
+      <div className="grid grid-cols-2 gap-5 mb-6">
+        <Field label="+200 trend">{TrendSelect("weekly_up_trend", "signal-weekly-up-trend")}</Field>
+        <Field label="−200 trend">{TrendSelect("weekly_down_trend", "signal-weekly-down-trend")}</Field>
       </div>
+
+      <p className="font-mono-ui text-[10px] uppercase tracking-[0.18em] text-sapphire-light mb-2">Monthly Straddle (0.5% × 3)</p>
+      <div className="grid grid-cols-2 gap-5 mb-6">
+        <Field label="+200 trend">{TrendSelect("monthly_up_trend", "signal-monthly-up-trend")}</Field>
+        <Field label="−200 trend">{TrendSelect("monthly_down_trend", "signal-monthly-down-trend")}</Field>
+      </div>
+
+      <p className="font-mono-ui text-[10px] uppercase tracking-[0.18em] text-sapphire-light mb-2">Monthly ATM CE / PE, individually (3% × 3)</p>
+      <div className="grid grid-cols-2 gap-5 mb-6">
+        <Field label="ATM CE trend">{TrendSelect("monthly_atm_ce_trend", "signal-monthly-ce-trend")}</Field>
+        <Field label="ATM PE trend">{TrendSelect("monthly_atm_pe_trend", "signal-monthly-pe-trend")}</Field>
+      </div>
+
+      <Field label="Note (optional)"><input value={sig.note} onChange={set("note")} className={fld} placeholder="Context shown under the bias" data-testid="signal-note" /></Field>
       <button onClick={save} disabled={saving} className="btn-sapphire mt-6 disabled:opacity-70" data-testid="signal-save-btn">
         {saving ? <><Loader2 size={16} className="animate-spin" /> Saving</> : <><Save size={15} /> Update Compass</>}
       </button>

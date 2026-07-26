@@ -3,6 +3,7 @@ import axios from "axios";
 import { motion } from "framer-motion";
 import { Link, useNavigate } from "react-router-dom";
 import { ArrowUpRight, TrendingUp, TrendingDown, Minus, Compass, FlaskConical, Clock, ExternalLink } from "lucide-react";
+import { LineChart, Line, ResponsiveContainer } from "recharts";
 import Navbar from "../components/site/Navbar";
 import Footer from "../components/site/Footer";
 import ParticleField from "../components/site/ParticleField";
@@ -213,6 +214,65 @@ const BIAS_STYLE = {
   Neutral: { color: "text-amber-300", ring: "border-amber-400/30", glow: "rgba(245,158,11,0.18)", Icon: Minus, dot: "bg-amber-400" },
 };
 
+const TREND_STYLE = {
+  Bullish: { label: "Rising", color: "text-emerald-400", stroke: "#34D399" },
+  Bearish: { label: "Falling", color: "text-red-400", stroke: "#F87171" },
+  Neutral: { label: "Flat", color: "text-slate-400", stroke: "#64748B" },
+};
+
+const VECTOR_LEGS = [
+  { key: "weekly_up", trendKey: "weekly_up_trend", label: "Weekly +200", strikeKey: "up_strike", expiryKey: "weekly_expiry", pf: "0.5% × 3" },
+  { key: "weekly_down", trendKey: "weekly_down_trend", label: "Weekly −200", strikeKey: "down_strike", expiryKey: "weekly_expiry", pf: "0.5% × 3" },
+  { key: "monthly_up", trendKey: "monthly_up_trend", label: "Monthly +200", strikeKey: "up_strike", expiryKey: "monthly_expiry", pf: "0.5% × 3" },
+  { key: "monthly_down", trendKey: "monthly_down_trend", label: "Monthly −200", strikeKey: "down_strike", expiryKey: "monthly_expiry", pf: "0.5% × 3" },
+  { key: "monthly_atm_ce", trendKey: "monthly_atm_ce_trend", label: "Monthly ATM CE", strikeKey: "atm", expiryKey: "monthly_expiry", pf: "3% × 3" },
+  { key: "monthly_atm_pe", trendKey: "monthly_atm_pe_trend", label: "Monthly ATM PE", strikeKey: "atm", expiryKey: "monthly_expiry", pf: "3% × 3" },
+];
+
+const VectorLegCard = ({ leg, signal }) => {
+  const trend = signal[leg.trendKey] || "Neutral";
+  const style = TREND_STYLE[trend] || TREND_STYLE.Neutral;
+  const points = signal.chart?.[leg.key] || [];
+  const strike = signal[leg.strikeKey];
+  const expiry = signal[leg.expiryKey];
+
+  return (
+    <div className="rounded-xl border border-white/10 bg-white/[0.02] p-4" data-testid={`vector-leg-${leg.key}`}>
+      <div className="flex items-center justify-between mb-1">
+        <p className="font-mono-ui text-[10px] uppercase tracking-[0.14em] text-slate-400">{leg.label}</p>
+        <span className={`font-mono-ui text-[10px] uppercase tracking-[0.1em] ${style.color}`}>{style.label}</span>
+      </div>
+      <p className="text-[10px] text-slate-600 mb-2">
+        {strike ? `Strike ${strike}` : ""}{expiry ? ` · exp ${expiry}` : ""} · P&amp;F {leg.pf}
+      </p>
+      {points.length > 1 ? (
+        <div className="h-16">
+          <ResponsiveContainer width="100%" height="100%">
+            <LineChart data={points} margin={{ top: 2, right: 2, left: 2, bottom: 2 }}>
+              <Line type="monotone" dataKey="v" stroke={style.stroke} strokeWidth={1.5} dot={false} isAnimationActive={false} />
+            </LineChart>
+          </ResponsiveContainer>
+        </div>
+      ) : (
+        <div className="h-16 flex items-center justify-center">
+          <p className="text-[11px] text-slate-600">No intraday data yet</p>
+        </div>
+      )}
+    </div>
+  );
+};
+
+const VectorLegsPanel = ({ signal }) => (
+  <div className="mt-4" data-testid="vector-legs-panel">
+    <p className="font-mono-ui text-[10px] uppercase tracking-[0.18em] text-slate-500 mb-3">
+      6-Chart Confluence — straddle premium (weekly &amp; monthly) plus monthly ATM CE/PE
+    </p>
+    <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+      {VECTOR_LEGS.map((leg) => <VectorLegCard key={leg.key} leg={leg} signal={signal} />)}
+    </div>
+  </div>
+);
+
 const StraddleCompass = ({ signal }) => {
   const s = signal || {};
   const bias = s.bias || "Neutral";
@@ -282,6 +342,9 @@ const StraddleCompass = ({ signal }) => {
           <p className="text-[11px] font-light text-slate-600 max-w-md">
             Use as confirmation before entering a trade — an aligned bias supports your CE/PE or futures setup, an opposing bias is a caution signal. Not investment advice.
           </p>
+        </div>
+        <div className="px-6 md:px-8 pb-6 md:pb-8 pt-2">
+          <VectorLegsPanel signal={s} />
         </div>
       </div>
   );

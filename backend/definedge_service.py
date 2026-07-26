@@ -6,13 +6,30 @@ Flow (per verified playbook):
   2. POST signin.../token  {otp_token, otp}                    -> api_session_key
   3. GET  data.../sds/history/{seg}/{token}/minute/{from}/{to} (header Authorization: session)
 
-Strategy (Sapphire Nifty Vector):
+Strategy (Sapphire Nifty Vector) — 6-chart confluence, confirmed 2026-07-27:
   - ATM = round(Nifty spot / 100) * 100
-  - Legs = ATM+200 and ATM-200 straddles (CE close + PE close, per minute)
-  - Point & Figure on each straddle: 0.5% box, 3-box (~1.5%) reversal
-  - up (ATM+200) falling & down (ATM-200) rising  => Nifty BULLISH
-    up rising & down falling                       => Nifty BEARISH
-    else                                           => NEUTRAL
+  - 4 straddle legs = ATM+200 and ATM-200 straddles (CE close + PE close,
+    per minute), each run on BOTH the current WEEKLY expiry and the
+    current MONTHLY expiry (see _pick_monthly_expiry for the "last week of
+    the month" roll-forward rule that keeps the two timeframes on
+    genuinely different contracts). P&F on each: 0.5% box, 3-box (~1.5%)
+    reversal.
+  - 2 more legs = the MONTHLY-expiry ATM strike's CE and PE, read
+    INDIVIDUALLY (not summed into a straddle). P&F on each: 3% box, 3-box
+    (~9%) reversal — confirmed against a real Definedge chart titled
+    "(3% x 3)", 1-minute timeframe. Same ATM-selection rule as every other
+    leg in this Vector.
+  - BULLISH requires ALL SIX:
+      +200 straddle falling (weekly AND monthly)
+      -200 straddle rising  (weekly AND monthly)
+      monthly ATM CE rising
+      monthly ATM PE falling
+  - BEARISH requires ALL SIX (mirror image):
+      +200 straddle rising  (weekly AND monthly)
+      -200 straddle falling (weekly AND monthly)
+      monthly ATM CE falling
+      monthly ATM PE rising
+  - any other combination => NEUTRAL (no direction)
 
 Live option data is only meaningful during market hours; the daily OTP must be
 entered manually each morning (session key resets daily).
@@ -46,8 +63,11 @@ SPOT_CACHE_TTL = 2.0   # seconds — protects against many concurrent visitors e
 
 IST = timezone(timedelta(hours=5, minutes=30))
 
-BOX_PCT = 0.005          # 0.5%
+BOX_PCT = 0.005          # 0.5% — the four ATM+/-200 straddle legs
 REVERSAL_BOXES = 3       # 3 boxes ~= 1.5%
+
+ATM_LEG_BOX_PCT = 0.03       # 3% — the two monthly-expiry ATM CE/PE legs (read individually, not a straddle)
+ATM_LEG_REVERSAL_BOXES = 3   # 3 boxes ~= 9% — confirmed against a real Definedge chart titled "(3% x 3)"
 
 
 # ---------------------------------------------------------------------------
@@ -90,10 +110,19 @@ def pnf_trend(prices, box_pct: float = BOX_PCT, reversal_boxes: int = REVERSAL_B
     return "Neutral"
 
 
-def derive_bias(up_trend: str, down_trend: str) -> str:
-    if up_trend == "Bearish" and down_trend == "Bullish":
+def derive_bias(weekly_up_trend: str, weekly_down_trend: str, monthly_up_trend: str, monthly_down_trend: str,
+                 monthly_atm_ce_trend: str, monthly_atm_pe_trend: str) -> str:
+    """6-chart confluence (see module docstring) — ALL SIX legs must agree
+    before calling a direction. Any disagreement between the straddle
+    timeframes, or between the ATM CE/PE pair, or a Neutral leg anywhere,
+    falls through to Neutral."""
+    if weekly_up_trend == "Bearish" and monthly_up_trend == "Bearish" \
+            and weekly_down_trend == "Bullish" and monthly_down_trend == "Bullish" \
+            and monthly_atm_ce_trend == "Bullish" and monthly_atm_pe_trend == "Bearish":
         return "Bullish"
-    if up_trend == "Bullish" and down_trend == "Bearish":
+    if weekly_up_trend == "Bullish" and monthly_up_trend == "Bullish" \
+            and weekly_down_trend == "Bearish" and monthly_down_trend == "Bearish" \
+            and monthly_atm_ce_trend == "Bearish" and monthly_atm_pe_trend == "Bullish":
         return "Bearish"
     return "Neutral"
 
@@ -260,9 +289,44 @@ class DefinedgeService:
             idx = 1 if (fut[0] - today).days <= 3 else 0
         return fut[idx]
 
+    @staticmethod
+    def _pick_monthly_expiry(expiries, today, weekly_expiry=None):
+        """Nifty's monthly expiry = the last (maximum) listed expiry falling
+        within a given calendar month — NSE only lists weekly-cadence OPTIDX
+        contracts, the month's final one IS the monthly contract, no
+        separate flag exists in the master to key off. Picks the CURRENT
+        month's monthly expiry, rolling to next month's once today is past
+        it (no expiries left this month).
+
+        Confirmed rule: if `weekly_expiry` is given and happens to equal the
+        resolved monthly expiry — the last week of the month, where the
+        weekly and monthly contracts are literally the same expiry — rolls
+        forward to NEXT month's monthly instead, so the two Vector legs
+        never end up reading the identical contract twice."""
+        fut = sorted(e for e in expiries if e >= today)
+        if not fut:
+            return None
+
+        def last_in_month(year, month):
+            same_month = [e for e in fut if e.year == year and e.month == month]
+            return max(same_month) if same_month else None
+
+        def next_month(year, month):
+            return (year + 1, 1) if month == 12 else (year, month + 1)
+
+        monthly = last_in_month(today.year, today.month)
+        if monthly is None:
+            monthly = last_in_month(*next_month(today.year, today.month))
+
+        if monthly is not None and weekly_expiry is not None and monthly == weekly_expiry:
+            monthly = last_in_month(*next_month(monthly.year, monthly.month))
+
+        return monthly
+
     def _resolve_tokens(self, df: pd.DataFrame, atm: int):
-        """Locate NIFTY index-option tokens for ATM+/-200 at the chosen expiry.
-        Master schema (nsefno): 0=SEG 1=TOKEN 2=SYMBOL 3=TRADINGSYM 4=INSTRUMENT
+        """Locate NIFTY index-option tokens for ATM+/-200 at BOTH the current
+        weekly and current monthly expiry (4 legs total). Master schema
+        (nsefno): 0=SEG 1=TOKEN 2=SYMBOL 3=TRADINGSYM 4=INSTRUMENT
         5=EXPIRY(ddmmyyyy) 8=OPTIONTYPE(CE/PE) 9=STRIKE(x100)."""
         SEG, TOKEN, SYMBOL, INSTR, EXPIRY, OPTTYPE, STRIKE = 0, 1, 2, 4, 5, 8, 9
         sub = df[(df[SYMBOL].astype(str) == "NIFTY")
@@ -276,20 +340,42 @@ class DefinedgeService:
         sub = sub.dropna(subset=["_strike", "_exp"])
 
         today = datetime.now(IST).date()
-        expiry = self._pick_expiry(sorted(set(sub["_exp"].tolist())), today)
-        if expiry is None:
-            raise DefinedgeError("No valid NIFTY expiry found in master.")
+        all_expiries = sorted(set(sub["_exp"].tolist()))
+        weekly_expiry = self._pick_expiry(all_expiries, today)
+        if weekly_expiry is None:
+            raise DefinedgeError("No valid NIFTY weekly expiry found in master.")
+        monthly_expiry = self._pick_monthly_expiry(all_expiries, today, weekly_expiry=weekly_expiry)
+        if monthly_expiry is None:
+            raise DefinedgeError("No valid NIFTY monthly expiry found in master.")
 
-        out = {"expiry": expiry.isoformat(), "up_strike": atm + 200, "down_strike": atm - 200, "legs": {}}
-        for label, strike in (("up", atm + 200), ("down", atm - 200)):
+        def resolve_leg(expiry, strike):
             leg = {}
             for opt in ("CE", "PE"):
                 row = sub[(sub["_strike"] == float(strike)) & (sub["_exp"] == expiry) & (sub[OPTTYPE].astype(str) == opt)]
                 if row.empty:
                     raise DefinedgeError(f"Missing {strike} {opt} for expiry {expiry.isoformat()}.")
                 leg[opt] = str(row.iloc[0][TOKEN])
-            out["legs"][label] = leg
-        return out
+            return leg
+
+        return {
+            "up_strike": atm + 200,
+            "down_strike": atm - 200,
+            "weekly": {
+                "expiry": weekly_expiry.isoformat(),
+                "legs": {"up": resolve_leg(weekly_expiry, atm + 200), "down": resolve_leg(weekly_expiry, atm - 200)},
+            },
+            "monthly": {
+                "expiry": monthly_expiry.isoformat(),
+                "legs": {"up": resolve_leg(monthly_expiry, atm + 200), "down": resolve_leg(monthly_expiry, atm - 200)},
+            },
+            # ATM CE/PE read individually (not summed into a straddle) —
+            # always the monthly expiry, same ATM-selection rule as every
+            # other leg in this Vector.
+            "monthly_atm": {
+                "expiry": monthly_expiry.isoformat(),
+                "leg": resolve_leg(monthly_expiry, atm),
+            },
+        }
 
     # ---- historical ----------------------------------------------------
     async def _closes(self, segment: str, token: str, frm: str = None, to: str = None):
@@ -439,12 +525,42 @@ class DefinedgeService:
         return value
 
     async def _straddle_series(self, ce_token: str, pe_token: str):
+        """Per-minute straddle premium (CE close + PE close) for today's
+        session, aligned on shared timestamps. Returns
+        [{"t": "HH:MM", "v": premium}, ...] sorted chronologically — `v`
+        alone feeds pnf_trend(); the full point list is what lets the
+        frontend plot an actual chart instead of just the derived trend
+        label (previously this returned a bare value list and the caller
+        discarded everything except the derived trend — no chart data ever
+        left this function)."""
         ce, pe = await asyncio.gather(
             self._closes("NFO", ce_token),
             self._closes("NFO", pe_token),
         )
-        common = [t for t in ce if t in pe]
-        return [ce[t] + pe[t] for t in sorted(common)]
+        common = sorted(t for t in ce if t in pe)
+
+        def label(raw_ts):
+            try:
+                return datetime.strptime(raw_ts, "%d%m%Y%H%M").strftime("%H:%M")
+            except ValueError:
+                return raw_ts
+
+        return [{"t": label(t), "v": ce[t] + pe[t]} for t in common]
+
+    async def _single_leg_series(self, token: str):
+        """Per-minute close price for ONE option leg — not summed into a
+        straddle. Used for the monthly ATM CE/PE confirmation legs, which
+        are read independently rather than combined. Same point-list shape
+        as _straddle_series so both feed pnf_trend()/charts identically."""
+        closes = await self._closes("NFO", token)
+
+        def label(raw_ts):
+            try:
+                return datetime.strptime(raw_ts, "%d%m%Y%H%M").strftime("%H:%M")
+            except ValueError:
+                return raw_ts
+
+        return [{"t": label(t), "v": closes[t]} for t in sorted(closes)]
 
     # ---- orchestration -------------------------------------------------
     async def compute_vector(self):
@@ -454,13 +570,22 @@ class DefinedgeService:
         atm = int(round(spot / 100.0) * 100)
         tokens = self._resolve_tokens(df, atm)
 
-        up, down = await asyncio.gather(
-            self._straddle_series(tokens["legs"]["up"]["CE"], tokens["legs"]["up"]["PE"]),
-            self._straddle_series(tokens["legs"]["down"]["CE"], tokens["legs"]["down"]["PE"]),
+        weekly_up, weekly_down, monthly_up, monthly_down, monthly_atm_ce, monthly_atm_pe = await asyncio.gather(
+            self._straddle_series(tokens["weekly"]["legs"]["up"]["CE"], tokens["weekly"]["legs"]["up"]["PE"]),
+            self._straddle_series(tokens["weekly"]["legs"]["down"]["CE"], tokens["weekly"]["legs"]["down"]["PE"]),
+            self._straddle_series(tokens["monthly"]["legs"]["up"]["CE"], tokens["monthly"]["legs"]["up"]["PE"]),
+            self._straddle_series(tokens["monthly"]["legs"]["down"]["CE"], tokens["monthly"]["legs"]["down"]["PE"]),
+            self._single_leg_series(tokens["monthly_atm"]["leg"]["CE"]),
+            self._single_leg_series(tokens["monthly_atm"]["leg"]["PE"]),
         )
-        up_trend = pnf_trend(up)
-        down_trend = pnf_trend(down)
-        bias = derive_bias(up_trend, down_trend)
+        weekly_up_trend = pnf_trend([p["v"] for p in weekly_up])
+        weekly_down_trend = pnf_trend([p["v"] for p in weekly_down])
+        monthly_up_trend = pnf_trend([p["v"] for p in monthly_up])
+        monthly_down_trend = pnf_trend([p["v"] for p in monthly_down])
+        monthly_atm_ce_trend = pnf_trend([p["v"] for p in monthly_atm_ce], box_pct=ATM_LEG_BOX_PCT, reversal_boxes=ATM_LEG_REVERSAL_BOXES)
+        monthly_atm_pe_trend = pnf_trend([p["v"] for p in monthly_atm_pe], box_pct=ATM_LEG_BOX_PCT, reversal_boxes=ATM_LEG_REVERSAL_BOXES)
+        bias = derive_bias(weekly_up_trend, weekly_down_trend, monthly_up_trend, monthly_down_trend,
+                            monthly_atm_ce_trend, monthly_atm_pe_trend)
 
         now_ist = datetime.now(IST)
         signal = {
@@ -469,13 +594,33 @@ class DefinedgeService:
             "spot": f"{spot:,.0f}",
             "atm": str(atm),
             "up_strike": str(tokens["up_strike"]),
-            "up_trend": up_trend,
             "down_strike": str(tokens["down_strike"]),
-            "down_trend": down_trend,
-            "note": f"Auto: +200 {up_trend.lower()}, -200 {down_trend.lower()} (expiry {tokens['expiry']}).",
+            "weekly_expiry": tokens["weekly"]["expiry"],
+            "monthly_expiry": tokens["monthly"]["expiry"],
+            "weekly_up_trend": weekly_up_trend,
+            "weekly_down_trend": weekly_down_trend,
+            "monthly_up_trend": monthly_up_trend,
+            "monthly_down_trend": monthly_down_trend,
+            "monthly_atm_ce_trend": monthly_atm_ce_trend,
+            "monthly_atm_pe_trend": monthly_atm_pe_trend,
+            "note": (
+                f"Weekly: +200 {weekly_up_trend.lower()}, -200 {weekly_down_trend.lower()} (exp {tokens['weekly']['expiry']}). "
+                f"Monthly: +200 {monthly_up_trend.lower()}, -200 {monthly_down_trend.lower()}, "
+                f"ATM CE {monthly_atm_ce_trend.lower()}, ATM PE {monthly_atm_pe_trend.lower()} (exp {tokens['monthly']['expiry']})."
+            ),
             "source": "definedge",
             "box_size": "0.5%",
             "reversal": "3 box",
+            "atm_leg_box_size": "3%",
+            "atm_leg_reversal": "3 box",
+            "chart": {
+                "weekly_up": weekly_up,
+                "weekly_down": weekly_down,
+                "monthly_up": monthly_up,
+                "monthly_down": monthly_down,
+                "monthly_atm_ce": monthly_atm_ce,
+                "monthly_atm_pe": monthly_atm_pe,
+            },
             "updated_at": datetime.now(timezone.utc).isoformat(),
             "updated_label": now_ist.strftime("Today, %I:%M %p IST"),
         }
@@ -483,7 +628,13 @@ class DefinedgeService:
         # nifty_signal only ever holds the current value (upserted in place
         # above) — the journal's straddle_regime_at_entry needs to ask "what
         # was the bias at time X", so keep an append-only history alongside it.
+        # The per-minute chart payload is dropped from history (it's only
+        # meaningful "live", and inserting it on every cron tick — as often
+        # as once/minute during market hours — would otherwise blow up
+        # nifty_signal_history's size for no benefit, since track-record
+        # scoring only ever reads bias/spot/updated_at).
         history_doc = dict(signal)
+        history_doc.pop("chart", None)
         history_doc["id"] = str(uuid.uuid4())
         await self.db.nifty_signal_history.insert_one(history_doc)
         return signal

@@ -12,7 +12,7 @@ import httpx
 import bcrypt
 import jwt
 import zxcvbn
-from definedge_service import DefinedgeService, DefinedgeError
+from definedge_service import DefinedgeService, DefinedgeError, derive_bias
 from journal_routes import create_journal_router
 from journal_analytics import create_analytics_router
 from quant_lab import create_quant_lab_router
@@ -773,9 +773,15 @@ class SignalUpdate(BaseModel):
     spot: str = ""                 # e.g. "24,000"
     atm: str = ""                  # e.g. "24000"
     up_strike: str = ""            # ATM + 200
-    up_trend: str = "Neutral"      # Bullish (rising) | Bearish (falling) | Neutral
     down_strike: str = ""          # ATM - 200
-    down_trend: str = "Neutral"
+    weekly_expiry: str = ""
+    monthly_expiry: str = ""
+    weekly_up_trend: str = "Neutral"      # Bullish (rising) | Bearish (falling) | Neutral
+    weekly_down_trend: str = "Neutral"
+    monthly_up_trend: str = "Neutral"
+    monthly_down_trend: str = "Neutral"
+    monthly_atm_ce_trend: str = "Neutral"  # monthly ATM CE, read individually (not a straddle)
+    monthly_atm_pe_trend: str = "Neutral"  # monthly ATM PE, read individually
     note: str = ""
     source: str = "manual"         # manual | definedge
 
@@ -786,25 +792,24 @@ DEFAULT_SIGNAL = {
     "spot": "",
     "atm": "",
     "up_strike": "",
-    "up_trend": "Neutral",
     "down_strike": "",
-    "down_trend": "Neutral",
+    "weekly_expiry": "",
+    "monthly_expiry": "",
+    "weekly_up_trend": "Neutral",
+    "weekly_down_trend": "Neutral",
+    "monthly_up_trend": "Neutral",
+    "monthly_down_trend": "Neutral",
+    "monthly_atm_ce_trend": "Neutral",
+    "monthly_atm_pe_trend": "Neutral",
     "note": "Awaiting live straddle data.",
     "source": "manual",
     "box_size": "0.5%",
     "reversal": "3 box",
+    "atm_leg_box_size": "3%",
+    "atm_leg_reversal": "3 box",
     "updated_at": datetime.now(timezone.utc).isoformat(),
     "updated_label": "Today, 09:30 AM IST",
 }
-
-
-def _derive_bias(up_trend: str, down_trend: str) -> str:
-    # Per strategy: falling straddle marks the direction Nifty is heading.
-    if up_trend == "Bearish" and down_trend == "Bullish":
-        return "Bullish"
-    if up_trend == "Bullish" and down_trend == "Bearish":
-        return "Bearish"
-    return "Neutral"
 
 
 @api_router.get("/terminal/signal")
@@ -895,13 +900,20 @@ async def get_track_record():
 @api_router.put("/terminal/signal")
 async def update_signal(payload: SignalUpdate, admin: dict = Depends(get_current_admin)):
     data = payload.model_dump()
-    # If admin leaves bias on Neutral but legs imply a direction, derive it.
+    # If admin leaves bias on Neutral but the six legs imply a direction,
+    # derive it via the same 6-chart confluence rule compute_vector() uses.
     if data["bias"] == "Neutral":
-        data["bias"] = _derive_bias(data["up_trend"], data["down_trend"])
+        data["bias"] = derive_bias(
+            data["weekly_up_trend"], data["weekly_down_trend"],
+            data["monthly_up_trend"], data["monthly_down_trend"],
+            data["monthly_atm_ce_trend"], data["monthly_atm_pe_trend"],
+        )
     data.update({
         "id": "current",
         "box_size": "0.5%",
         "reversal": "3 box",
+        "atm_leg_box_size": "3%",
+        "atm_leg_reversal": "3 box",
         "updated_at": datetime.now(timezone.utc).isoformat(),
         "updated_label": "Today, 09:30 AM IST",
     })
