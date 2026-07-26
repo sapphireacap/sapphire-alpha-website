@@ -15,6 +15,7 @@ import Investing from "@/components/site/Investing";
 import Contact from "@/components/site/Contact";
 import Footer from "@/components/site/Footer";
 import LegalPage from "@/components/site/LegalPage";
+import NotFound from "@/components/site/NotFound";
 import AlphaTerminal from "@/pages/AlphaTerminal";
 import BlackBox from "@/pages/BlackBox";
 import EwmaCrossoverPage from "@/pages/alphaterminal/EwmaCrossoverPage";
@@ -68,7 +69,7 @@ function App() {
             <Route path="/alpha-terminal/positional-opportunities" element={<ScannerDetail scannerKey="positional" label="Positional Opportunities" />} />
             <Route path="/ipos" element={<Ipos />} />
             <Route path="/ipos/:id" element={<IpoDetail />} />
-            <Route path="/admin" element={<Admin />} />
+            <Route path="/admin33" element={<Admin />} />
             <Route path="/signup" element={<SignupPage />} />
             <Route path="/login" element={<LoginPage />} />
             <Route path="/forgot-password" element={<ForgotPasswordPage />} />
@@ -83,6 +84,7 @@ function App() {
             <Route path="/privacy" element={<LegalPage page="privacy" />} />
             <Route path="/terms" element={<LegalPage page="terms" />} />
             <Route path="/disclaimer" element={<LegalPage page="disclaimer" />} />
+            <Route path="*" element={<NotFound />} />
           </Routes>
         </SmoothScroll>
       </BrowserRouter>
