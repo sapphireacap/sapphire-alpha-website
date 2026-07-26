@@ -19,9 +19,7 @@ import NotFound from "@/components/site/NotFound";
 import AlphaTerminal from "@/pages/AlphaTerminal";
 import BlackBox from "@/pages/BlackBox";
 import StrategyDetail from "@/pages/blackbox/StrategyDetail";
-import EwmaCrossoverPage from "@/pages/alphaterminal/EwmaCrossoverPage";
-import SharpeDashboardPage from "@/pages/alphaterminal/SharpeDashboardPage";
-import ScannerDetail from "@/pages/alphaterminal/ScannerDetail";
+import ModuleDetail from "@/pages/alphaterminal/ModuleDetail";
 import Ipos from "@/pages/Ipos";
 import IpoDetail from "@/pages/IpoDetail";
 import Admin from "@/pages/Admin";
@@ -63,12 +61,7 @@ function App() {
             <Route path="/alpha-terminal" element={<AlphaTerminal />} />
             <Route path="/black-box" element={<BlackBox />} />
             <Route path="/black-box/:slug" element={<StrategyDetail />} />
-            <Route path="/alpha-terminal/ewma-crossover" element={<EwmaCrossoverPage />} />
-            <Route path="/alpha-terminal/sharpe-dashboard" element={<SharpeDashboardPage />} />
-            <Route path="/alpha-terminal/momentum-leaders" element={<ScannerDetail scannerKey="momentum" label="Intraday Momentum Leaders" />} />
-            <Route path="/alpha-terminal/relative-strength-leaders" element={<ScannerDetail scannerKey="relative_strength" label="Relative Strength Leaders" />} />
-            <Route path="/alpha-terminal/breakout-candidates" element={<ScannerDetail scannerKey="breakout" label="Breakout Candidates" />} />
-            <Route path="/alpha-terminal/positional-opportunities" element={<ScannerDetail scannerKey="positional" label="Positional Opportunities" />} />
+            <Route path="/alpha-terminal/:slug" element={<ModuleDetail />} />
             <Route path="/ipos" element={<Ipos />} />
             <Route path="/ipos/:id" element={<IpoDetail />} />
             <Route path="/admin33" element={<Admin />} />
