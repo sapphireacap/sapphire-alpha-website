@@ -43,15 +43,22 @@ then a single fused Supertrend-style trailing band) were both wrong and
 replaced once this source was read — see git history if curious why they
 failed on real data. The actual formula is much simpler:
 
-MAST = a plain SMA(Period1, Close) line AND a classic, textbook
+MAST = a plain MA(Period1, Close) line AND a classic, textbook
 Supertrend(Period2, Multiplier) line, plotted as two INDEPENDENT,
 unmodified standard indicators (not fused into one hybrid band). The
 shaded "cloud" is just the region between these two lines at each point.
 Band color: green while price is above the Supertrend line, red while
 price is below it (this is the ONLY thing that decides color — nothing to
-do with the MA line). Confirmed default parameters (also matches the
-tradepoint.definedge.com indicator dialog checked earlier): Period1=10
-(SMA), Period2=10 & Multiplier=3 (Supertrend), Input=Close.
+do with the MA line).
+
+PARAMETERS — two different confirmed sources, do not conflate them:
+tradepoint.definedge.com's indicator dialog shows the platform's generic
+OUT-OF-BOX default (Period1=10, Period2=10, Multiplier=3, Average Type=SMA)
+when the indicator is freshly added with no configuration. Lumen SIP does
+NOT use that default — the user provided a screenshot of the actual "Mast
+Settings" configured for THIS strategy: Period1=40, Period2=40,
+Multiplier=10, Average Type=EMA (not SMA). Use these strategy-specific
+values (MAST_PERIOD1/2/MULTIPLIER below), not the platform default.
 
 Per the source doc, MAST plotted on a Renko chart runs on the RENKO BRICK
 SEQUENCE itself (each brick treated as a synthetic OHLC bar), not the
@@ -75,9 +82,9 @@ from blackbox_renko import build_renko_bricks
 # Strategy parameters (from the approved spec + live-verified MAST params)
 # ---------------------------------------------------------------------------
 BRICK_PCT = 0.0025        # 0.25% of each day's own opening price — confirmed with user
-MAST_PERIOD1 = 10        # SMA basis period — confirmed via Definedge's indicator dialog
-MAST_PERIOD2 = 10        # ATR period — confirmed via Definedge's indicator dialog
-MAST_MULTIPLIER = 3      # ATR multiplier — confirmed via Definedge's indicator dialog
+MAST_PERIOD1 = 40        # EMA basis period — confirmed via user's "Mast Settings" screenshot for THIS strategy
+MAST_PERIOD2 = 40        # ATR period — confirmed via user's "Mast Settings" screenshot for THIS strategy
+MAST_MULTIPLIER = 10     # ATR multiplier — confirmed via user's "Mast Settings" screenshot for THIS strategy
 
 MONTHLY_SIP_TOTAL = 5000      # Rs 5,000/month total — confirmed with user
 NIFTYBEES_ALLOCATION = 0.75
@@ -132,10 +139,21 @@ def _wilder_atr_series(bars: list, period: int) -> list:
     return atrs
 
 
-def _sma_series(closes: list, period: int) -> list:
+def _ema_series(closes: list, period: int) -> list:
+    """Standard EMA, seeded with a plain average of the first `period`
+    values (same seeding convention as the RSI-overlay `_ema` helper in
+    blackbox_prism_alpha.py) — Lumen SIP's MAST uses EMA, not SMA, per the
+    user's confirmed "Mast Settings" screenshot (Average Type: EMA)."""
     out = [None] * len(closes)
-    for i in range(period - 1, len(closes)):
-        out[i] = sum(closes[i - period + 1:i + 1]) / period
+    if len(closes) < period:
+        return out
+    seed = sum(closes[:period]) / period
+    out[period - 1] = seed
+    k = 2.0 / (period + 1)
+    e = seed
+    for i in range(period, len(closes)):
+        e = closes[i] * k + e * (1 - k)
+        out[i] = e
     return out
 
 
@@ -144,14 +162,15 @@ def compute_mast(brick_bars: list, period1: int = MAST_PERIOD1, period2: int = M
     """brick_bars: synthetic OHLC per Renko brick (see
     _synthetic_ohlc_from_bricks). Returns a list aligned to `brick_bars`:
     {date, ma, supertrend} or None entries while there isn't enough history
-    yet for both the SMA and ATR.
+    yet for both the EMA and ATR.
 
-    `ma` = plain SMA(period1, Close). `supertrend` = classic HL2-basis,
-    Wilder-ATR Supertrend(period2, multiplier) — the standard textbook
-    formula, unmodified; MAST is these two independent lines, not a fused
-    band (see module docstring)."""
+    `ma` = EMA(period1, Close) — confirmed "Average Type: EMA" for this
+    strategy, NOT the platform's generic SMA default (see module
+    docstring). `supertrend` = classic HL2-basis, Wilder-ATR
+    Supertrend(period2, multiplier) — the standard textbook formula,
+    unmodified; MAST is these two independent lines, not a fused band."""
     closes = [b["close"] for b in brick_bars]
-    ma = _sma_series(closes, period1)
+    ma = _ema_series(closes, period1)
     atr = _wilder_atr_series(brick_bars, period2)
 
     out = [None] * len(brick_bars)
@@ -267,16 +286,30 @@ async def _fetch_per_instrument_series(definedge) -> dict:
 # wherever it last left off, only walks NEW dates). Same monthly-SIP-
 # deployment / full-exit / full-re-entry rules either way.
 # ---------------------------------------------------------------------------
-def _walk_portfolio(per_instrument_series: dict, dates: list, units: dict, cash: dict, last_month: str = None) -> tuple:
+def _walk_portfolio(per_instrument_series: dict, dates: list, units: dict, cash: dict, last_month: str = None,
+                     last_phase: dict = None) -> tuple:
     """Returns (portfolio_snapshots, signals, final_units, final_cash,
     final_month, final_phase) for exactly the given `dates`, starting from
-    the given `units`/`cash`/`last_month` state (all zero/None for a fresh
-    backtest; the last live snapshot's state for an incremental live run)."""
+    the given `units`/`cash`/`last_month`/`last_phase` state (all zero/
+    'cash' for a fresh backtest; the last live snapshot's state for an
+    incremental live run).
+
+    The monthly SIP contribution and cash deployment both apply on EVERY
+    date in the combined timeline, not just dates where this specific
+    symbol has a fresh brick — a brick only forms sparsely (e.g. GOLDBEES
+    can go weeks between bricks while sitting in cash), and gating the
+    monthly deposit on "this symbol has a row today" silently dropped whole
+    months of contributions whenever the other symbol's brick happened to
+    land on the 1st of a new month instead. Caught live: GOLDBEES cash
+    stayed flat at one month's contribution for 3+ calendar months in a
+    row during a cash-phase stretch, instead of accumulating monthly as
+    the spec requires ("collect the money and keep it aside" until the
+    next buy signal)."""
     by_symbol_by_date = {
         symbol: {row["date"]: row for row in series}
         for symbol, series in per_instrument_series.items()
     }
-    last_phase = {symbol: "cash" for symbol in INSTRUMENTS}
+    last_phase = dict(last_phase) if last_phase else {symbol: "cash" for symbol in INSTRUMENTS}
     last_price = {symbol: None for symbol in INSTRUMENTS}
     portfolio_snapshots = []
     signals = []
@@ -288,37 +321,40 @@ def _walk_portfolio(per_instrument_series: dict, dates: list, units: dict, cash:
 
         for symbol, cfg in INSTRUMENTS.items():
             row = by_symbol_by_date[symbol].get(date)
-            if row is None:
-                continue
-            price = row["price"]
-            last_price[symbol] = price
-
-            if row["signal_type"] is not None:
-                signals.append({
-                    "instrument": symbol,
-                    "date": row["date"],
-                    "signal_type": row["signal_type"],
-                    "price": row["price"],
-                    "box_level": row["box_level"],
-                    "pattern": row["pattern"],
-                })
-
-            # Full exit to cash on a sell signal, before this month's deployment.
-            if row["signal_type"] == "sell":
-                cash[symbol] += units[symbol] * price
-                units[symbol] = 0.0
 
             if is_new_month:
                 cash[symbol] += MONTHLY_SIP_TOTAL * cfg["allocation"]
 
-            # Full re-entry: a buy signal (or an already-buy phase with idle
-            # cash from prior contributions) deploys the leg's entire cash
-            # pool at this bar's close.
-            if row["phase"] == "buy" and cash[symbol] > 0:
-                units[symbol] += cash[symbol] / price
-                cash[symbol] = 0.0
+            if row is not None:
+                price = row["price"]
+                last_price[symbol] = price
 
-            last_phase[symbol] = row["phase"]
+                if row["signal_type"] is not None:
+                    signals.append({
+                        "instrument": symbol,
+                        "date": row["date"],
+                        "signal_type": row["signal_type"],
+                        "price": row["price"],
+                        "box_level": row["box_level"],
+                        "pattern": row["pattern"],
+                    })
+
+                # Full exit to cash on a sell signal.
+                if row["signal_type"] == "sell":
+                    cash[symbol] += units[symbol] * price
+                    units[symbol] = 0.0
+
+                last_phase[symbol] = row["phase"]
+
+            # Full re-entry: deploy any idle cash (a fresh buy signal, or
+            # monthly contributions that arrived while already in a buy
+            # phase) at the most recently known price for this leg — its
+            # own fresh price today if a brick just printed, otherwise the
+            # last brick's price, so cash doesn't sit undeployed for lack
+            # of a brand-new brick on this exact date.
+            if last_phase[symbol] == "buy" and cash[symbol] > 0 and last_price[symbol] is not None:
+                units[symbol] += cash[symbol] / last_price[symbol]
+                cash[symbol] = 0.0
 
         leg_value = {
             symbol: units[symbol] * (last_price[symbol] or 0.0) + cash[symbol]
@@ -405,11 +441,13 @@ async def evaluate_lumen_sip_live(db, definedge) -> dict:
         units = {symbol: 0.0 for symbol in INSTRUMENTS}
         cash = {symbol: 0.0 for symbol in INSTRUMENTS}
         last_month = None
+        seed_phase = None
     else:
         new_dates = [d for d in all_dates if d > last_snapshot["date"]]
         units = {"NIFTYBEES": last_snapshot["niftybees_units"], "GOLDBEES": last_snapshot["goldbees_units"]}
         cash = {"NIFTYBEES": last_snapshot["niftybees_cash"], "GOLDBEES": last_snapshot["goldbees_cash"]}
         last_month = last_snapshot["date"][:7]
+        seed_phase = {"NIFTYBEES": last_snapshot["niftybees_phase"], "GOLDBEES": last_snapshot["goldbees_phase"]}
 
     if not new_dates:
         return {
@@ -422,7 +460,8 @@ async def evaluate_lumen_sip_live(db, definedge) -> dict:
             },
         }
 
-    portfolio_snapshots, signals, _, _, _, last_phase = _walk_portfolio(per_instrument_series, new_dates, units, cash, last_month)
+    portfolio_snapshots, signals, _, _, _, last_phase = _walk_portfolio(
+        per_instrument_series, new_dates, units, cash, last_month, seed_phase)
 
     if signals:
         await db.blackbox_lumen_sip_signals.insert_many(signals)
