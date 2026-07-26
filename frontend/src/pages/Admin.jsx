@@ -851,7 +851,7 @@ const Dashboard = ({ onLogout }) => {
   const [signal, setSignal] = useState(null);
 
   useEffect(() => {
-    axios.get(`${API}/terminal/signal`).then((r) => setSignal(r.data)).catch(() => {});
+    axios.get(`${API}/admin/terminal/signal`, authHeaders()).then((r) => setSignal(r.data)).catch(() => {});
   }, []);
 
   const load = useCallback(async (sc) => {

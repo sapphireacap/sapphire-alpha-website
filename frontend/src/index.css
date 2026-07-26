@@ -154,6 +154,23 @@ body {
     background: radial-gradient(circle at center, rgba(31, 95, 208, 0.16) 0%, transparent 70%);
 }
 
+/* Slow-panning grid used only on Alpha Terminal's hero — scoped to that page,
+   not a site-wide reinstatement of the grid brand direction removed above. */
+@keyframes terminalGridPan {
+    from { background-position: 0 0; }
+    to { background-position: 44px 88px; }
+}
+.terminal-grid-bg {
+    background-image:
+        linear-gradient(rgba(67, 126, 235, 0.07) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(67, 126, 235, 0.07) 1px, transparent 1px);
+    background-size: 44px 44px;
+    animation: terminalGridPan 70s linear infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+    .terminal-grid-bg { animation: none; }
+}
+
 /* Marquee outline text */
 .marquee-text {
     -webkit-text-stroke: 1px rgba(255, 255, 255, 0.12);

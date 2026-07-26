@@ -812,8 +812,26 @@ DEFAULT_SIGNAL = {
 }
 
 
+PUBLIC_SIGNAL_FIELDS = ("bias", "spot", "note", "updated_at", "updated_label")
+
+
+def _public_signal(doc: dict) -> dict:
+    """Strips the Nifty Vector doc down to what's safe to show site visitors.
+    The full doc also carries strikes, expiries, per-leg trend/chart data, and
+    P&F box parameters -- exactly the proprietary tracking methodology this is
+    not supposed to reveal. Only the admin-authenticated endpoint below (and
+    the admin panel that edits this doc) ever sees the rest."""
+    return {field: doc.get(field, DEFAULT_SIGNAL.get(field, "")) for field in PUBLIC_SIGNAL_FIELDS}
+
+
 @api_router.get("/terminal/signal")
 async def get_signal():
+    doc = await db.nifty_signal.find_one({"id": "current"}, {"_id": 0})
+    return _public_signal(doc or DEFAULT_SIGNAL)
+
+
+@api_router.get("/admin/terminal/signal")
+async def get_signal_admin(admin: dict = Depends(get_current_admin)):
     doc = await db.nifty_signal.find_one({"id": "current"}, {"_id": 0})
     return doc or DEFAULT_SIGNAL
 

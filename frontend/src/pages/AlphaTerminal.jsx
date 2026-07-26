@@ -1,13 +1,15 @@
 import { useEffect, useState } from "react";
 import axios from "axios";
-import { motion } from "framer-motion";
+import { motion, AnimatePresence } from "framer-motion";
 import { Link, useNavigate } from "react-router-dom";
-import { ArrowUpRight, TrendingUp, TrendingDown, Minus, Compass, FlaskConical, Clock, ExternalLink } from "lucide-react";
-import { LineChart, Line, ResponsiveContainer } from "recharts";
+import {
+  ArrowUpRight, TrendingUp, TrendingDown, Minus, Compass, FlaskConical,
+  ExternalLink, ChevronDown, LayoutGrid, Radar, Table2, BookOpen,
+  Activity, BarChart3, Sliders, Target,
+} from "lucide-react";
 import Navbar from "../components/site/Navbar";
 import Footer from "../components/site/Footer";
 import ParticleField from "../components/site/ParticleField";
-import Reveal from "../components/site/Reveal";
 import BiasBadge from "../components/site/BiasBadge";
 import LivePulseDot from "../components/site/LivePulseDot";
 import { scrollToId } from "../components/site/SmoothScroll";
@@ -78,6 +80,23 @@ const isNseSessionLive = () => {
   if (!isTradingDay(now)) return false;
   const mins = now.getUTCHours() * 60 + now.getUTCMinutes();
   return mins >= 9 * 60 + 15 && mins <= 15 * 60 + 30;
+};
+
+// Ticks once/second so any component calling this re-renders with a fresh
+// "Updated Xs ago" label — used by the hero widget and the Vector's live
+// output panel, both of which read signal.updated_at.
+const useElapsedLabel = (iso) => {
+  const [, force] = useState(0);
+  useEffect(() => {
+    const id = setInterval(() => force((n) => n + 1), 1000);
+    return () => clearInterval(id);
+  }, []);
+  if (!iso) return "Updated —";
+  const diff = Math.max(0, Math.floor((Date.now() - new Date(iso).getTime()) / 1000));
+  if (diff < 60) return `Updated ${diff}s ago`;
+  if (diff < 3600) return `Updated ${Math.floor(diff / 60)}m ago`;
+  if (diff < 86400) return `Updated ${Math.floor(diff / 3600)}h ago`;
+  return `Updated ${Math.floor(diff / 86400)}d ago`;
 };
 
 const MOMENTUM_TREND = {
@@ -195,91 +214,24 @@ export const MomentumTable = ({ rows }) => (
   </div>
 );
 
-export const ComingSoonCard = ({ scannerKey }) => (
-  <div
-    className="relative glass rounded-2xl border border-dashed border-white/10 opacity-40 px-6 py-10 md:py-14 flex flex-col items-center justify-center text-center"
-    data-testid={`coming-soon-${scannerKey}`}
-  >
-    <Clock size={16} className="absolute top-4 right-4 text-slate-600" />
-    <h4 className="font-display text-2xl md:text-3xl font-bold text-slate-300">Coming Soon</h4>
-    <p className="mt-3 text-sm font-light text-slate-500 max-w-sm">
-      This scanner is being calibrated and will activate here as soon as it goes live.
-    </p>
-  </div>
-);
-
 const BIAS_STYLE = {
   Bullish: { color: "text-emerald-300", ring: "border-emerald-400/30", glow: "rgba(52,211,153,0.18)", Icon: TrendingUp, dot: "bg-emerald-400" },
   Bearish: { color: "text-red-300", ring: "border-red-400/30", glow: "rgba(248,113,113,0.18)", Icon: TrendingDown, dot: "bg-red-400" },
   Neutral: { color: "text-amber-300", ring: "border-amber-400/30", glow: "rgba(245,158,11,0.18)", Icon: Minus, dot: "bg-amber-400" },
 };
 
-const TREND_STYLE = {
-  Bullish: { label: "Rising", color: "text-emerald-400", stroke: "#34D399" },
-  Bearish: { label: "Falling", color: "text-red-400", stroke: "#F87171" },
-  Neutral: { label: "Flat", color: "text-slate-400", stroke: "#64748B" },
-};
-
-const VECTOR_LEGS = [
-  { key: "weekly_up", trendKey: "weekly_up_trend", label: "Weekly +200", strikeKey: "up_strike", expiryKey: "weekly_expiry", pf: "0.5% × 3" },
-  { key: "weekly_down", trendKey: "weekly_down_trend", label: "Weekly −200", strikeKey: "down_strike", expiryKey: "weekly_expiry", pf: "0.5% × 3" },
-  { key: "monthly_up", trendKey: "monthly_up_trend", label: "Monthly +200", strikeKey: "up_strike", expiryKey: "monthly_expiry", pf: "0.5% × 3" },
-  { key: "monthly_down", trendKey: "monthly_down_trend", label: "Monthly −200", strikeKey: "down_strike", expiryKey: "monthly_expiry", pf: "0.5% × 3" },
-  { key: "monthly_atm_ce", trendKey: "monthly_atm_ce_trend", label: "Monthly ATM CE", strikeKey: "atm", expiryKey: "monthly_expiry", pf: "3% × 3" },
-  { key: "monthly_atm_pe", trendKey: "monthly_atm_pe_trend", label: "Monthly ATM PE", strikeKey: "atm", expiryKey: "monthly_expiry", pf: "3% × 3" },
-];
-
-const VectorLegCard = ({ leg, signal }) => {
-  const trend = signal[leg.trendKey] || "Neutral";
-  const style = TREND_STYLE[trend] || TREND_STYLE.Neutral;
-  const points = signal.chart?.[leg.key] || [];
-  const strike = signal[leg.strikeKey];
-  const expiry = signal[leg.expiryKey];
-
-  return (
-    <div className="rounded-xl border border-white/10 bg-white/[0.02] p-4" data-testid={`vector-leg-${leg.key}`}>
-      <div className="flex items-center justify-between mb-1">
-        <p className="font-mono-ui text-[10px] uppercase tracking-[0.14em] text-slate-400">{leg.label}</p>
-        <span className={`font-mono-ui text-[10px] uppercase tracking-[0.1em] ${style.color}`}>{style.label}</span>
-      </div>
-      <p className="text-[10px] text-slate-600 mb-2">
-        {strike ? `Strike ${strike}` : ""}{expiry ? ` · exp ${expiry}` : ""} · P&amp;F {leg.pf}
-      </p>
-      {points.length > 1 ? (
-        <div className="h-16">
-          <ResponsiveContainer width="100%" height="100%">
-            <LineChart data={points} margin={{ top: 2, right: 2, left: 2, bottom: 2 }}>
-              <Line type="monotone" dataKey="v" stroke={style.stroke} strokeWidth={1.5} dot={false} isAnimationActive={false} />
-            </LineChart>
-          </ResponsiveContainer>
-        </div>
-      ) : (
-        <div className="h-16 flex items-center justify-center">
-          <p className="text-[11px] text-slate-600">No intraday data yet</p>
-        </div>
-      )}
-    </div>
-  );
-};
-
-const VectorLegsPanel = ({ signal }) => (
-  <div className="mt-4" data-testid="vector-legs-panel">
-    <p className="font-mono-ui text-[10px] uppercase tracking-[0.18em] text-slate-500 mb-3">
-      6-Chart Confluence — straddle premium (weekly &amp; monthly) plus monthly ATM CE/PE
-    </p>
-    <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-      {VECTOR_LEGS.map((leg) => <VectorLegCard key={leg.key} leg={leg} signal={signal} />)}
-    </div>
-  </div>
-);
-
+// Rich, live-data view of the Vector's current call — used as the "Nifty
+// Vector" module's Live Output. Deliberately does not surface anything about
+// how the bias is computed (no strikes, expiries, or leg trends): the public
+// signal API itself only ever returns bias/spot/note/updated_at now, so
+// there is nothing to leak here even if this component tried to.
 const StraddleCompass = ({ signal }) => {
   const s = signal || {};
   const bias = s.bias || "Neutral";
   const style = BIAS_STYLE[bias] || BIAS_STYLE.Neutral;
   const { Icon } = style;
-  const confidence = bias === "Neutral" ? "Awaiting Confluence" : "High Confidence";
   const live = isNseSessionLive();
+  const elapsed = useElapsedLabel(s.updated_at);
 
   const [liveSpot, setLiveSpot] = useState(null);
   useEffect(() => {
@@ -298,55 +250,47 @@ const StraddleCompass = ({ signal }) => {
   const changeNegative = liveSpot?.change?.startsWith("-");
 
   return (
-      <div
-        className={`relative glass rounded-2xl border ${style.ring} overflow-hidden`}
-        style={{ boxShadow: `0 0 60px ${style.glow} inset`, borderLeftWidth: 3 }}
-        data-testid="straddle-compass"
-      >
-        <div className="flex flex-col items-center text-center gap-5 p-6 md:p-10">
-          <p className="font-mono-ui text-[10px] uppercase tracking-[0.28em] text-slate-500">Nifty Directional Bias</p>
-          <div className="flex items-center gap-4">
-            <span className={`inline-flex h-14 w-14 items-center justify-center rounded-xl border ${style.ring} ${style.color}`}>
-              <Icon size={30} />
-            </span>
-            <span className={`font-display text-5xl md:text-6xl font-black tracking-tighter ${style.color}`} data-testid="compass-bias">
-              {bias.toUpperCase()}
-            </span>
-          </div>
-          <span className={`inline-flex items-center rounded-full border px-3 py-1 font-mono-ui text-[10px] uppercase tracking-[0.18em] ${style.ring} ${style.color}`}>
-            {confidence}
+    <div
+      className={`relative rounded-xl border ${style.ring} overflow-hidden`}
+      style={{ boxShadow: `0 0 40px ${style.glow} inset`, borderLeftWidth: 3 }}
+      data-testid="straddle-compass"
+    >
+      <div className="flex flex-col items-center text-center gap-4 p-6 md:p-8">
+        <p className="font-mono-ui text-[10px] uppercase tracking-[0.28em] text-slate-500">Nifty Directional Bias</p>
+        <div className="flex items-center gap-4">
+          <span className={`inline-flex h-12 w-12 items-center justify-center rounded-xl border ${style.ring} ${style.color}`}>
+            <Icon size={26} />
           </span>
-          <p className="font-mono-ui text-xs uppercase tracking-[0.18em] text-slate-500">
-            Trade Confirmation Tool • Not Financial Advice
-          </p>
+          <span className={`font-display text-4xl md:text-5xl font-black tracking-tighter ${style.color}`} data-testid="compass-bias">
+            {bias.toUpperCase()}
+          </span>
         </div>
-        <div className="px-6 md:px-8 py-4 border-t border-white/10 flex flex-wrap items-center justify-between gap-3">
-          <p className="font-mono-ui text-[11px] text-slate-500 flex items-center flex-wrap">
-            {live ? (
-              <LivePulseDot color={style.dot} size="h-2 w-2" />
-            ) : (
-              <span className={`inline-block h-2 w-2 rounded-full ${style.dot}`} />
-            )}
-            <span className="ml-2">Status: <span className={`ml-1 ${style.color}`}>{live ? "Live" : "Standby"}</span></span>
-            {displaySpot && (
-              <span className="ml-4">
-                NIFTY SPOT: <span className="text-slate-300">{displaySpot}</span>
-                {liveSpot?.change && (
-                  <span className={`ml-1 ${changeNegative ? "text-red-400" : "text-emerald-400"}`}>
-                    ({liveSpot.change}, {liveSpot.change_pct}%)
-                  </span>
-                )}
-              </span>
-            )}
-          </p>
-          <p className="text-[11px] font-light text-slate-600 max-w-md">
-            Use as confirmation before entering a trade — an aligned bias supports your CE/PE or futures setup, an opposing bias is a caution signal. Not investment advice.
-          </p>
-        </div>
-        <div className="px-6 md:px-8 pb-6 md:pb-8 pt-2">
-          <VectorLegsPanel signal={s} />
-        </div>
+        <p className="font-mono-ui text-xs uppercase tracking-[0.18em] text-slate-500">
+          Trade Confirmation Engine • Not Financial Advice
+        </p>
       </div>
+      <div className="px-6 md:px-8 py-4 border-t border-white/10 flex flex-wrap items-center justify-between gap-3">
+        <p className="font-mono-ui text-[11px] text-slate-500 flex items-center flex-wrap">
+          {live ? (
+            <LivePulseDot color={style.dot} size="h-2 w-2" />
+          ) : (
+            <span className={`inline-block h-2 w-2 rounded-full ${style.dot}`} />
+          )}
+          <span className="ml-2">System State: <span className={`ml-1 ${style.color}`}>{live ? "Operational" : "Standby"}</span></span>
+          <span className="ml-4 text-slate-600">{elapsed}</span>
+          {displaySpot && (
+            <span className="ml-4">
+              NIFTY SPOT: <span className="text-slate-300">{displaySpot}</span>
+              {liveSpot?.change && (
+                <span className={`ml-1 ${changeNegative ? "text-red-400" : "text-emerald-400"}`}>
+                  ({liveSpot.change}, {liveSpot.change_pct}%)
+                </span>
+              )}
+            </span>
+          )}
+        </p>
+      </div>
+    </div>
   );
 };
 
@@ -357,12 +301,7 @@ const fmtSince = (iso) => {
 };
 
 const TrackRecordPanel = ({ record }) => (
-  <div className="mt-6 pt-6 border-t border-white/10">
-    <div className="flex items-center gap-3 mb-4">
-      <TrendingUp size={14} className="text-sapphire-light" />
-      <span className="font-mono-ui text-[10px] uppercase tracking-[0.22em] text-slate-500">Track Record</span>
-    </div>
-
+  <div data-testid="track-record-panel">
     {!record ? (
       <p className="text-sm text-slate-500">Loading…</p>
     ) : record.low_data ? (
@@ -393,66 +332,436 @@ const TrackRecordPanel = ({ record }) => (
   </div>
 );
 
-const ScannerPreviewCard = ({ scanner, index, rows, hasData }) => {
-  const content = (
-    <>
-      <div className="flex items-center justify-between mb-4 gap-2">
-        <span className="flex items-center gap-3 min-w-0">
-          <span className="font-mono-ui text-xs text-sapphire-light shrink-0">{String(index + 1).padStart(2, "0")}</span>
-          <span className="font-display text-lg md:text-xl font-bold text-white tracking-tight truncate">{scanner.label}</span>
+/* --------------------------- Module registry --------------------------- */
+// Every module shown across the Overview / Scanners tabs. `kind` decides what
+// the "Live Output" section renders: "vector" -> StraddleCompass, "scanner"
+// -> a 3-row preview of that scanner's current leaderboard, "static" ->
+// parameter-driven tools with no standing leaderboard (launch to run them).
+const MODULES = [
+  {
+    key: "nifty-vector",
+    kind: "vector",
+    icon: Compass,
+    title: "Sapphire Nifty Vector",
+    description: "Institutional directional model, used as a trade confirmation engine.",
+    methodology: "Reads Nifty's options market structure for directional pressure across multiple expiries. Exact mechanics are proprietary and not disclosed.",
+    parameters: [
+      { label: "Output", value: "Bullish / Bearish / Neutral" },
+      { label: "Update Cadence", value: "~1 min, NSE hours" },
+    ],
+  },
+  {
+    key: "momentum-engine",
+    kind: "scanner",
+    scannerKey: "momentum",
+    launchPath: "/alpha-terminal/momentum-leaders",
+    icon: Activity,
+    title: "Momentum Engine",
+    description: "Ranks institutional momentum across NSE-listed names.",
+    methodology: "Combines price momentum, volume surge, and conviction scoring into a single ranked list, refreshed each session.",
+    parameters: [
+      { label: "Universe", value: "NSE Cash Market" },
+      { label: "Refresh", value: "Daily, pre-market" },
+    ],
+  },
+  {
+    key: "relative-strength-engine",
+    kind: "scanner",
+    scannerKey: "relative_strength",
+    launchPath: "/alpha-terminal/relative-strength-leaders",
+    icon: Radar,
+    title: "Relative Strength Engine",
+    description: "Ranks the strongest names against the broader market.",
+    methodology: "Scores each name's price performance relative to its peer universe across multiple lookback windows.",
+    parameters: [
+      { label: "Universe", value: "NSE Cash Market" },
+      { label: "Refresh", value: "Daily, pre-market" },
+    ],
+  },
+  {
+    key: "breakout-candidates",
+    kind: "scanner",
+    scannerKey: "breakout",
+    launchPath: "/alpha-terminal/breakout-candidates",
+    icon: TrendingUp,
+    title: "Breakout Candidates",
+    description: "Surfaces names clearing key structural levels with volume confirmation.",
+    methodology: "Flags price action clearing a defined structural level on above-average volume.",
+    parameters: [
+      { label: "Universe", value: "NSE Cash Market" },
+      { label: "Refresh", value: "Daily, pre-market" },
+    ],
+  },
+  {
+    key: "positional-opportunities",
+    kind: "scanner",
+    scannerKey: "positional",
+    launchPath: "/alpha-terminal/positional-opportunities",
+    icon: Target,
+    title: "Positional Opportunities",
+    description: "Multi-session setups suited to positional and swing exposure.",
+    methodology: "Screens for structural setups that develop over multiple sessions rather than intraday turnover.",
+    parameters: [
+      { label: "Universe", value: "NSE Cash Market" },
+      { label: "Refresh", value: "Daily, pre-market" },
+    ],
+  },
+  {
+    key: "sharpe-dashboard",
+    kind: "static",
+    launchPath: "/alpha-terminal/sharpe-dashboard",
+    icon: BarChart3,
+    title: "Sharpe Dashboard",
+    description: "Risk-adjusted opportunity ranking across the Nifty 500.",
+    methodology: "Computes Sharpe, Sortino, and maximum drawdown across the Nifty 500 universe to surface risk-efficient names.",
+    parameters: [
+      { label: "Universe", value: "Nifty 500" },
+      { label: "Metrics", value: "Sharpe · Sortino · Max DD" },
+    ],
+  },
+  {
+    key: "ewma-scanner",
+    kind: "static",
+    launchPath: "/alpha-terminal/ewma-crossover",
+    icon: Sliders,
+    title: "EWMA Scanner",
+    description: "Crossover, acceleration, and trend-filter signals from fast/slow EWMA models.",
+    methodology: "Runs fast/slow exponentially-weighted moving-average crossovers with an acceleration filter against buy-and-hold, on any NSE/BSE/NFO/BFO symbol.",
+    parameters: [
+      { label: "Model", value: "Fast / Slow EWMA" },
+      { label: "Benchmark", value: "Buy & Hold" },
+    ],
+  },
+];
+const SCANNER_MODULES = MODULES.filter((m) => m.kind === "scanner");
+
+const StatusPill = ({ operational }) =>
+  operational ? (
+    <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-400/25 bg-emerald-400/10 px-2.5 py-0.5 font-mono-ui text-[10px] uppercase tracking-wider text-emerald-300 shrink-0">
+      <LivePulseDot size="h-1.5 w-1.5" /> Operational
+    </span>
+  ) : (
+    <span className="inline-flex rounded-full border border-white/15 px-2.5 py-0.5 font-mono-ui text-[10px] uppercase tracking-wider text-slate-500 shrink-0">
+      Calibration in Progress
+    </span>
+  );
+
+const ModuleCard = ({ module, data, signal, expanded, onToggle, onExplorePerformance }) => {
+  const Icon = module.icon;
+  const operational = module.kind === "scanner" ? Boolean(data?.[module.scannerKey]?.length) : true;
+  const rows = module.kind === "scanner" ? (data?.[module.scannerKey] || []) : [];
+
+  return (
+    <div className={`glass rounded-2xl border transition-colors duration-300 ${expanded ? "border-sapphire/40" : "border-white/10"}`} data-testid={`module-${module.key}`}>
+      <button
+        type="button"
+        onClick={onToggle}
+        className="w-full flex items-center justify-between gap-4 p-5 md:p-6 text-left"
+        data-testid={`module-toggle-${module.key}`}
+        aria-expanded={expanded}
+      >
+        <span className="flex items-center gap-3.5 min-w-0">
+          <span className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-white/10 bg-white/[0.03] text-sapphire-light">
+            <Icon size={16} />
+          </span>
+          <span className="min-w-0">
+            <span className="block font-display text-base md:text-lg font-bold text-white tracking-tight truncate">{module.title}</span>
+            <span className="hidden sm:block text-xs font-light text-slate-500 truncate">{module.description}</span>
+          </span>
         </span>
-        {hasData ? (
-          <span className="hidden sm:inline-flex items-center gap-1.5 rounded-full border border-emerald-400/25 bg-emerald-400/10 px-2.5 py-0.5 font-mono-ui text-[10px] uppercase tracking-wider text-emerald-300 shrink-0">
-            <LivePulseDot size="h-1.5 w-1.5" /> Live
-          </span>
+        <span className="flex items-center gap-3 shrink-0">
+          <span className="hidden sm:block"><StatusPill operational={operational} /></span>
+          <ChevronDown size={16} className={`text-slate-500 transition-transform duration-300 ${expanded ? "rotate-180" : ""}`} />
+        </span>
+      </button>
+
+      <AnimatePresence initial={false}>
+        {expanded && (
+          <motion.div
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: "auto", opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            transition={{ duration: 0.4, ease: EASE }}
+            className="overflow-hidden"
+          >
+            <div className="px-5 md:px-6 pb-6 pt-1 border-t border-white/10">
+              <p className="sm:hidden text-xs font-light text-slate-500 mt-4 mb-1">{module.description}</p>
+
+              <div className="mt-4">
+                <p className="font-mono-ui text-[10px] uppercase tracking-[0.18em] text-slate-500 mb-2.5">Live Output</p>
+
+                {module.kind === "vector" && (
+                  <div className="space-y-3">
+                    <StraddleCompass signal={signal} />
+                    {onExplorePerformance && (
+                      <button
+                        type="button"
+                        onClick={onExplorePerformance}
+                        className="inline-flex items-center gap-1.5 text-xs font-medium text-sapphire-light hover:text-white transition-colors"
+                        data-testid="module-explore-performance"
+                      >
+                        Explore Performance <ArrowUpRight size={13} />
+                      </button>
+                    )}
+                  </div>
+                )}
+
+                {module.kind === "scanner" && (
+                  operational ? (
+                    <div className="rounded-xl border border-white/10 bg-white/[0.02] divide-y divide-white/[0.05]" data-testid={`module-preview-${module.key}`}>
+                      {rows.slice(0, 3).map((r) => (
+                        <div key={r.id} className="flex items-center justify-between px-4 py-2.5 text-sm">
+                          <span className="font-display font-bold text-white">{r.ticker}</span>
+                          <span className="flex items-center gap-3">
+                            <span className="font-mono-ui text-xs text-slate-400">{r.momentum_score}</span>
+                            <BiasBadge bias={r.bias} />
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-sm text-slate-500">This engine is still being calibrated and isn't producing live output yet.</p>
+                  )
+                )}
+
+                {module.kind === "static" && (
+                  <p className="text-sm text-slate-500">Parameter-driven — launch the engine to run it against your own inputs.</p>
+                )}
+              </div>
+
+              <div className="mt-5">
+                <p className="font-mono-ui text-[10px] uppercase tracking-[0.18em] text-slate-500 mb-2">Methodology</p>
+                <p className="text-sm font-light text-slate-400 leading-relaxed max-w-2xl">{module.methodology}</p>
+              </div>
+
+              <div className="mt-5 grid grid-cols-2 sm:grid-cols-4 gap-3">
+                {module.parameters.map((p) => (
+                  <div key={p.label} className="rounded-lg border border-white/10 bg-white/[0.02] px-3 py-2.5">
+                    <p className="font-mono-ui text-[9px] uppercase tracking-[0.14em] text-slate-500 mb-1">{p.label}</p>
+                    <p className="text-xs text-slate-300">{p.value}</p>
+                  </div>
+                ))}
+              </div>
+
+              <div className="mt-6 flex items-center gap-5">
+                {module.launchPath && (
+                  <Link to={module.launchPath} className="btn-sapphire !px-5 !py-2.5 text-xs" data-testid={`module-launch-${module.key}`}>
+                    Launch Engine <ArrowUpRight size={13} />
+                  </Link>
+                )}
+                <button type="button" onClick={onToggle} className="text-xs font-medium text-slate-500 hover:text-white transition-colors">
+                  Collapse
+                </button>
+              </div>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
+  );
+};
+
+const OverviewPanel = ({ data, signal, onExplorePerformance }) => {
+  const [expanded, setExpanded] = useState("nifty-vector");
+  const toggle = (key) => setExpanded((k) => (k === key ? null : key));
+  return (
+    <div className="space-y-3" data-testid="panel-overview">
+      {MODULES.map((m) => (
+        <ModuleCard
+          key={m.key}
+          module={m}
+          data={data}
+          signal={signal}
+          expanded={expanded === m.key}
+          onToggle={() => toggle(m.key)}
+          onExplorePerformance={m.kind === "vector" ? onExplorePerformance : null}
+        />
+      ))}
+    </div>
+  );
+};
+
+const ScannersPanel = ({ data }) => {
+  const [expanded, setExpanded] = useState(null);
+  const toggle = (key) => setExpanded((k) => (k === key ? null : key));
+  return (
+    <div className="space-y-3" data-testid="panel-scanners">
+      {SCANNER_MODULES.map((m) => (
+        <ModuleCard key={m.key} module={m} data={data} signal={null} expanded={expanded === m.key} onToggle={() => toggle(m.key)} />
+      ))}
+    </div>
+  );
+};
+
+const LeaderboardsPanel = ({ data }) => {
+  const [active, setActive] = useState("momentum");
+  const rows = data[active] || [];
+  const hasData = rows.length > 0;
+  const activeScanner = SCANNER_ORDER.find((s) => s.key === active);
+
+  return (
+    <div data-testid="panel-leaderboards">
+      <div className="flex items-center gap-2 mb-5 overflow-x-auto">
+        {SCANNER_ORDER.map((s) => (
+          <button
+            key={s.key}
+            type="button"
+            onClick={() => setActive(s.key)}
+            className={`px-3.5 py-1.5 rounded-full font-mono-ui text-[11px] uppercase tracking-[0.1em] whitespace-nowrap border transition-colors duration-300 ${
+              active === s.key ? "border-sapphire-light/50 bg-sapphire/10 text-white" : "border-white/10 text-slate-500 hover:text-slate-300"
+            }`}
+            data-testid={`leaderboard-tab-${s.key}`}
+          >
+            {s.label}
+          </button>
+        ))}
+      </div>
+      {hasData ? (
+        <MomentumTable rows={rows} />
+      ) : (
+        <div className="glass rounded-2xl border border-dashed border-white/10 px-6 py-14 text-center" data-testid={`leaderboard-empty-${active}`}>
+          <p className="font-mono-ui text-[11px] uppercase tracking-[0.28em] text-slate-600 mb-3">{activeScanner?.label}</p>
+          <p className="text-sm font-light text-slate-500 max-w-sm mx-auto">
+            Calibration in progress — this leaderboard will populate here once the engine goes live.
+          </p>
+        </div>
+      )}
+    </div>
+  );
+};
+
+const ResearchPanel = ({ trackRecord, autoReveal }) => {
+  const [reveal, setReveal] = useState(false);
+  const navigate = useNavigate();
+  useEffect(() => { if (autoReveal) setReveal(true); }, [autoReveal]);
+
+  return (
+    <div className="max-w-3xl" data-testid="panel-research">
+      <div className="glass rounded-2xl border border-white/10 p-6 md:p-8 mb-6">
+        {!reveal ? (
+          <>
+            <div className="flex items-center gap-3 mb-2">
+              <TrendingUp size={14} className="text-sapphire-light" />
+              <span className="font-mono-ui text-[10px] uppercase tracking-[0.22em] text-slate-500">Validated Performance</span>
+            </div>
+            <p className="text-sm text-slate-500 mb-5 max-w-md">
+              Directional accuracy of the Sapphire Nifty Vector, evaluated at 15/30/60 minute horizons since the track record began.
+            </p>
+            <button
+              type="button"
+              onClick={() => setReveal(true)}
+              className="inline-flex items-center gap-2 text-sapphire-light hover:text-white transition-colors text-sm font-medium"
+              data-testid="explore-performance-btn"
+            >
+              Explore Performance <ArrowUpRight size={15} />
+            </button>
+          </>
         ) : (
-          <span className="hidden sm:inline-flex rounded-full border border-white/15 px-2.5 py-0.5 font-mono-ui text-[10px] uppercase tracking-wider text-slate-500 shrink-0">
-            Soon
-          </span>
+          <>
+            <div className="flex items-center gap-3 mb-4">
+              <TrendingUp size={14} className="text-sapphire-light" />
+              <span className="font-mono-ui text-[10px] uppercase tracking-[0.22em] text-slate-500">Validated Performance</span>
+            </div>
+            <TrackRecordPanel record={trackRecord} />
+          </>
         )}
       </div>
 
-      {hasData ? (
-        <div className="space-y-2" data-testid={`scanner-preview-rows-${scanner.key}`}>
-          {rows.slice(0, 3).map((r) => (
-            <div key={r.id} className="flex items-center justify-between text-sm">
-              <span className="font-display font-bold text-white">{r.ticker}</span>
-              <span className="font-mono-ui text-slate-400">{r.momentum_score}</span>
-            </div>
-          ))}
-        </div>
-      ) : (
-        <div className="space-y-2.5" data-testid={`scanner-preview-skeleton-${scanner.key}`}>
-          {[0, 1, 2].map((i) => (
-            <div key={i} className="h-3 rounded bg-white/5 animate-pulse" style={{ width: `${70 - i * 14}%` }} />
-          ))}
-        </div>
-      )}
-    </>
-  );
+      <p className="text-xs font-light text-slate-500 leading-relaxed mb-6 max-w-2xl">{DISCLAIMER}</p>
 
-  const cardCls = `glass rounded-2xl border p-5 md:p-6 transition-all duration-300 ${
-    hasData
-      ? "border-white/10 hover:border-sapphire/40 hover:bg-sapphire/[0.03] hover:shadow-[0_0_30px_rgba(31,95,208,0.15)] cursor-pointer"
-      : "border-dashed border-white/10 opacity-40"
-  }`;
-
-  if (!hasData) {
-    return <div className={cardCls} data-testid={`scanner-preview-${scanner.key}`}>{content}</div>;
-  }
-  return (
-    <Link to={`/alpha-terminal/${scanner.path}`} className={`block ${cardCls}`} data-testid={`scanner-preview-${scanner.key}`}>
-      {content}
-    </Link>
+      <a
+        href="/#waitlist"
+        onClick={(e) => { e.preventDefault(); navigate("/"); setTimeout(() => scrollToId("waitlist"), 550); }}
+        className="inline-flex items-center gap-2 text-sapphire-light hover:text-white transition-colors text-sm font-medium"
+        data-testid="terminal-subscribe-link"
+      >
+        Subscribe for daily lists <ArrowUpRight size={15} />
+      </a>
+    </div>
   );
 };
+
+const HeroVectorWidget = ({ signal, onLaunch }) => {
+  const s = signal || {};
+  const bias = s.bias || "Neutral";
+  const style = BIAS_STYLE[bias] || BIAS_STYLE.Neutral;
+  const elapsed = useElapsedLabel(s.updated_at);
+
+  return (
+    <div
+      className={`glass rounded-2xl border ${style.ring} p-6 md:p-8`}
+      style={{ boxShadow: `0 0 60px ${style.glow} inset` }}
+      data-testid="hero-vector-widget"
+    >
+      <p className="font-mono-ui text-[10px] uppercase tracking-[0.24em] text-slate-500 mb-6">Sapphire Nifty Vector</p>
+      <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-6">
+        <div className="flex items-end gap-8 sm:gap-10">
+          <div>
+            <p className="font-mono-ui text-[10px] uppercase tracking-[0.18em] text-slate-500 mb-1.5">Current Bias</p>
+            <p className={`font-display text-4xl md:text-5xl font-black tracking-tighter ${style.color}`} data-testid="hero-bias">
+              {bias.toUpperCase()}
+            </p>
+          </div>
+          <div>
+            <p className="font-mono-ui text-[10px] uppercase tracking-[0.18em] text-slate-500 mb-1.5 whitespace-nowrap">Current State</p>
+            <p className="text-sm text-slate-300 flex items-center gap-2 whitespace-nowrap">
+              <LivePulseDot color={style.dot} size="h-1.5 w-1.5" /> {elapsed}
+            </p>
+          </div>
+        </div>
+        <button type="button" onClick={onLaunch} className="btn-sapphire self-start sm:self-auto whitespace-nowrap" data-testid="hero-launch-terminal">
+          Launch Terminal <ArrowUpRight size={15} />
+        </button>
+      </div>
+    </div>
+  );
+};
+
+const TABS = [
+  { key: "overview", label: "Overview", Icon: LayoutGrid },
+  { key: "models", label: "Models", Icon: FlaskConical },
+  { key: "scanners", label: "Scanners", Icon: Radar },
+  { key: "leaderboards", label: "Leaderboards", Icon: Table2 },
+  { key: "research", label: "Research", Icon: BookOpen },
+];
+
+const TabNav = ({ active, onChange }) => (
+  <div className="sticky top-20 z-30 bg-void/85 backdrop-blur-xl border-y border-white/10" data-testid="terminal-tabnav">
+    <div className="container-x">
+      <div className="flex items-center gap-1 overflow-x-auto py-3">
+        {TABS.map((t) => (
+          <button
+            key={t.key}
+            type="button"
+            onClick={() => onChange(t.key)}
+            className={`relative flex items-center gap-2 px-4 py-2 rounded-lg font-mono-ui text-xs uppercase tracking-[0.12em] whitespace-nowrap transition-colors duration-300 ${
+              active === t.key ? "text-white" : "text-slate-500 hover:text-slate-300"
+            }`}
+            data-testid={`tab-${t.key}`}
+          >
+            {active === t.key && (
+              <motion.span
+                layoutId="terminal-tab-active"
+                className="absolute inset-0 rounded-lg bg-white/[0.06] border border-white/10"
+                transition={{ duration: 0.35, ease: EASE }}
+              />
+            )}
+            <t.Icon size={13} className="relative z-10" />
+            <span className="relative z-10">{t.label}</span>
+          </button>
+        ))}
+      </div>
+    </div>
+  </div>
+);
 
 export default function AlphaTerminal() {
   const [data, setData] = useState({});
   const [signal, setSignal] = useState(null);
   const [trackRecord, setTrackRecord] = useState(null);
   const [loading, setLoading] = useState(true);
-  const navigate = useNavigate();
+  const [activeTab, setActiveTab] = useState("overview");
+  const [researchAutoReveal, setResearchAutoReveal] = useState(false);
 
   useEffect(() => {
     window.scrollTo(0, 0);
@@ -479,110 +788,101 @@ export default function AlphaTerminal() {
     return () => clearInterval(id);
   }, []);
 
+  const handleLaunch = () => {
+    document.getElementById("terminal-app")?.scrollIntoView({ behavior: "smooth" });
+  };
+
+  const handleExplorePerformance = () => {
+    setActiveTab("research");
+    setResearchAutoReveal(true);
+    setTimeout(() => document.getElementById("terminal-app")?.scrollIntoView({ behavior: "smooth" }), 50);
+  };
+
   return (
     <>
       <Navbar />
       <main className="relative bg-void min-h-screen">
-        {/* Hero */}
-        <section className="relative pt-28 pb-10 md:pt-32 md:pb-14 overflow-hidden" data-testid="terminal-hero">
+        {/* Hero — one live widget, nothing else above the fold */}
+        <section className="relative min-h-[calc(100vh-5rem)] flex items-center overflow-hidden" data-testid="terminal-hero">
           <ParticleField density={0.00006} />
+          <div className="absolute inset-0 terminal-grid-bg opacity-40" />
           <div className="absolute inset-0 radial-glow" />
           <div className="absolute inset-0 bg-gradient-to-b from-void/0 to-void pointer-events-none" />
-          <div className="container-x relative z-10">
-            <div className="flex flex-col lg:flex-row lg:items-end lg:justify-between gap-8">
-              <div className="max-w-2xl">
-                <motion.div
-                  initial={{ opacity: 0, y: 16 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ duration: 0.7, ease: EASE }}
-                  className="flex items-center gap-3 mb-6"
-                >
-                  <LivePulseDot />
-                  <span className="font-mono-ui text-[11px] uppercase tracking-[0.28em] text-emerald-300 font-bold">
-                    Live Alpha Terminal
-                  </span>
-                </motion.div>
-                <motion.h1
-                  initial={{ opacity: 0, y: 24 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ duration: 0.9, ease: EASE, delay: 0.1 }}
-                  className="font-display font-black tracking-tighter text-white text-5xl md:text-7xl leading-[0.95]"
-                >
-                  Alpha Terminal
-                </motion.h1>
-                <motion.p
-                  initial={{ opacity: 0, y: 24 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ duration: 0.9, ease: EASE, delay: 0.2 }}
-                  className="mt-6 text-base md:text-lg font-light text-slate-400 leading-relaxed"
-                  data-testid="terminal-subtitle"
-                >
-                  Quantitative market intelligence built using proprietary research
-                  and systematic screening models.
-                </motion.p>
-              </div>
+          <div className="container-x relative z-10 py-16">
+            <div className="max-w-2xl">
+              <motion.div
+                initial={{ opacity: 0, y: 16 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.7, ease: EASE }}
+                className="flex items-center gap-3 mb-6"
+              >
+                <LivePulseDot />
+                <span className="font-mono-ui text-[11px] uppercase tracking-[0.28em] text-emerald-300 font-bold">
+                  Live Alpha Terminal
+                </span>
+              </motion.div>
+              <motion.h1
+                initial={{ opacity: 0, y: 24 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.9, ease: EASE, delay: 0.1 }}
+                className="font-display font-black tracking-tighter text-white text-5xl md:text-6xl leading-[0.95]"
+              >
+                Institutional Market Intelligence
+              </motion.h1>
+              <motion.p
+                initial={{ opacity: 0, y: 24 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.9, ease: EASE, delay: 0.2 }}
+                className="mt-6 text-base md:text-lg font-light text-slate-400 leading-relaxed"
+                data-testid="terminal-subtitle"
+              >
+                Built using proprietary quantitative research, systematic screening models, and systematic decision engines.
+              </motion.p>
             </div>
+
+            <motion.div
+              initial={{ opacity: 0, y: 24 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.9, ease: EASE, delay: 0.3 }}
+              className="mt-10 max-w-xl"
+            >
+              <HeroVectorWidget signal={signal} onLaunch={handleLaunch} />
+            </motion.div>
           </div>
         </section>
 
-        {/* Terminal panels */}
-        <section className="relative pb-20 md:pb-28">
-          <div className="container-x">
-            {loading ? (
-              <div className="flex items-center justify-center py-32 text-slate-500 font-mono-ui text-sm gap-3" data-testid="terminal-loading">
-                <span className="h-2 w-2 rounded-full bg-sapphire-light animate-ping" /> Loading terminal…
+        {/* App shell — horizontal nav switches content in place, no navigation */}
+        <section id="terminal-app" className="relative pb-24 md:pb-28 scroll-mt-20">
+          {loading ? (
+            <div className="flex items-center justify-center py-32 text-slate-500 font-mono-ui text-sm gap-3" data-testid="terminal-loading">
+              <span className="h-2 w-2 rounded-full bg-sapphire-light animate-ping" /> Loading terminal…
+            </div>
+          ) : (
+            <>
+              <TabNav active={activeTab} onChange={setActiveTab} />
+              <div className="container-x pt-8">
+                <AnimatePresence mode="wait">
+                  <motion.div
+                    key={activeTab}
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -8 }}
+                    transition={{ duration: 0.35, ease: EASE }}
+                  >
+                    {activeTab === "overview" && (
+                      <OverviewPanel data={data} signal={signal} onExplorePerformance={handleExplorePerformance} />
+                    )}
+                    {activeTab === "models" && <QuantLab />}
+                    {activeTab === "scanners" && <ScannersPanel data={data} />}
+                    {activeTab === "leaderboards" && <LeaderboardsPanel data={data} />}
+                    {activeTab === "research" && (
+                      <ResearchPanel trackRecord={trackRecord} autoReveal={researchAutoReveal} />
+                    )}
+                  </motion.div>
+                </AnimatePresence>
               </div>
-            ) : (
-              <div className="space-y-10">
-                {/* Sapphire Nifty Vector — the one section that stays fully expanded inline */}
-                <div data-testid="scanner-vector">
-                  <div className="flex items-center gap-4 mb-4">
-                    <Compass size={18} className="text-sapphire-light" />
-                    <span className="font-display text-xl md:text-2xl font-bold text-white tracking-tight">Sapphire Nifty Vector</span>
-                    <span className="hidden sm:inline-flex rounded-full border border-white/15 px-2.5 py-0.5 font-mono-ui text-[10px] uppercase tracking-wider text-slate-500">
-                      Proprietary Signal
-                    </span>
-                  </div>
-                  <StraddleCompass signal={signal} />
-                  <TrackRecordPanel record={trackRecord} />
-                </div>
-
-                {/* Quant Lab */}
-                <div data-testid="scanner-quant-lab">
-                  <div className="flex items-center gap-4 mb-4">
-                    <FlaskConical size={18} className="text-sapphire-light" />
-                    <span className="font-display text-xl md:text-2xl font-bold text-white tracking-tight">Quant Lab</span>
-                    <span className="hidden sm:inline-flex items-center gap-1.5 rounded-full border border-emerald-400/25 bg-emerald-400/10 px-2.5 py-0.5 font-mono-ui text-[10px] uppercase tracking-wider text-emerald-300">
-                      <LivePulseDot size="h-1.5 w-1.5" /> Live
-                    </span>
-                  </div>
-                  <QuantLab />
-                </div>
-
-                {/* Scanners */}
-                <div>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    {SCANNER_ORDER.map((s, i) => {
-                      const rows = data[s.key];
-                      const hasData = rows && rows.length > 0;
-                      return <ScannerPreviewCard key={s.key} scanner={s} index={i} rows={rows} hasData={hasData} />;
-                    })}
-                  </div>
-                </div>
-              </div>
-            )}
-
-            <Reveal className="mt-10">
-              <a
-                href="/#waitlist"
-                onClick={(e) => { e.preventDefault(); navigate("/"); setTimeout(() => scrollToId("waitlist"), 550); }}
-                className="inline-flex items-center gap-2 text-sapphire-light hover:text-white transition-colors text-sm font-medium"
-                data-testid="terminal-subscribe-link"
-              >
-                Subscribe for daily lists <ArrowUpRight size={15} />
-              </a>
-            </Reveal>
-          </div>
+            </>
+          )}
         </section>
       </main>
       <Footer />

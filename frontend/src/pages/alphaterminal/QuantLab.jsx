@@ -1,7 +1,7 @@
 import { Link } from "react-router-dom";
+import { ArrowUpRight } from "lucide-react";
 import ParticleField from "../../components/site/ParticleField";
 import LivePulseDot from "../../components/site/LivePulseDot";
-import { ComingSoonCard } from "../AlphaTerminal";
 
 const TOOLS = [
   { key: "ewma", title: "EWMA Crossover", description: "Fast/slow EWMA crossover backtest vs. buy-and-hold, on any NSE/BSE/NFO/BFO symbol.", active: true, path: "/alpha-terminal/ewma-crossover" },
@@ -49,27 +49,55 @@ export const EmptyState = ({ reason }) => (
   </div>
 );
 
-const ToolCard = ({ tool }) => {
-  if (!tool.active) return <ComingSoonCard scannerKey={tool.key} />;
-  return (
-    <Link
-      to={tool.path}
-      className="group relative block text-left glass rounded-2xl border border-white/10 p-5 md:p-6 transition-all duration-300 hover:border-sapphire/40 hover:bg-sapphire/[0.03] hover:shadow-[0_0_30px_rgba(31,95,208,0.15)] cursor-pointer"
-      data-testid={`quant-tool-${tool.key}`}
-    >
-      <span className="inline-flex items-center gap-1.5 font-mono-ui text-[10px] uppercase tracking-[0.24em] text-sapphire-light mb-3">
-        <LivePulseDot color="bg-sapphire-light" size="h-1.5 w-1.5" /> Available
+// Dense software-module list, not marketing cards — a status dot, the
+// engine name, its system state, and a Launch action for anything active.
+const ToolRow = ({ tool }) => {
+  const content = (
+    <>
+      <span className="flex items-center gap-3.5 min-w-0">
+        <span className={`inline-block h-2 w-2 rounded-full shrink-0 ${tool.active ? "bg-emerald-400" : "bg-slate-600"}`}>
+          {tool.active && <LivePulseDot color="bg-emerald-400" size="h-2 w-2" />}
+        </span>
+        <span className="min-w-0">
+          <span className="block font-display text-sm md:text-base font-bold text-white tracking-tight truncate">{tool.title}</span>
+          <span className="hidden sm:block text-xs font-light text-slate-500 truncate">{tool.description}</span>
+        </span>
       </span>
-      <h4 className="font-display text-lg font-bold text-white mb-2">{tool.title}</h4>
-      <p className="text-sm font-light text-slate-500 leading-relaxed">{tool.description}</p>
+      <span className="flex items-center gap-4 shrink-0">
+        {tool.active ? (
+          <span className="font-mono-ui text-[10px] uppercase tracking-wider text-emerald-300">Operational</span>
+        ) : (
+          <span className="font-mono-ui text-[10px] uppercase tracking-wider text-slate-500">Calibration in Progress</span>
+        )}
+        {tool.active && (
+          <span className="inline-flex items-center gap-1 font-mono-ui text-[10px] uppercase tracking-wider text-sapphire-light">
+            Launch <ArrowUpRight size={11} />
+          </span>
+        )}
+      </span>
+    </>
+  );
+
+  const rowCls = "group flex items-center justify-between gap-4 px-5 py-4 transition-colors duration-300";
+
+  if (!tool.active) {
+    return (
+      <div className={`${rowCls} opacity-50`} data-testid={`quant-tool-${tool.key}`}>
+        {content}
+      </div>
+    );
+  }
+  return (
+    <Link to={tool.path} className={`${rowCls} hover:bg-sapphire/[0.06] cursor-pointer`} data-testid={`quant-tool-${tool.key}`}>
+      {content}
     </Link>
   );
 };
 
 export default function QuantLab() {
   return (
-    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4" data-testid="quant-lab">
-      {TOOLS.map((tool) => <ToolCard key={tool.key} tool={tool} />)}
+    <div className="glass rounded-2xl border border-white/10 divide-y divide-white/[0.06] overflow-hidden" data-testid="quant-lab">
+      {TOOLS.map((tool) => <ToolRow key={tool.key} tool={tool} />)}
     </div>
   );
 }
