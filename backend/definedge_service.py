@@ -290,7 +290,7 @@ class DefinedgeService:
         return fut[idx]
 
     @staticmethod
-    def _pick_monthly_expiry(expiries, today, weekly_expiry=None):
+    def _pick_monthly_expiry(expiries, today, avoid=None):
         """Nifty's monthly expiry = the last (maximum) listed expiry falling
         within a given calendar month — NSE only lists weekly-cadence OPTIDX
         contracts, the month's final one IS the monthly contract, no
@@ -298,11 +298,26 @@ class DefinedgeService:
         month's monthly expiry, rolling to next month's once today is past
         it (no expiries left this month).
 
-        Confirmed rule: if `weekly_expiry` is given and happens to equal the
-        resolved monthly expiry — the last week of the month, where the
-        weekly and monthly contracts are literally the same expiry — rolls
-        forward to NEXT month's monthly instead, so the two Vector legs
-        never end up reading the identical contract twice."""
+        Confirmed rule: once we've entered the monthly contract's own
+        expiry week, the monthly leg shifts to NEXT month's monthly — and
+        that shift must trigger for the WHOLE week, not just the days
+        weekly happens to still be pointing at it. `avoid` takes an
+        iterable of expiries the monthly pick must not collide with; the
+        caller passes BOTH:
+          - the RAW nearest upcoming expiry (before _pick_expiry's Mon/Tue
+            roll) — needed because on Monday/Tuesday OF the monthly's own
+            expiry week, the weekly leg has already rolled PAST the
+            monthly to next week's contract, so comparing only against the
+            rolled weekly value would miss the collision entirely even
+            though we're still sitting inside that same expiry week.
+          - the resolved (possibly rolled) weekly expiry — needed because
+            on Monday/Tuesday of the week TWO WEEKS before month-end, the
+            roll can land weekly FORWARD onto the monthly contract itself.
+        Confirmed against a real screenshot (Friday, no roll: weekly and
+        monthly both landed on the same 28-Jul before the fix, correctly
+        shifting monthly to 25-Aug) and against live master data for a
+        Monday of the monthly's own expiry week (the case the raw-nearest
+        check specifically exists for)."""
         fut = sorted(e for e in expiries if e >= today)
         if not fut:
             return None
@@ -318,7 +333,8 @@ class DefinedgeService:
         if monthly is None:
             monthly = last_in_month(*next_month(today.year, today.month))
 
-        if monthly is not None and weekly_expiry is not None and monthly == weekly_expiry:
+        avoid_set = {e for e in (avoid or []) if e is not None}
+        if monthly is not None and monthly in avoid_set:
             monthly = last_in_month(*next_month(monthly.year, monthly.month))
 
         return monthly
@@ -341,10 +357,12 @@ class DefinedgeService:
 
         today = datetime.now(IST).date()
         all_expiries = sorted(set(sub["_exp"].tolist()))
+        future_expiries = sorted(e for e in all_expiries if e >= today)
+        nearest_expiry = future_expiries[0] if future_expiries else None  # raw, BEFORE _pick_expiry's Mon/Tue roll
         weekly_expiry = self._pick_expiry(all_expiries, today)
         if weekly_expiry is None:
             raise DefinedgeError("No valid NIFTY weekly expiry found in master.")
-        monthly_expiry = self._pick_monthly_expiry(all_expiries, today, weekly_expiry=weekly_expiry)
+        monthly_expiry = self._pick_monthly_expiry(all_expiries, today, avoid=(nearest_expiry, weekly_expiry))
         if monthly_expiry is None:
             raise DefinedgeError("No valid NIFTY monthly expiry found in master.")
 
