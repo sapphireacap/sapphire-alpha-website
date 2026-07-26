@@ -219,12 +219,16 @@ const PrismAlphaCard = ({ no, apiPath, title, subtitle, testId }) => {
       </div>
 
       <div className="flex gap-2 mb-6 border-b border-white/10" data-testid={`${testId}-tabs`}>
-        {[{ key: "live", label: "Live" }, { key: "backtest", label: "Backtest" }].map((t) => (
+        {[{ key: "live", label: "Live" }, { key: "backtest", label: "Backtest", disabled: true }].map((t) => (
           <button
             key={t.key}
-            onClick={() => setTab(t.key)}
+            onClick={() => !t.disabled && setTab(t.key)}
+            disabled={t.disabled}
+            title={t.disabled ? "Coming soon" : undefined}
             className={`px-4 py-2 font-mono-ui text-xs uppercase tracking-[0.14em] border-b-2 transition-colors duration-200 ${
-              tab === t.key ? "border-sapphire-light text-sapphire-light" : "border-transparent text-slate-500 hover:text-slate-300"
+              t.disabled
+                ? "border-transparent text-slate-600 cursor-not-allowed opacity-50"
+                : tab === t.key ? "border-sapphire-light text-sapphire-light" : "border-transparent text-slate-500 hover:text-slate-300"
             }`}
             data-testid={`${testId}-tab-${t.key}`}
           >
