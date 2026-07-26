@@ -267,15 +267,26 @@ def find_triple_bottom_sell(columns: list, i: int) -> bool:
 
 
 def find_low_pole(columns: list, i: int):
-    """4 columns ending at i: O,X,O,X. col(i-1) is a Double Bottom Sell
-    relative to col(i-3) AND continues more than POLE_MIN_BOXES boxes past
-    that breakdown level; col(i) retraces more than 50% of col(i-1)'s range.
-    Returns {'pole_index': i-1} if it fires, else None — pole_index is the
-    "O-column in which the Low Pole occurred" the spec's stop-loss anchors to."""
-    if i < 3:
+    """Whether columns[i] (must be O) is a valid Low Pole COLUMN: a Double
+    Bottom Sell relative to the O column 2 back (col i-2), continuing more
+    than POLE_MIN_BOXES boxes past that breakdown level. Returns
+    {'pole_range': int} if it fires, else None.
+
+    Deliberately does NOT check the >50% retracement here — retracement is
+    checked dynamically in the caller's forward search, against whichever
+    later column is being evaluated as a follow-through, not rigidly
+    against "the very next column after the pole." Caught live against a
+    real Definedge chart: the true Low Pole's retracement didn't complete
+    until several columns later, at the exact same column that also
+    confirmed the Turtle Breakout follow-through (small O/X chop in
+    between never got close to 50%). Requiring retracement in the
+    immediate next column rejected every real Low Pole tested this way —
+    the pole is a real, standing fact about the O column's breakdown
+    regardless of how many columns it takes price to retrace it."""
+    if i < 2:
         return None
-    c0, c1, c2, c3 = columns[i - 3], columns[i - 2], columns[i - 1], columns[i]
-    if c0["direction"] != "O" or c1["direction"] != "X" or c2["direction"] != "O" or c3["direction"] != "X":
+    c0, c1, c2 = columns[i - 2], columns[i - 1], columns[i]
+    if c0["direction"] != "O" or c1["direction"] != "X" or c2["direction"] != "O":
         return None
     if c2["low_level"] >= c0["low_level"]:
         return None  # not even a Double Bottom Sell
@@ -284,10 +295,7 @@ def find_low_pole(columns: list, i: int):
     pole_range = c2["high_level"] - c2["low_level"]
     if pole_range <= 0:
         return None
-    retrace = (c3["high_level"] - c2["low_level"]) / pole_range
-    if retrace <= POLE_MIN_RETRACE:
-        return None
-    return {"pole_index": i - 1}
+    return {"pole_range": pole_range}
 
 
 def find_high_pole(columns: list, i: int):
@@ -595,16 +603,41 @@ def _analyze_option_bars(opt_bars: list, direction: str) -> dict:
     follow_through = None
     search_floor = max(2, len(columns) - 1 - POLE_SEARCH_WINDOW)
     for i in range(len(columns) - 1, search_floor, -1):
-        if not find_low_pole(columns, i):
+        pole_info = find_low_pole(columns, i)
+        if pole_info is None:
             continue
+        pole_range = pole_info["pole_range"]
+        pole_low = columns[i]["low_level"]
+        pole_confirmed = False  # >50% retracement — checked dynamically below, not
+                                 # rigidly against just the column immediately after
+                                 # the pole (see find_low_pole's docstring for why)
         candidate_ft = None
         for j in range(i + 1, len(columns)):
+            if not pole_confirmed:
+                if columns[j]["direction"] != "X":
+                    continue
+                retrace = (columns[j]["high_level"] - pole_low) / pole_range
+                if retrace <= POLE_MIN_RETRACE:
+                    continue
+                pole_confirmed = True  # retracement just completed AT this column —
+                                        # it can also be this same column's follow-through
             if find_aft_immediate(columns, j, "X"):
                 candidate_ft = {"pattern": "aft_immediate", "column": j}
             elif find_turtle_breakout(columns, j, "X"):
                 candidate_ft = {"pattern": "turtle_breakout", "column": j}
             elif find_triple_top_buy(columns, j):
                 candidate_ft = {"pattern": "triple_top_bottom", "column": j}
+            if candidate_ft is not None:
+                break  # the FIRST follow-through after the pole is confirmed AND
+                       # retraced is the entry trigger — not whatever the search
+                       # happens to find last. Caught live: the inner loop had no
+                       # break, so it kept overwriting candidate_ft with every later
+                       # match all the way to the newest column, reporting the LAST
+                       # follow-through found anywhere after the pole instead of the
+                       # one that actually confirmed the entry. Verified against a
+                       # real Definedge chart where the true entry was the FIRST
+                       # Turtle Breakout right after the pole, not a much later,
+                       # higher-priced one.
         if candidate_ft is not None:
             pole_idx, follow_through = i, candidate_ft
             break  # freshest pole that already has a follow-through — stop here
@@ -633,7 +666,7 @@ def _analyze_option_bars(opt_bars: list, direction: str) -> dict:
 
     conditions_met = {
         "pole_column": pole_idx,
-        "pole_price": columns[pole_idx - 1]["low_price"],
+        "pole_price": columns[pole_idx]["low_price"],
         "follow_through_pattern": follow_through["pattern"],
         "follow_through_column": follow_through["column"],
         "xo_zone_now": xo_now,
@@ -650,7 +683,7 @@ def _analyze_option_bars(opt_bars: list, direction: str) -> dict:
         "xo_ok": xo_ok,
         "rsi_ok": rsi_ok,
         "entry_price": opt_bars[-1]["close"],
-        "initial_stop": columns[pole_idx - 1]["low_price"] - 1,  # premium terms — directly meaningful
+        "initial_stop": columns[pole_idx]["low_price"] - 1,  # premium terms — directly meaningful
         "conditions_met": conditions_met,
     }
 
