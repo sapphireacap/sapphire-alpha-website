@@ -18,6 +18,7 @@ import LegalPage from "@/components/site/LegalPage";
 import NotFound from "@/components/site/NotFound";
 import AlphaTerminal from "@/pages/AlphaTerminal";
 import BlackBox from "@/pages/BlackBox";
+import StrategyDetail from "@/pages/blackbox/StrategyDetail";
 import EwmaCrossoverPage from "@/pages/alphaterminal/EwmaCrossoverPage";
 import SharpeDashboardPage from "@/pages/alphaterminal/SharpeDashboardPage";
 import ScannerDetail from "@/pages/alphaterminal/ScannerDetail";
@@ -61,6 +62,7 @@ function App() {
             <Route path="/" element={<Landing />} />
             <Route path="/alpha-terminal" element={<AlphaTerminal />} />
             <Route path="/black-box" element={<BlackBox />} />
+            <Route path="/black-box/:slug" element={<StrategyDetail />} />
             <Route path="/alpha-terminal/ewma-crossover" element={<EwmaCrossoverPage />} />
             <Route path="/alpha-terminal/sharpe-dashboard" element={<SharpeDashboardPage />} />
             <Route path="/alpha-terminal/momentum-leaders" element={<ScannerDetail scannerKey="momentum" label="Intraday Momentum Leaders" />} />
