@@ -131,14 +131,17 @@ def pnf_column_state(prices, box_pct: float = BOX_PCT, reversal_boxes: int = REV
     this directly instead — keeping exactly one copy of the state machine
     avoids the two ever silently diverging.
 
-    Asymmetric reversal — confirmed real Definedge P&F behavior, not the
-    textbook symmetric rule: reversing UP into a fresh X column only ever
-    needs a single box (+box_pct) move off the O column's low. Reversing
-    DOWN into a fresh O column needs the full `reversal_boxes`-box move off
-    the X column's high. Continuation within an already-open column (adding
-    another box the same direction) is unaffected — this only changes the
-    bar for flipping direction, and it's cheaper to flip bullish than
-    bearish.
+    Symmetric reversal — the standard P&F rule, `reversal_boxes` required
+    off the open column's extreme in either direction to flip. An earlier
+    version of this function used an asymmetric rule (1 box to flip
+    bullish, full `reversal_boxes` to flip bearish), believed at the time
+    to match real Definedge behavior; a direct 6-leg cross-check against
+    live NIFTY P&F charts on 2026-07-27 showed that rule wrong on 3 of 6
+    legs (all cases where a leg had fallen hard, then ticked up slightly —
+    the asymmetric rule flipped those bullish early; the real charts
+    hadn't). The plain symmetric rule matched all 6. It also matches
+    blackbox_prism_alpha.py's independent P&F engine, which was symmetric
+    all along.
 
     Returns {"direction": "up"|"down"|None, "extreme_price": float|None} —
     extreme_price is the real price (not log-level) the open column's
@@ -157,7 +160,7 @@ def pnf_column_state(prices, box_pct: float = BOX_PCT, reversal_boxes: int = REV
     for p in vals[1:]:
         lv = level(p)
         if direction is None:
-            if lv >= extreme + 1:
+            if lv >= extreme + reversal_boxes:
                 direction, extreme = "up", lv
             elif lv <= extreme - reversal_boxes:
                 direction, extreme = "down", lv
@@ -169,7 +172,7 @@ def pnf_column_state(prices, box_pct: float = BOX_PCT, reversal_boxes: int = REV
         else:  # down
             if lv < extreme:
                 extreme = lv
-            elif lv >= extreme + 1:
+            elif lv >= extreme + reversal_boxes:
                 direction, extreme = "up", lv
 
     if direction is None:

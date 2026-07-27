@@ -79,7 +79,7 @@ def compute_leg_flip(state: dict, current_spot: float, strike: float, expiry: da
     if state["direction"] == "up":
         flip_premium = extreme_premium * math.exp(-reversal_boxes * scale)
     else:
-        flip_premium = extreme_premium * math.exp(1 * scale)
+        flip_premium = extreme_premium * math.exp(reversal_boxes * scale)
 
     T = years_to_expiry(expiry)
     result = {
