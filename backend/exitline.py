@@ -315,10 +315,12 @@ async def intraday_5min_chart(definedge, segment: str, token: str) -> list:
     out = []
     for b in agg:
         try:
-            label = datetime.strptime(b["ts"], "%d%m%Y%H%M").strftime("%H:%M")
+            dt = datetime.strptime(b["ts"], "%d%m%Y%H%M").replace(tzinfo=IST)
+            label = dt.strftime("%H:%M")
+            time = int(dt.timestamp())
         except ValueError:
-            label = b["ts"]
-        out.append({"t": label, "open": b["open"], "high": b["high"], "low": b["low"], "close": b["close"]})
+            label, time = b["ts"], None
+        out.append({"t": label, "time": time, "open": b["open"], "high": b["high"], "low": b["low"], "close": b["close"]})
     return out
 
 

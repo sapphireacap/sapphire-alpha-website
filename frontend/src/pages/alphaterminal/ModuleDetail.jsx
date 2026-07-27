@@ -413,7 +413,9 @@ export default function ModuleDetail() {
         <Header module={module} />
         <div className="container-x">
           <LiveDashboard module={module} signals={signals} />
-          <HistoricalPerformance module={module} trackRecords={trackRecords} activeIndex={activeIndex} onChangeIndex={setActiveIndex} />
+          {module.kind !== "exitline" && (
+            <HistoricalPerformance module={module} trackRecords={trackRecords} activeIndex={activeIndex} onChangeIndex={setActiveIndex} />
+          )}
         </div>
       </main>
       <Footer />

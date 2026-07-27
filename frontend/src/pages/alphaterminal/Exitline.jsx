@@ -2,12 +2,10 @@ import { useState, useEffect, useRef } from "react";
 import axios from "axios";
 import { toast } from "sonner";
 import { Loader2, Crosshair } from "lucide-react";
-import {
-  ComposedChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine,
-} from "recharts";
+import { createChart, CandlestickSeries, ColorType, LineStyle } from "lightweight-charts";
 import { field, selectCls, label, LoadingParticles, EmptyState } from "./QuantLab";
 
-const POLL_MS = 30000; // keep the intraday chart/LTP live while results are showing
+const POLL_MS = 30000; // keep the LTP marker live while results are showing
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 
@@ -25,61 +23,101 @@ const fmtDate = (iso) => {
 
 const fmtNum = (v) => (v == null ? "—" : Number(v).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
 
-const ZONE_TONE = {
-  breakout_upper: "text-emerald-400 border-emerald-400/30 bg-emerald-400/10",
-  breakout_lower: "text-red-400 border-red-400/30 bg-red-400/10",
-  trading_upper: "text-orange-300 border-orange-300/30 bg-orange-300/10",
-  trading_lower: "text-sky-300 border-sky-300/30 bg-sky-300/10",
-  trading_mid: "text-slate-300 border-white/15 bg-white/5",
-};
-
-const BIAS_TONE = {
-  Long: "text-emerald-400",
-  Short: "text-red-400",
-  Neutral: "text-slate-400",
-};
+// Backend still computes all 11 levels (H1/H2/L1/L2 feed the mid-range
+// commentary text used elsewhere) but only these six are ever shown here —
+// H1/H2/L1/L2/L5 are dropped entirely from display, per request.
+const VISIBLE_LEVELS = ["H5", "H4", "H3", "Pivot", "L3", "L4"];
 
 const LEVEL_COLORS = {
-  H5: "#34D399", H4: "#34D399", H3: "#34D399", H2: "#6EE7B7", H1: "#A7F3D0",
+  H5: "#34D399", H4: "#34D399", H3: "#34D399",
   Pivot: "#94A3B8",
-  L1: "#FECACA", L2: "#FCA5A5", L3: "#F87171", L4: "#F87171", L5: "#F87171",
+  L3: "#F87171", L4: "#F87171",
 };
 
-// H1/H2/H5/L1/L2/L5 sit close together and to Pivot on most instruments —
-// labeling all 11 lines collides on the chart. The signal-relevant ones
-// (H4/H3/L3/L4 boundaries + Pivot) get a text label; the rest still draw as
-// dashed reference lines, just unlabeled — full values are in the ladder.
-const LABELED_LEVELS = new Set(["H4", "H3", "Pivot", "L3", "L4"]);
+// TradingView's own open-source charting engine (not their embeddable
+// tradingview.com widget — that only supports custom price-line overlays
+// via the paid Charting Library). Renders our real Definedge candles with
+// native price lines for the levels, fully under our control.
+const TVChart = ({ chart, levels, ltp }) => {
+  const containerRef = useRef(null);
+  const chartRef = useRef(null);
+  const seriesRef = useRef(null);
+  const priceLinesRef = useRef([]);
 
-const Candle = (props) => {
-  const { x, y, width, height, payload } = props;
-  const { open, close, high, low } = payload;
-  if (high === low || height <= 0) return null;
-  const isUp = close >= open;
-  const color = isUp ? "#34D399" : "#F87171";
-  const scale = height / (high - low);
-  const bodyTop = y + (high - Math.max(open, close)) * scale;
-  const bodyHeight = Math.max(1, Math.abs(open - close) * scale);
-  return (
-    <g>
-      <line x1={x + width / 2} y1={y} x2={x + width / 2} y2={y + height} stroke={color} strokeWidth={1} />
-      <rect x={x + width * 0.2} y={bodyTop} width={width * 0.6} height={bodyHeight} fill={color} />
-    </g>
-  );
-};
+  useEffect(() => {
+    if (!containerRef.current) return undefined;
+    const tvChart = createChart(containerRef.current, {
+      layout: { background: { type: ColorType.Solid, color: "transparent" }, textColor: "#94A3B8" },
+      grid: { vertLines: { color: "rgba(255,255,255,0.06)" }, horzLines: { color: "rgba(255,255,255,0.06)" } },
+      timeScale: { timeVisible: true, secondsVisible: false, borderColor: "rgba(255,255,255,0.1)" },
+      rightPriceScale: { borderColor: "rgba(255,255,255,0.1)" },
+      autoSize: true,
+    });
+    const series = tvChart.addSeries(CandlestickSeries, {
+      upColor: "#34D399", downColor: "#F87171", borderVisible: false,
+      wickUpColor: "#34D399", wickDownColor: "#F87171",
+    });
+    chartRef.current = tvChart;
+    seriesRef.current = series;
+    return () => {
+      tvChart.remove();
+      chartRef.current = null;
+      seriesRef.current = null;
+    };
+  }, []);
 
-const ChartTooltip = ({ active, payload, label: t }) => {
-  if (!active || !payload || !payload.length) return null;
-  const p = payload[0].payload;
-  return (
-    <div className="glass rounded-md border border-white/10 px-3 py-2 text-xs">
-      <p className="text-slate-500 mb-1 font-mono-ui">{t}</p>
-      <p className="text-slate-200 font-mono-ui">O {fmtNum(p.open)} · H {fmtNum(p.high)} · L {fmtNum(p.low)} · C {fmtNum(p.close)}</p>
-    </div>
-  );
-};
+  useEffect(() => {
+    const series = seriesRef.current;
+    const tvChart = chartRef.current;
+    if (!series || !tvChart || !chart || chart.length === 0) return;
 
-const ExitlineChart = ({ chart, levels, ltp }) => {
+    priceLinesRef.current.forEach((pl) => series.removePriceLine(pl));
+    priceLinesRef.current = [];
+
+    series.setData(chart.filter((b) => b.time != null).map((b) => ({
+      time: b.time, open: b.open, high: b.high, low: b.low, close: b.close,
+    })));
+
+    // Levels routinely sit outside the candles' own price range (e.g. Pivot/
+    // L3/L4 well below today's trading band) — the default autoscale only
+    // fits the visible candle data, which would clip those lines off-screen.
+    // Extend the price range to always include every visible level + LTP.
+    series.applyOptions({
+      autoscaleInfoProvider: (original) => {
+        const res = original();
+        const values = VISIBLE_LEVELS.map((k) => levels[k]).filter((v) => v != null);
+        if (ltp != null) values.push(ltp);
+        if (!values.length) return res;
+        const min = Math.min(...values);
+        const max = Math.max(...values);
+        if (!res || !res.priceRange) return { priceRange: { minValue: min, maxValue: max } };
+        return {
+          priceRange: {
+            minValue: Math.min(res.priceRange.minValue, min),
+            maxValue: Math.max(res.priceRange.maxValue, max),
+          },
+          margins: res.margins,
+        };
+      },
+    });
+
+    VISIBLE_LEVELS.forEach((k) => {
+      const v = levels[k];
+      if (v == null) return;
+      priceLinesRef.current.push(series.createPriceLine({
+        price: v, color: LEVEL_COLORS[k] || "#64748B", lineWidth: 1,
+        lineStyle: LineStyle.Dashed, axisLabelVisible: true, title: k,
+      }));
+    });
+    if (ltp != null) {
+      priceLinesRef.current.push(series.createPriceLine({
+        price: ltp, color: "#437EEB", lineWidth: 2,
+        lineStyle: LineStyle.Solid, axisLabelVisible: true, title: "LTP",
+      }));
+    }
+    tvChart.timeScale().fitContent();
+  }, [chart, levels, ltp]);
+
   if (!chart || chart.length === 0) {
     return (
       <div className="glass rounded-2xl border border-white/10 p-6 mb-6 text-center" data-testid="exitline-chart-empty">
@@ -87,48 +125,18 @@ const ExitlineChart = ({ chart, levels, ltp }) => {
       </div>
     );
   }
-  const allValues = [...chart.flatMap((b) => [b.high, b.low]), ...Object.values(levels), ltp];
-  const domain = [Math.min(...allValues) * 0.998, Math.max(...allValues) * 1.002];
 
   return (
     <div className="glass rounded-2xl border border-white/10 p-4 md:p-6 mb-6" data-testid="exitline-chart">
       <p className="font-mono-ui text-[10px] uppercase tracking-[0.18em] text-slate-500 mb-3">Today's Session — 5 Min · Live</p>
-      <div className="h-96">
-        <ResponsiveContainer width="100%" height="100%">
-          <ComposedChart data={chart} margin={{ top: 5, right: 44, left: 0, bottom: 0 }}>
-            <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" vertical={false} />
-            <XAxis dataKey="t" tick={{ fill: "#64748B", fontSize: 10 }} axisLine={{ stroke: "rgba(255,255,255,0.1)" }} tickLine={false} minTickGap={40} />
-            <YAxis
-              domain={domain}
-              tick={{ fill: "#64748B", fontSize: 11 }}
-              axisLine={false}
-              tickLine={false}
-              width={64}
-              orientation="right"
-              tickFormatter={(v) => Number(v).toFixed(2)}
-            />
-            <Tooltip content={<ChartTooltip />} />
-            <Bar dataKey={(d) => [d.low, d.high]} shape={<Candle />} isAnimationActive={false} />
-            {Object.entries(levels).map(([k, v]) => (
-              <ReferenceLine
-                key={k} y={v} stroke={LEVEL_COLORS[k] || "#64748B"} strokeDasharray="3 3" strokeOpacity={0.65}
-                label={LABELED_LEVELS.has(k) ? { value: k, position: "right", fill: LEVEL_COLORS[k] || "#64748B", fontSize: 10 } : undefined}
-              />
-            ))}
-            <ReferenceLine
-              y={ltp} stroke="#437EEB" strokeWidth={1.5}
-              label={{ value: "LTP", position: "right", fill: "#437EEB", fontSize: 10, fontWeight: 700 }}
-            />
-          </ComposedChart>
-        </ResponsiveContainer>
-      </div>
+      <div ref={containerRef} className="h-96" data-testid="exitline-tv-chart" />
     </div>
   );
 };
 
 const Ladder = ({ levels, ltp }) => {
   const rows = [
-    ...Object.entries(levels).map(([k, v]) => ({ key: k, value: v, isLtp: false })),
+    ...VISIBLE_LEVELS.map((k) => ({ key: k, value: levels[k], isLtp: false })),
     { key: "LTP", value: ltp, isLtp: true },
   ].sort((a, b) => b.value - a.value);
 
@@ -154,55 +162,21 @@ const Ladder = ({ levels, ltp }) => {
 
 const ExitlineResults = ({ result }) => (
   <div data-testid="exitline-results">
-    <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
-      <div>
-        <p className="font-display text-xl font-bold text-white">{result.tradingsymbol}</p>
-        <p className="font-mono-ui text-[10px] uppercase tracking-[0.18em] text-slate-500 mt-1">
-          Prev session ({fmtDate(result.prev_date)}) — H ₹{fmtNum(result.high)} · L ₹{fmtNum(result.low)} · C ₹{fmtNum(result.close)}
-        </p>
-      </div>
-      <span className={`inline-flex rounded-full border px-3 py-1 font-mono-ui text-[10px] uppercase tracking-wider ${ZONE_TONE[result.zone] || "text-slate-300 border-white/15"}`}>
-        {result.zone_label}
-      </span>
+    <div className="mb-4">
+      <p className="font-display text-xl font-bold text-white">{result.tradingsymbol}</p>
+      <p className="font-mono-ui text-[10px] uppercase tracking-[0.18em] text-slate-500 mt-1">
+        Prev session ({fmtDate(result.prev_date)}) — H ₹{fmtNum(result.high)} · L ₹{fmtNum(result.low)} · C ₹{fmtNum(result.close)}
+      </p>
     </div>
 
-    <ExitlineChart chart={result.chart} levels={result.levels} ltp={result.ltp} />
+    <TVChart chart={result.chart} levels={result.levels} ltp={result.ltp} />
 
-    <div className="grid md:grid-cols-[1fr,1.2fr] gap-4 mb-6">
+    <div className="max-w-md mb-6">
       <Ladder levels={result.levels} ltp={result.ltp} />
-
-      <div className="glass rounded-2xl border border-white/10 p-5 md:p-6 flex flex-col gap-4">
-        <div>
-          <p className={`font-mono-ui text-[10px] uppercase tracking-[0.18em] mb-1 ${BIAS_TONE[result.bias] || "text-slate-400"}`}>Bias</p>
-          <p className={`font-display text-2xl font-bold ${BIAS_TONE[result.bias] || "text-white"}`}>{result.bias}</p>
-        </div>
-        <div className="grid grid-cols-2 gap-4">
-          <div>
-            <p className="font-mono-ui text-[10px] uppercase tracking-[0.18em] text-slate-500 mb-1">Stop Loss</p>
-            <p className="font-mono-ui text-lg font-bold text-red-400">
-              {result.sl != null ? `₹${fmtNum(result.sl)}` : result.trail_stop ? "Trail" : "—"}
-            </p>
-          </div>
-          <div>
-            <p className="font-mono-ui text-[10px] uppercase tracking-[0.18em] text-slate-500 mb-1">Take Profit</p>
-            <p className="font-mono-ui text-lg font-bold text-emerald-400">
-              {result.tp != null ? `₹${fmtNum(result.tp)}` : "—"}
-              {result.tp_alt != null && <span className="text-slate-500 text-sm font-normal"> (ext. ₹{fmtNum(result.tp_alt)})</span>}
-            </p>
-          </div>
-        </div>
-        {result.trail_stop && (
-          <p className="font-mono-ui text-[10px] uppercase tracking-[0.14em] text-amber-300">Breakout — no fixed target, trail the stop</p>
-        )}
-        <p className="text-sm text-slate-300 leading-relaxed border-t border-white/10 pt-4">{result.reason}</p>
-        {result.commentary && (
-          <p className="text-xs text-slate-500 leading-relaxed">{result.commentary}</p>
-        )}
-      </div>
     </div>
 
     <p className="text-[11px] font-light text-slate-600 max-w-2xl">
-      These levels are fixed for the trading day, computed from the previous session's H/L/C. SL/TP are rule-based suggestions, not guaranteed outcomes — always size and manage risk independently. Not investment advice.
+      These levels are fixed for the trading day, computed from the previous session's H/L/C. Not investment advice.
     </p>
   </div>
 );
