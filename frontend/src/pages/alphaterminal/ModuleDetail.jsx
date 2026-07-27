@@ -276,7 +276,7 @@ const ScannerTrackRecord = ({ scannerKey }) => {
         <ScannerStat label="Trading Days" value={trading_days} />
         <ScannerStat label="Avg. Max Upside" value={fmtPctSigned(overall.avg_best_case_pct)} tone="text-emerald-400" />
         <ScannerStat label="Avg. Max Drawdown" value={fmtPctSigned(overall.avg_worst_case_pct)} tone="text-red-400" />
-        <ScannerStat label="Risk : Reward" value={ratioFmt(overall.risk_reward)} />
+        {/* Risk : Reward card removed for now — re-add once risk < reward (overall.risk_reward available via ratioFmt(overall.risk_reward)). */}
         <ScannerStat label={`Bullish (${bullish.count}) Win Rate`} value={winRatePct(bullish)} tone="text-emerald-400" />
         <ScannerStat label={`Bearish (${bearish.count}) Win Rate`} value={winRatePct(bearish)} tone="text-red-400" />
       </div>
