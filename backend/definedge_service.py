@@ -65,6 +65,8 @@ from typing import Optional
 import httpx
 import pandas as pd
 
+from index_vector_flip import compute_leg_flip, index_flip_summary
+
 logger = logging.getLogger(__name__)
 
 AUTH_BASE = "https://signin.definedgesecurities.com/auth/realms/debroking/dsbpkc"
@@ -120,8 +122,14 @@ ATM_LEG_REVERSAL_BOXES = 3   # 3 boxes ~= 9% — confirmed against a real Define
 # ---------------------------------------------------------------------------
 # Point & Figure engine (pure, unit-testable) — percentage boxes via log grid
 # ---------------------------------------------------------------------------
-def pnf_trend(prices, box_pct: float = BOX_PCT, reversal_boxes: int = REVERSAL_BOXES) -> str:
-    """Return 'Bullish' (last column is X/up), 'Bearish' (O/down) or 'Neutral'.
+def pnf_column_state(prices, box_pct: float = BOX_PCT, reversal_boxes: int = REVERSAL_BOXES) -> dict:
+    """The actual state machine — direction of the currently-open column
+    AND the real price of its extreme (not just the log-level), so a
+    caller can compute "how far to the next reversal" from real numbers.
+    pnf_trend() below is a thin wrapper that just labels the direction;
+    anything needing the extreme price (e.g. index_vector_flip.py) reads
+    this directly instead — keeping exactly one copy of the state machine
+    avoids the two ever silently diverging.
 
     Asymmetric reversal — confirmed real Definedge P&F behavior, not the
     textbook symmetric rule: reversing UP into a fresh X column only ever
@@ -130,10 +138,15 @@ def pnf_trend(prices, box_pct: float = BOX_PCT, reversal_boxes: int = REVERSAL_B
     the X column's high. Continuation within an already-open column (adding
     another box the same direction) is unaffected — this only changes the
     bar for flipping direction, and it's cheaper to flip bullish than
-    bearish."""
+    bearish.
+
+    Returns {"direction": "up"|"down"|None, "extreme_price": float|None} —
+    extreme_price is the real price (not log-level) the open column's
+    extreme corresponds to; None/None if there aren't enough points yet to
+    establish a direction."""
     vals = [float(p) for p in prices if p is not None and float(p) > 0]
     if len(vals) < 5:
-        return "Neutral"
+        return {"direction": None, "extreme_price": None}
 
     scale = math.log(1.0 + box_pct)
     level = lambda p: math.floor(math.log(p) / scale)
@@ -159,11 +172,25 @@ def pnf_trend(prices, box_pct: float = BOX_PCT, reversal_boxes: int = REVERSAL_B
             elif lv >= extreme + 1:
                 direction, extreme = "up", lv
 
-    if direction == "up":
+    if direction is None:
+        return {"direction": None, "extreme_price": None}
+    return {"direction": direction, "extreme_price": math.exp(extreme * scale)}
+
+
+def _trend_label(state: dict) -> str:
+    """Same up/down->Bullish/Bearish labeling pnf_trend() does, for a
+    caller (compute_vector) that already has the pnf_column_state() result
+    in hand and needs the label without recomputing the state machine."""
+    if state["direction"] == "up":
         return "Bullish"
-    if direction == "down":
+    if state["direction"] == "down":
         return "Bearish"
     return "Neutral"
+
+
+def pnf_trend(prices, box_pct: float = BOX_PCT, reversal_boxes: int = REVERSAL_BOXES) -> str:
+    """Return 'Bullish' (last column is X/up), 'Bearish' (O/down) or 'Neutral'."""
+    return _trend_label(pnf_column_state(prices, box_pct, reversal_boxes))
 
 
 def derive_bias(weekly_up_trend: str, weekly_down_trend: str, monthly_up_trend: str, monthly_down_trend: str,
@@ -763,10 +790,14 @@ class DefinedgeService:
             self._single_leg_series(tokens["monthly_atm"]["leg"]["CE"], segment),
             self._single_leg_series(tokens["monthly_atm"]["leg"]["PE"], segment),
         )
-        monthly_up_trend = pnf_trend([p["v"] for p in monthly_up])
-        monthly_down_trend = pnf_trend([p["v"] for p in monthly_down])
-        monthly_atm_ce_trend = pnf_trend([p["v"] for p in monthly_atm_ce], box_pct=ATM_LEG_BOX_PCT, reversal_boxes=ATM_LEG_REVERSAL_BOXES)
-        monthly_atm_pe_trend = pnf_trend([p["v"] for p in monthly_atm_pe], box_pct=ATM_LEG_BOX_PCT, reversal_boxes=ATM_LEG_REVERSAL_BOXES)
+        monthly_up_state = pnf_column_state([p["v"] for p in monthly_up])
+        monthly_down_state = pnf_column_state([p["v"] for p in monthly_down])
+        monthly_atm_ce_state = pnf_column_state([p["v"] for p in monthly_atm_ce], box_pct=ATM_LEG_BOX_PCT, reversal_boxes=ATM_LEG_REVERSAL_BOXES)
+        monthly_atm_pe_state = pnf_column_state([p["v"] for p in monthly_atm_pe], box_pct=ATM_LEG_BOX_PCT, reversal_boxes=ATM_LEG_REVERSAL_BOXES)
+        monthly_up_trend = _trend_label(monthly_up_state)
+        monthly_down_trend = _trend_label(monthly_down_state)
+        monthly_atm_ce_trend = _trend_label(monthly_atm_ce_state)
+        monthly_atm_pe_trend = _trend_label(monthly_atm_pe_state)
 
         signal = {
             "id": f"current_{index_key}",
@@ -793,13 +824,16 @@ class DefinedgeService:
             },
         }
 
+        weekly_up_state = weekly_down_state = None
         if cfg["chart_mode"] == "6":
             weekly_up, weekly_down = await asyncio.gather(
                 self._straddle_series(tokens["weekly"]["legs"]["up"]["CE"], tokens["weekly"]["legs"]["up"]["PE"], segment),
                 self._straddle_series(tokens["weekly"]["legs"]["down"]["CE"], tokens["weekly"]["legs"]["down"]["PE"], segment),
             )
-            weekly_up_trend = pnf_trend([p["v"] for p in weekly_up])
-            weekly_down_trend = pnf_trend([p["v"] for p in weekly_down])
+            weekly_up_state = pnf_column_state([p["v"] for p in weekly_up])
+            weekly_down_state = pnf_column_state([p["v"] for p in weekly_down])
+            weekly_up_trend = _trend_label(weekly_up_state)
+            weekly_down_trend = _trend_label(weekly_down_state)
             bias = derive_bias(weekly_up_trend, weekly_down_trend, monthly_up_trend, monthly_down_trend,
                                 monthly_atm_ce_trend, monthly_atm_pe_trend)
             signal.update({
@@ -824,6 +858,22 @@ class DefinedgeService:
                     f"ATM CE {monthly_atm_ce_trend.lower()}, ATM PE {monthly_atm_pe_trend.lower()} (exp {tokens['monthly']['expiry']})."
                 ),
             })
+
+        # Flip levels — "at what spot level would each leg's premium cross
+        # its reversal threshold", via live Black-Scholes Greeks (see
+        # index_vector_flip.py — Definedge's own API has no Greeks/IV
+        # field). Best-effort: this is a newer, more experimental layer on
+        # top of the already-relied-on bias computation above, which must
+        # never break because a flip-level solve failed.
+        try:
+            signal["flip"] = await self._compute_flip_summary(
+                segment, spot, atm, tokens,
+                monthly_up_state, monthly_down_state, monthly_atm_ce_state, monthly_atm_pe_state,
+                weekly_up_state, weekly_down_state,
+            )
+        except Exception as e:  # noqa: BLE001
+            logger.warning("Index Vector flip summary failed for %s: %s", index_key, e)
+            signal["flip"] = None
 
         now_ist = datetime.now(IST)
         signal["updated_at"] = datetime.now(timezone.utc).isoformat()
@@ -857,3 +907,64 @@ class DefinedgeService:
             await self.db.nifty_signal_history.insert_one(legacy_history)
 
         return signal
+
+    async def _compute_flip_summary(self, segment: str, spot: float, atm: int, tokens: dict,
+                                     monthly_up_state: dict, monthly_down_state: dict,
+                                     monthly_atm_ce_state: dict, monthly_atm_pe_state: dict,
+                                     weekly_up_state: dict = None, weekly_down_state: dict = None) -> dict:
+        """Live LTP for every leg (a fresh quote each, not the last minute-
+        bar close — keeps every leg's "current premium" consistently truly
+        live) feeds compute_leg_flip() per leg, then index_flip_summary()
+        aggregates into the index-level Bullish/Bearish flip levels."""
+        monthly_expiry = datetime.strptime(tokens["monthly"]["expiry"], "%Y-%m-%d").date()
+
+        fetches = {
+            "monthly_up_ce": self.equity_quote(segment, tokens["monthly"]["legs"]["up"]["CE"]),
+            "monthly_up_pe": self.equity_quote(segment, tokens["monthly"]["legs"]["up"]["PE"]),
+            "monthly_down_ce": self.equity_quote(segment, tokens["monthly"]["legs"]["down"]["CE"]),
+            "monthly_down_pe": self.equity_quote(segment, tokens["monthly"]["legs"]["down"]["PE"]),
+            "monthly_atm_ce": self.equity_quote(segment, tokens["monthly_atm"]["leg"]["CE"]),
+            "monthly_atm_pe": self.equity_quote(segment, tokens["monthly_atm"]["leg"]["PE"]),
+        }
+        weekly_expiry = None
+        if weekly_up_state is not None:
+            weekly_expiry = datetime.strptime(tokens["weekly"]["expiry"], "%Y-%m-%d").date()
+            fetches.update({
+                "weekly_up_ce": self.equity_quote(segment, tokens["weekly"]["legs"]["up"]["CE"]),
+                "weekly_up_pe": self.equity_quote(segment, tokens["weekly"]["legs"]["up"]["PE"]),
+                "weekly_down_ce": self.equity_quote(segment, tokens["weekly"]["legs"]["down"]["CE"]),
+                "weekly_down_pe": self.equity_quote(segment, tokens["weekly"]["legs"]["down"]["PE"]),
+            })
+
+        keys = list(fetches.keys())
+        values = await asyncio.gather(*fetches.values())
+        ltp = dict(zip(keys, values))
+
+        leg_results = {
+            "monthly_up": compute_leg_flip(monthly_up_state, spot, tokens["up_strike"], monthly_expiry,
+                                            BOX_PCT, REVERSAL_BOXES, True,
+                                            ce_ltp=ltp["monthly_up_ce"], pe_ltp=ltp["monthly_up_pe"]),
+            "monthly_down": compute_leg_flip(monthly_down_state, spot, tokens["down_strike"], monthly_expiry,
+                                              BOX_PCT, REVERSAL_BOXES, True,
+                                              ce_ltp=ltp["monthly_down_ce"], pe_ltp=ltp["monthly_down_pe"]),
+            "monthly_atm_ce": compute_leg_flip(monthly_atm_ce_state, spot, atm, monthly_expiry,
+                                                ATM_LEG_BOX_PCT, ATM_LEG_REVERSAL_BOXES, False,
+                                                leg_ltp=ltp["monthly_atm_ce"], option_type="CE"),
+            "monthly_atm_pe": compute_leg_flip(monthly_atm_pe_state, spot, atm, monthly_expiry,
+                                                ATM_LEG_BOX_PCT, ATM_LEG_REVERSAL_BOXES, False,
+                                                leg_ltp=ltp["monthly_atm_pe"], option_type="PE"),
+        }
+        if weekly_up_state is not None:
+            leg_results["weekly_up"] = compute_leg_flip(weekly_up_state, spot, tokens["up_strike"], weekly_expiry,
+                                                          BOX_PCT, REVERSAL_BOXES, True,
+                                                          ce_ltp=ltp["weekly_up_ce"], pe_ltp=ltp["weekly_up_pe"])
+            leg_results["weekly_down"] = compute_leg_flip(weekly_down_state, spot, tokens["down_strike"], weekly_expiry,
+                                                            BOX_PCT, REVERSAL_BOXES, True,
+                                                            ce_ltp=ltp["weekly_down_ce"], pe_ltp=ltp["weekly_down_pe"])
+
+        summary = index_flip_summary(leg_results, spot)
+        summary["legs"] = {
+            name: {"direction": r.get("direction"), "flip_spot": r.get("flip_spot"), "flip_spot_alt": r.get("flip_spot_alt")}
+            for name, r in leg_results.items()
+        }
+        return summary

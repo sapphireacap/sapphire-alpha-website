@@ -215,6 +215,8 @@ export const BIAS_STYLE = {
 // so there is nothing to leak here even if this component tried to.
 export const INDEX_LABELS = { NIFTY: "NIFTY", BANKNIFTY: "BANKNIFTY", SENSEX: "SENSEX", BANKEX: "BANKEX" };
 
+const fmtFlipLevel = (v) => (v == null ? "—" : Math.round(v).toLocaleString("en-IN"));
+
 export const StraddleCompass = ({ signal, index = "NIFTY" }) => {
   const s = signal || {};
   const bias = s.bias || "Neutral";
@@ -285,6 +287,20 @@ export const StraddleCompass = ({ signal, index = "NIFTY" }) => {
           )}
         </p>
       </div>
+      {s.flip && (s.flip.bullish?.reachable || s.flip.bearish?.reachable) && (
+        <div className="px-6 md:px-8 py-4 border-t border-white/10 flex flex-col gap-1.5" data-testid="compass-flip-levels">
+          {s.flip.bullish?.reachable && !s.flip.bullish?.already_aligned && (
+            <p className="font-mono-ui text-[11px] text-slate-400">
+              Would need {label} at <span className="text-emerald-400 font-semibold">{fmtFlipLevel(s.flip.bullish.flip_level)}</span> to turn Bullish
+            </p>
+          )}
+          {s.flip.bearish?.reachable && !s.flip.bearish?.already_aligned && (
+            <p className="font-mono-ui text-[11px] text-slate-400">
+              Would need {label} at <span className="text-red-400 font-semibold">{fmtFlipLevel(s.flip.bearish.flip_level)}</span> to turn Bearish
+            </p>
+          )}
+        </div>
+      )}
     </div>
   );
 };

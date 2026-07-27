@@ -929,13 +929,36 @@ DEFAULT_SIGNAL = _default_signal("NIFTY")
 PUBLIC_SIGNAL_FIELDS = ("bias", "spot", "note", "updated_at", "updated_label")
 
 
+def _public_flip_side(side: dict) -> dict:
+    if not side:
+        return {"reachable": False, "reason": "not yet available"}
+    return {
+        "reachable": side.get("reachable", False),
+        "flip_level": side.get("flip_level"),
+        "already_aligned": side.get("already_aligned", False),
+        "reason": side.get("reason"),
+    }
+
+
+def _public_flip(flip: dict) -> Optional[dict]:
+    """Public flip summary keeps only the two headline numbers (or the
+    honest reason one isn't reachable) — the full doc's per-leg "legs"
+    breakdown (which legs, their individual thresholds) stays admin-only,
+    same proprietary-methodology line _public_signal already draws."""
+    if not flip:
+        return None
+    return {"bullish": _public_flip_side(flip.get("bullish")), "bearish": _public_flip_side(flip.get("bearish"))}
+
+
 def _public_signal(doc: dict) -> dict:
     """Strips an Index Vector doc down to what's safe to show site visitors.
     The full doc also carries strikes, expiries, per-leg trend/chart data, and
     P&F box parameters -- exactly the proprietary tracking methodology this is
     not supposed to reveal. Only the admin-authenticated endpoint below (and
     the admin panel that edits this doc) ever sees the rest."""
-    return {field: doc.get(field, DEFAULT_SIGNAL.get(field, "")) for field in PUBLIC_SIGNAL_FIELDS}
+    public = {field: doc.get(field, DEFAULT_SIGNAL.get(field, "")) for field in PUBLIC_SIGNAL_FIELDS}
+    public["flip"] = _public_flip(doc.get("flip"))
+    return public
 
 
 @api_router.get("/terminal/signal")
