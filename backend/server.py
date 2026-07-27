@@ -89,7 +89,7 @@ SCANNERS = [
     {"key": "momentum", "label": "Momentum Leaders", "active": True},
     {"key": "relative_strength", "label": "Relative Strength Leaders", "active": False},
     {"key": "breakout", "label": "Breakout Candidates", "active": False},
-    {"key": "positional", "label": "Positional Opportunities", "active": False},
+    {"key": "swing_picks", "label": "Swing Picks", "active": False},
 ]
 SCANNER_KEYS = [s["key"] for s in SCANNERS]
 
@@ -664,6 +664,8 @@ class StockCreate(BaseModel):
     momentum_score: str = ""
     volume: str = ""
     bias: str = "Neutral"
+    lcp: str = ""      # last close price — Swing Picks
+    buy_at: str = ""   # suggested buy-at level — Swing Picks
 
 
 class Stock(BaseModel):
@@ -675,6 +677,8 @@ class Stock(BaseModel):
     momentum_score: str = ""
     volume: str = ""
     bias: str = "Neutral"
+    lcp: str = ""
+    buy_at: str = ""
     order: int = 0
     created_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
 
@@ -752,6 +756,20 @@ class ScannerReplaceRequest(BaseModel):
     stocks: List[StockCreate]
 
 
+async def _fill_missing_company_names(stocks_data: list):
+    """Best-effort: any row missing a `company` (e.g. Swing Picks' CSV,
+    which has no company-name column at all) gets it looked up from
+    Definedge's own master file — see DefinedgeService.company_name()."""
+    if not definedge.configured() or not any(not s.get("company") for s in stocks_data):
+        return
+    master = await definedge._get_all_master()
+    for s in stocks_data:
+        if not s.get("company"):
+            name = definedge.company_name(master, s["ticker"])
+            if name:
+                s["company"] = name
+
+
 @api_router.post("/admin/terminal/scanner/replace")
 async def replace_scanner_stocks(payload: ScannerReplaceRequest, admin: dict = Depends(get_current_admin)):
     """Atomic full replace of one scanner's rows — for automation (e.g. the
@@ -761,10 +779,16 @@ async def replace_scanner_stocks(payload: ScannerReplaceRequest, admin: dict = D
     connection: either this succeeds and the scanner is fully replaced, or
     it fails and nothing was touched."""
     _validate_scanner(payload.scanner)
+    stocks_data = [s.model_dump() for s in payload.stocks]
+    try:
+        await _fill_missing_company_names(stocks_data)
+    except Exception as e:  # noqa: BLE001 — best-effort, never block the actual scanner replace
+        logger.warning("Company-name auto-fill failed for scanner=%s: %s", payload.scanner, e)
+
     await db.terminal_stocks.delete_many({"scanner": payload.scanner})
     docs = [
-        Stock(**{**s.model_dump(), "scanner": payload.scanner}, order=i).model_dump()
-        for i, s in enumerate(payload.stocks)
+        Stock(**{**s, "scanner": payload.scanner}, order=i).model_dump()
+        for i, s in enumerate(stocks_data)
     ]
     if docs:
         await db.terminal_stocks.insert_many(docs)

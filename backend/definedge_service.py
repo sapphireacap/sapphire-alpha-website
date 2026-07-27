@@ -339,6 +339,21 @@ class DefinedgeService:
 
         return None
 
+    def company_name(self, df: pd.DataFrame, symbol: str) -> Optional[str]:
+        """Full listed company name for an NSE equity, from allmaster.zip's
+        own company-name column (index 14) — same row resolve_symbol() finds
+        for NSE, just reading one more field. Used to auto-fill a scanner
+        row's `company` when the CSV feeding it doesn't carry one (e.g.
+        Swing Picks) — verified live: column 14 holds e.g. "RELIANCE
+        INDUSTRIES LTD" for RELIANCE. Returns None (never raises) when
+        nothing matches."""
+        SEG, SYMBOL, INSTR, NAME = 0, 2, 4, 14
+        symbol = symbol.strip().upper()
+        sub = df[(df[SEG].astype(str) == "NSE") & (df[SYMBOL].astype(str).str.upper() == symbol) & (df[INSTR].astype(str) == "EQ")]
+        if sub.empty:
+            return None
+        return str(sub.iloc[0][NAME]).strip()
+
     @staticmethod
     def _pick_expiry(expiries, today):
         """Nearest weekly expiry; on Monday(0)/Tuesday(1) roll to the NEXT expiry."""

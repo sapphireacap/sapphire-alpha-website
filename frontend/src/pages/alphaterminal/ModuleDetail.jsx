@@ -103,6 +103,41 @@ const Header = ({ module }) => (
   </section>
 );
 
+// Swing Picks isn't a scored/biased list like momentum — just Scrip,
+// Company, LCP, and a reference Buy At level (no momentum score/volume/bias
+// columns), so it gets its own simple table rather than overloading
+// MomentumTable's shape.
+const SwingPicksTable = ({ rows }) => (
+  <div className={`${SURFACE} overflow-hidden`} data-testid="swing-picks-table">
+    <div className="overflow-x-auto">
+      <table className="w-full" style={{ fontVariantNumeric: "tabular-nums" }}>
+        <thead>
+          <tr className="border-b border-white/10">
+            {[["Scrip", "left"], ["Company", "left"], ["LCP", "right"], ["Buy At", "right"]].map(([h, align]) => (
+              <th key={h} className={`px-6 py-5 font-mono-ui text-[11px] uppercase tracking-[0.18em] text-slate-500 font-semibold whitespace-nowrap text-${align}`}>{h}</th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((r, i) => (
+            <tr key={r.id} className="border-b border-white/[0.05] last:border-0" data-testid={`swing-picks-row-${i}`}>
+              <td className="px-6 py-5 font-display text-lg font-extrabold text-white whitespace-nowrap">{r.ticker}</td>
+              <td className="px-6 py-5 text-sm text-slate-300 whitespace-nowrap">{r.company || "—"}</td>
+              <td className="px-6 py-5 font-mono-ui text-sm text-right text-slate-300 whitespace-nowrap">{r.lcp ? `₹${fmtNum(r.lcp)}` : "—"}</td>
+              <td className="px-6 py-5 font-mono-ui text-sm text-right text-sapphire-light whitespace-nowrap">{r.buy_at ? `₹${fmtNum(r.buy_at)}` : "—"}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+    <div className="px-5 md:px-6 py-5 border-t border-white/10">
+      <p className="text-xs font-light text-slate-500 leading-relaxed max-w-4xl" data-testid="swing-picks-disclaimer">
+        Buy At is a reference entry level, not a live trigger — these are multi-day setups meant to be held and reviewed over days to weeks. Not investment advice.
+      </p>
+    </div>
+  </div>
+);
+
 /* ----------------------------- Live Dashboard ----------------------------- */
 const ScannerDashboard = ({ scannerKey }) => {
   const [rows, setRows] = useState(null);
@@ -124,7 +159,7 @@ const ScannerDashboard = ({ scannerKey }) => {
   return (
     <>
       <p className="font-mono-ui text-[11px] text-slate-500 mb-4">Updated: {getMarketUpdatedLabel()}</p>
-      <MomentumTable rows={rows} />
+      {scannerKey === "swing_picks" ? <SwingPicksTable rows={rows} /> : <MomentumTable rows={rows} />}
     </>
   );
 };
