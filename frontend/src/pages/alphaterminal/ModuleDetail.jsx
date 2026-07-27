@@ -11,6 +11,7 @@ import {
 import { getModule } from "./modules";
 import EwmaCrossoverTool from "./EwmaCrossover";
 import SharpeDashboardTool from "./SharpeDashboard";
+import ExitlineTool from "./Exitline";
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 const EASE = [0.16, 1, 0.3, 1];
@@ -166,6 +167,7 @@ const LiveDashboard = ({ module, signals }) => (
     {module.kind === "scanner" && <ScannerDashboard scannerKey={module.scannerKey} />}
     {module.kind === "ewma" && <EwmaCrossoverTool />}
     {module.kind === "sharpe" && <SharpeDashboardTool />}
+    {module.kind === "exitline" && <ExitlineTool />}
   </Section>
 );
 

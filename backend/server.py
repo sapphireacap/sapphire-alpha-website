@@ -18,6 +18,7 @@ from journal_analytics import create_analytics_router
 from quant_lab import create_quant_lab_router
 from ipo_routes import create_ipo_router
 from blackbox_routes import create_blackbox_router
+from exitline_routes import create_exitline_router
 from momentum_track_record import (
     capture_entries as capture_track_record_entries,
     evaluate_pending as evaluate_track_record,
@@ -1202,6 +1203,7 @@ async def on_startup():
         await db.blackbox_lumen_sip_backtest_signals.create_index([("instrument", 1), ("date", 1)])
         await db.blackbox_lumen_sip_backtest_portfolio.create_index("date", unique=True)
         await db.blackbox_lumen_sip_backtest_metrics.create_index("id", unique=True)
+        await db.exitline_levels.create_index([("date", 1), ("segment", 1), ("token", 1)], unique=True)
     except Exception as e:  # noqa: BLE001
         logger.warning(f"Index creation: {e}")
 
@@ -1211,6 +1213,7 @@ analytics_router = create_analytics_router(db, get_current_user)
 quant_lab_router = create_quant_lab_router(db, definedge, get_current_admin, CRON_SECRET)
 ipo_router = create_ipo_router(db, get_current_admin, CRON_SECRET)
 blackbox_router = create_blackbox_router(db, definedge, get_current_admin, CRON_SECRET)
+exitline_router = create_exitline_router(db, definedge)
 
 app.include_router(api_router)
 app.include_router(journal_router, prefix="/api")
@@ -1218,6 +1221,7 @@ app.include_router(analytics_router, prefix="/api")
 app.include_router(quant_lab_router, prefix="/api")
 app.include_router(ipo_router, prefix="/api")
 app.include_router(blackbox_router, prefix="/api")
+app.include_router(exitline_router, prefix="/api")
 
 app.add_middleware(
     CORSMiddleware,

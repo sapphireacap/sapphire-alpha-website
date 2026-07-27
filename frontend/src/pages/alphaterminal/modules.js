@@ -1,15 +1,17 @@
 import {
-  Compass, Activity, Radar, BarChart3, Sliders, TrendingUp, Target,
+  Compass, Crosshair, Activity, Radar, BarChart3, Sliders, TrendingUp, Target,
 } from "lucide-react";
 
 // Every research module shown on the Alpha Terminal directory and served at
 // its own /alpha-terminal/:slug page (ModuleDetail.jsx). `kind` decides what
 // ModuleDetail's Live Dashboard section renders:
-//   "vector"  -> one StraddleCompass per covered index (see indices below) —
-//                the Index Vector's public bias/spot read, per index
-//   "scanner" -> MomentumTable against /terminal/stocks?scanner=<scannerKey>
-//   "ewma"    -> the standalone EwmaCrossoverTool, embedded
-//   "sharpe"  -> the standalone SharpeDashboardTool, embedded
+//   "vector"    -> one StraddleCompass per covered index (see indices below)
+//                  — the Index Vector's public bias/spot read, per index
+//   "scanner"   -> MomentumTable against /terminal/stocks?scanner=<scannerKey>
+//   "ewma"      -> the standalone EwmaCrossoverTool, embedded
+//   "sharpe"    -> the standalone SharpeDashboardTool, embedded
+//   "exitline"  -> the standalone ExitlineTool, embedded (segment -> scrip
+//                  -> Camarilla ladder + SL/TP)
 export const MODULES = [
   {
     slug: "index-vector",
@@ -38,8 +40,25 @@ export const MODULES = [
     },
   },
   {
-    slug: "momentum-engine",
+    slug: "exitline",
     no: "02",
+    kind: "exitline",
+    icon: Crosshair,
+    title: "Exitline",
+    shortDescription: "Camarilla levels with a suggested SL and TP.",
+    category: "Trade Execution",
+    status: "Operational",
+    universe: "NSE Cash, Futures & Options",
+    coverage: "On demand, any symbol",
+    overview: {
+      purpose: "Turns yesterday's high/low/close into a Camarilla pivot ladder against the live price, with a rule-based stop-loss and take-profit.",
+      whatItMeasures: "Classifies the current price into a mean-reversion Trading Zone (S3–R3) or a trend-day Breakout Zone (beyond R4/S4), and derives SL/TP from that read.",
+      interpret: "Near R3/S3, treat it as a mean-reversion trigger with a fixed target; beyond R4/S4, treat it as a trend day — trail the stop, no fixed target.",
+    },
+  },
+  {
+    slug: "momentum-engine",
+    no: "03",
     kind: "scanner",
     scannerKey: "momentum",
     icon: Activity,
@@ -57,7 +76,7 @@ export const MODULES = [
   },
   {
     slug: "relative-strength",
-    no: "03",
+    no: "04",
     kind: "scanner",
     scannerKey: "relative_strength",
     icon: Radar,
@@ -75,7 +94,7 @@ export const MODULES = [
   },
   {
     slug: "sharpe-dashboard",
-    no: "04",
+    no: "05",
     kind: "sharpe",
     icon: BarChart3,
     title: "Sharpe Dashboard",
@@ -92,7 +111,7 @@ export const MODULES = [
   },
   {
     slug: "ewma-scanner",
-    no: "05",
+    no: "06",
     kind: "ewma",
     icon: Sliders,
     title: "EWMA Scanner",
@@ -109,7 +128,7 @@ export const MODULES = [
   },
   {
     slug: "breakout-candidates",
-    no: "06",
+    no: "07",
     kind: "scanner",
     scannerKey: "breakout",
     icon: TrendingUp,
@@ -127,7 +146,7 @@ export const MODULES = [
   },
   {
     slug: "positional-opportunities",
-    no: "07",
+    no: "08",
     kind: "scanner",
     scannerKey: "positional",
     icon: Target,
