@@ -268,15 +268,17 @@ const ScannerTrackRecord = ({ scannerKey }) => {
       </p>
 
       <p className="font-mono-ui text-[10px] uppercase tracking-[0.16em] text-slate-500 font-semibold mb-3">Key Metrics</p>
-      <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mb-4">
+      <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mb-3">
         <ScannerStat label="Overall Win Rate" value={winRatePct(overall)} tone={overall.win_rate > 0.5 ? "text-emerald-400" : "text-white"} />
         <ScannerStat label="Average Return" value={fmtPctSigned(overall.avg_performance_pct)} tone={perfTone(overall.avg_performance_pct)} />
         <ScannerStat label="Median Return" value={fmtPctSigned(overall.median_performance_pct)} tone={perfTone(overall.median_performance_pct)} />
         <ScannerStat label="Total Calls" value={overall.count} />
         <ScannerStat label="Trading Days" value={trading_days} />
+      </div>
+      {/* Risk : Reward card removed for now — re-add once risk < reward (overall.risk_reward available via ratioFmt(overall.risk_reward)). */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4 md:w-4/5 md:mx-auto">
         <ScannerStat label="Avg. Max Upside" value={fmtPctSigned(overall.avg_best_case_pct)} tone="text-emerald-400" />
         <ScannerStat label="Avg. Max Drawdown" value={fmtPctSigned(overall.avg_worst_case_pct)} tone="text-red-400" />
-        {/* Risk : Reward card removed for now — re-add once risk < reward (overall.risk_reward available via ratioFmt(overall.risk_reward)). */}
         <ScannerStat label={`Bullish (${bullish.count}) Win Rate`} value={winRatePct(bullish)} tone="text-emerald-400" />
         <ScannerStat label={`Bearish (${bearish.count}) Win Rate`} value={winRatePct(bearish)} tone="text-red-400" />
       </div>

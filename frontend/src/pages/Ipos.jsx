@@ -63,9 +63,11 @@ const IpoTable = ({ rows, onOpen }) => (
       <table className="w-full text-left">
         <thead>
           <tr className="border-b border-white/10">
-            {["Company", "Exchange", "Price Band", "Resource 1", "Resource 2", "Opens", "Closes", "Status"].map((h) => (
+            {["Company", "Exchange", "Price Band", "GMP (Resource 1)", "GMP (Resource 2)", "Opens", "Closes", "Status"].map((h) => (
               <th key={h} className="px-6 py-5 font-mono-ui text-[11px] uppercase tracking-[0.18em] text-slate-500 font-semibold whitespace-nowrap">
-                {h}
+                {h.startsWith("GMP") ? (
+                  <>GMP <span className="text-[9px] tracking-[0.12em] normal-case">{h.slice(4)}</span></>
+                ) : h}
               </th>
             ))}
           </tr>
@@ -120,11 +122,11 @@ const IpoTable = ({ rows, onOpen }) => (
               <span className="font-mono-ui text-slate-300">{fmtPrice(r.price_band)}</span>
             </div>
             <div>
-              <p className="font-mono-ui text-[10px] uppercase tracking-[0.18em] text-slate-500 mb-1">Resource 1</p>
+              <p className="font-mono-ui text-[10px] uppercase tracking-[0.18em] text-slate-500 mb-1">GMP <span className="text-[8px] normal-case">(Resource 1)</span></p>
               <GmpValue gmp={r.gmp} />
             </div>
             <div>
-              <p className="font-mono-ui text-[10px] uppercase tracking-[0.18em] text-slate-500 mb-1">Resource 2</p>
+              <p className="font-mono-ui text-[10px] uppercase tracking-[0.18em] text-slate-500 mb-1">GMP <span className="text-[8px] normal-case">(Resource 2)</span></p>
               <GmpValue gmp={r.gmp2} />
             </div>
             <div>

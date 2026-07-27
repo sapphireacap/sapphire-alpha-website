@@ -59,7 +59,7 @@ const GmpChart = ({ history }) => {
             contentStyle={{ background: "#0A0D18", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 8, fontSize: 12 }}
             labelStyle={{ color: "#94A3B8" }}
             itemStyle={{ color: "#E2E8F0" }}
-            formatter={(v, name) => [`₹${v}`, GMP_SOURCE_LABELS[name] || name]}
+            formatter={(v, name) => [`₹${v}`, `GMP (${GMP_SOURCE_LABELS[name] || name})`]}
           />
           {sourcesPresent.map((s) => (
             <Line key={s} type="monotone" dataKey={s} name={s} stroke={GMP_SOURCE_COLORS[s] || "#94A3B8"} strokeWidth={1.5} dot={false} isAnimationActive={false} connectNulls />
@@ -74,7 +74,7 @@ const GmpSourceRow = ({ s }) => (
   <div data-testid={`gmp-source-${s.source}`}>
     <p className="font-mono-ui text-[10px] uppercase tracking-[0.18em] text-slate-500 mb-1 flex items-center gap-1.5">
       <span className="h-1.5 w-1.5 rounded-full" style={{ background: GMP_SOURCE_COLORS[s.source] || "#94A3B8" }} />
-      {GMP_SOURCE_LABELS[s.source] || s.source}
+      GMP <span className="text-[9px] normal-case">({GMP_SOURCE_LABELS[s.source] || s.source})</span>
     </p>
     <p className={`font-display text-2xl md:text-3xl font-black tracking-tight ${s.gmp > 0 ? "text-emerald-400" : s.gmp < 0 ? "text-red-400" : "text-white"}`}>
       {s.gmp > 0 ? "+" : ""}₹{s.gmp}
