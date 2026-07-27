@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { Menu, X } from "lucide-react";
 import { useNavigate, useLocation } from "react-router-dom";
 import { scrollToId } from "./SmoothScroll";
+import ThemeToggle from "./ThemeToggle";
 
 const LOGO = "https://customer-assets-agu9un31.emergentagent.net/job_systematic-alpha-1/artifacts/oys5xiox_SAC%20Logo%202.1.png";
 
@@ -104,6 +105,7 @@ export const Navbar = () => {
         </div>
 
         <div className="flex items-center gap-3 shrink-0">
+          <ThemeToggle />
           <button
             onClick={() => goSection("waitlist")}
             className="btn-sapphire hidden sm:inline-flex !px-5 !py-2.5"

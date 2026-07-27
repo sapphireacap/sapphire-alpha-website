@@ -12,6 +12,11 @@ module.exports = {
         sans: ["'Satoshi'", "'Inter'", 'sans-serif'],
         mono: ["'JetBrains Mono'", 'monospace'],
       },
+      borderRadius: {
+        lg: 'var(--radius)',
+        md: 'calc(var(--radius) - 2px)',
+        sm: 'calc(var(--radius) - 4px)'
+      },
       colors: {
         void: '#030408',
         surface: '#0A0D18',
@@ -20,13 +25,6 @@ module.exports = {
           DEFAULT: '#1F5FD0',
           light: '#437EEB',
         },
-      },
-      borderRadius: {
-        lg: 'var(--radius)',
-        md: 'calc(var(--radius) - 2px)',
-        sm: 'calc(var(--radius) - 4px)'
-      },
-      colors: {
         background: 'hsl(var(--background))',
         foreground: 'hsl(var(--foreground))',
         card: {

@@ -13,6 +13,143 @@
     --sapphire-light: #437eeb;
 }
 
+/* Light theme — the site is dark-by-default (see ThemeContext.jsx), this
+   only ever applies once the user explicitly toggles it. Values are CSS
+   variables where the rest of the site already reads a variable (body
+   background, .glass, etc.); everywhere else the site uses fixed Tailwind
+   utility classes directly (text-white, text-slate-400, border-white/10...)
+   rather than semantic tokens, so those are overridden here by class name
+   at the same specificity level. This is one centralized layer rather than
+   touching every component file, since the raw color classes are used
+   500+ times across ~80 files, and Tailwind's own utility rule (0,1,0
+   specificity) reliably loses to `[data-theme="light"] .foo` (0,2,0)
+   without needing !important anywhere. */
+:root[data-theme="light"] {
+    --void: #f6f8fb;
+    --surface: #ffffff;
+    --surface-2: #eef1f7;
+}
+html[data-theme="light"] {
+    color-scheme: light;
+}
+[data-theme="light"] body {
+    color: #0a0f1f;
+}
+[data-theme="light"] select,
+[data-theme="light"] select option {
+    background-color: var(--surface) !important;
+    color: #0a0f1f !important;
+}
+[data-theme="light"] ::selection {
+    background: rgba(31, 95, 208, 0.18);
+    color: #0a0f1f;
+}
+[data-theme="light"] ::-webkit-scrollbar-track {
+    background: #eef1f7;
+}
+[data-theme="light"] ::-webkit-scrollbar-thumb {
+    background: #c7d0e0;
+}
+[data-theme="light"] .glass {
+    background: rgba(10, 15, 31, 0.03);
+    border-color: rgba(10, 15, 31, 0.08);
+}
+[data-theme="light"] .btn-ghost {
+    color: #0a0f1f;
+    border-color: rgba(10, 15, 31, 0.15);
+}
+[data-theme="light"] .btn-ghost:hover {
+    border-color: rgba(10, 15, 31, 0.4);
+    background-color: rgba(10, 15, 31, 0.04);
+}
+[data-theme="light"] .text-stroke,
+[data-theme="light"] .marquee-text {
+    -webkit-text-stroke-color: rgba(10, 15, 31, 0.16);
+}
+[data-theme="light"] .logo-pill {
+    border: 1px solid rgba(10, 15, 31, 0.08);
+}
+
+/* Only html/body's own background reads var(--void) directly (raw CSS);
+   the Tailwind bg-void/bg-surface utility classes compile to their
+   tailwind.config.js hex values at build time, NOT a var() reference, so
+   the variable swap above doesn't reach them — every element actually
+   painting its own bg-void/bg-surface fill (the .App wrapper, panels,
+   etc.) needs its own override here same as the text/border classes. */
+[data-theme="light"] .bg-void { background-color: #f6f8fb; }
+[data-theme="light"] .bg-void\/70 { background-color: rgba(246, 248, 251, 0.7); }
+[data-theme="light"] .bg-void\/80 { background-color: rgba(246, 248, 251, 0.8); }
+[data-theme="light"] .bg-void\/92 { background-color: rgba(246, 248, 251, 0.92); }
+[data-theme="light"] .bg-void\/95 { background-color: rgba(246, 248, 251, 0.95); }
+[data-theme="light"] .bg-surface { background-color: #ffffff; }
+[data-theme="light"] .bg-surface\/40 { background-color: rgba(255, 255, 255, 0.4); }
+
+/* Gradient stops (from-void/0, via-void/0, to-void) — Tailwind gradient
+   utilities write their own --tw-gradient-* custom properties from the
+   config's static hex value, same "not actually var(--void)" issue as
+   the plain bg- utilities above. */
+[data-theme="light"] .from-void\/0 { --tw-gradient-from: rgba(246, 248, 251, 0) var(--tw-gradient-from-position); --tw-gradient-to: rgba(246, 248, 251, 0) var(--tw-gradient-to-position); --tw-gradient-stops: var(--tw-gradient-from), var(--tw-gradient-to); }
+[data-theme="light"] .via-void\/0 { --tw-gradient-to: rgba(246, 248, 251, 0) var(--tw-gradient-to-position); --tw-gradient-stops: var(--tw-gradient-from), rgba(246, 248, 251, 0) var(--tw-gradient-via-position), var(--tw-gradient-to); }
+[data-theme="light"] .to-void { --tw-gradient-to: #f6f8fb var(--tw-gradient-to-position); }
+
+/* Arbitrary-value classes (bg-[#0A0D18], bg-white/[0.03], ...) — a third
+   category beyond named Tailwind colors, generated verbatim from the
+   literal value in the className string, so they need their own escaped
+   selectors here too. Found by grepping for (bg|text|border)-\[...\] and
+   (bg|text|border)-white\/\[...\] across the codebase; re-grep if new
+   arbitrary-value colors get added later, this list isn't derived from
+   anything that stays in sync automatically. */
+[data-theme="light"] .bg-\[\#0A0D18\] { background-color: #ffffff !important; }
+[data-theme="light"] .bg-\[\#050710\] { background-color: #f6f8fb !important; }
+[data-theme="light"] .border-white\/\[0\.05\] { border-color: rgba(10, 15, 31, 0.06) !important; }
+[data-theme="light"] .border-white\/\[0\.06\] { border-color: rgba(10, 15, 31, 0.07) !important; }
+[data-theme="light"] .bg-white\/\[0\.02\] { background-color: rgba(10, 15, 31, 0.025) !important; }
+[data-theme="light"] .bg-white\/\[0\.03\] { background-color: rgba(10, 15, 31, 0.035) !important; }
+[data-theme="light"] .bg-white\/\[0\.08\] { background-color: rgba(10, 15, 31, 0.07) !important; }
+
+[data-theme="light"] .text-white { color: #0a0f1f; }
+[data-theme="light"] .text-white\/70 { color: rgba(10, 15, 31, 0.72); }
+[data-theme="light"] .text-slate-200 { color: #1e293b; }
+[data-theme="light"] .text-slate-300 { color: #334155; }
+[data-theme="light"] .text-slate-400 { color: #475569; }
+[data-theme="light"] .text-slate-500 { color: #64748b; }
+[data-theme="light"] .text-slate-600 { color: #94a3b8; }
+[data-theme="light"] .text-slate-700 { color: #cbd5e1; }
+
+[data-theme="light"] .bg-white { background-color: #0f172a; }
+[data-theme="light"] .bg-white\/5 { background-color: rgba(10, 15, 31, 0.045); }
+[data-theme="light"] .bg-white\/10 { background-color: rgba(10, 15, 31, 0.08); }
+
+[data-theme="light"] .border-white { border-color: #1e293b; }
+[data-theme="light"] .border-white\/5 { border-color: rgba(10, 15, 31, 0.06); }
+[data-theme="light"] .border-white\/10 { border-color: rgba(10, 15, 31, 0.1); }
+[data-theme="light"] .border-white\/15 { border-color: rgba(10, 15, 31, 0.14); }
+[data-theme="light"] .border-white\/20 { border-color: rgba(10, 15, 31, 0.18); }
+[data-theme="light"] .border-white\/30 { border-color: rgba(10, 15, 31, 0.26); }
+
+/* Brand blue as plain text needs more contrast against a light ground than
+   it does glowing on near-black — sapphire (not sapphire-light) is the
+   darker of the two and passes AA on white; fills/borders keep the
+   original tone since those don't need text-level contrast. */
+[data-theme="light"] .text-sapphire-light { color: #1f5fd0; }
+
+/* Status colors (bullish/bearish/warning) — the mid-tones read fine on
+   near-black but fall well under AA contrast on a light ground, so text
+   uses a darker step of the same hue; low-opacity chip fills/borders
+   don't need it. */
+[data-theme="light"] .text-emerald-200 { color: #065f46; }
+[data-theme="light"] .text-emerald-300 { color: #047857; }
+[data-theme="light"] .text-emerald-400,
+[data-theme="light"] .text-emerald-400\/80,
+[data-theme="light"] .text-emerald-400\/90 { color: #059669; }
+[data-theme="light"] .text-red-200 { color: #991b1b; }
+[data-theme="light"] .text-red-300 { color: #b91c1c; }
+[data-theme="light"] .text-red-400,
+[data-theme="light"] .text-red-400\/80,
+[data-theme="light"] .text-red-400\/90 { color: #dc2626; }
+[data-theme="light"] .text-amber-300 { color: #b45309; }
+[data-theme="light"] .text-amber-400 { color: #d97706; }
+
 * {
     box-sizing: border-box;
 }

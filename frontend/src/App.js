@@ -3,6 +3,7 @@ import { useEffect } from "react";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { Toaster } from "sonner";
 
+import { ThemeProvider, useTheme } from "@/contexts/ThemeContext";
 import SmoothScroll from "@/components/site/SmoothScroll";
 import Navbar from "@/components/site/Navbar";
 import Hero from "@/components/site/Hero";
@@ -48,8 +49,10 @@ const Landing = () => (
   </>
 );
 
-function App() {
+const AppShell = () => {
   useEffect(() => { installAuthInterceptor(); }, []);
+  const { theme } = useTheme();
+  const isDark = theme === "dark";
 
   return (
     <div className="App bg-void text-white">
@@ -85,17 +88,22 @@ function App() {
       </BrowserRouter>
       <Toaster
         position="bottom-right"
-        theme="dark"
+        theme={theme}
         toastOptions={{
-          style: {
-            background: "#0A0D18",
-            border: "1px solid rgba(255,255,255,0.1)",
-            color: "#fff",
-            fontFamily: "'Satoshi', sans-serif",
-          },
+          style: isDark
+            ? { background: "#0A0D18", border: "1px solid rgba(255,255,255,0.1)", color: "#fff", fontFamily: "'Satoshi', sans-serif" }
+            : { background: "#ffffff", border: "1px solid rgba(10,15,31,0.1)", color: "#0a0f1f", fontFamily: "'Satoshi', sans-serif" },
         }}
       />
     </div>
+  );
+};
+
+function App() {
+  return (
+    <ThemeProvider>
+      <AppShell />
+    </ThemeProvider>
   );
 }
 
