@@ -121,7 +121,16 @@ ATM_LEG_REVERSAL_BOXES = 3   # 3 boxes ~= 9% — confirmed against a real Define
 # Point & Figure engine (pure, unit-testable) — percentage boxes via log grid
 # ---------------------------------------------------------------------------
 def pnf_trend(prices, box_pct: float = BOX_PCT, reversal_boxes: int = REVERSAL_BOXES) -> str:
-    """Return 'Bullish' (last column is X/up), 'Bearish' (O/down) or 'Neutral'."""
+    """Return 'Bullish' (last column is X/up), 'Bearish' (O/down) or 'Neutral'.
+
+    Asymmetric reversal — confirmed real Definedge P&F behavior, not the
+    textbook symmetric rule: reversing UP into a fresh X column only ever
+    needs a single box (+box_pct) move off the O column's low. Reversing
+    DOWN into a fresh O column needs the full `reversal_boxes`-box move off
+    the X column's high. Continuation within an already-open column (adding
+    another box the same direction) is unaffected — this only changes the
+    bar for flipping direction, and it's cheaper to flip bullish than
+    bearish."""
     vals = [float(p) for p in prices if p is not None and float(p) > 0]
     if len(vals) < 5:
         return "Neutral"
@@ -137,7 +146,7 @@ def pnf_trend(prices, box_pct: float = BOX_PCT, reversal_boxes: int = REVERSAL_B
         if direction is None:
             if lv >= extreme + 1:
                 direction, extreme = "up", lv
-            elif lv <= extreme - 1:
+            elif lv <= extreme - reversal_boxes:
                 direction, extreme = "down", lv
         elif direction == "up":
             if lv > extreme:
@@ -147,7 +156,7 @@ def pnf_trend(prices, box_pct: float = BOX_PCT, reversal_boxes: int = REVERSAL_B
         else:  # down
             if lv < extreme:
                 extreme = lv
-            elif lv >= extreme + reversal_boxes:
+            elif lv >= extreme + 1:
                 direction, extreme = "up", lv
 
     if direction == "up":
