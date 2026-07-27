@@ -54,10 +54,10 @@ const nowIst = () => new Date(Date.now() + 5.5 * 60 * 60 * 1000);
 export const getMarketUpdatedLabel = () => {
   const now = nowIst();
   const mins = now.getUTCHours() * 60 + now.getUTCMinutes();
-  if (isTradingDay(now) && mins >= 9 * 60 + 30) return "Today, 09:30 AM IST";
+  if (isTradingDay(now) && mins >= 9 * 60 + 40) return "Today, 09:40 AM IST";
   let cursor = new Date(now.getTime() - 24 * 60 * 60 * 1000);
   for (let i = 0; i < 14; i++) {
-    if (isTradingDay(cursor)) return `${cursor.getUTCDate()} ${MONTHS[cursor.getUTCMonth()]}, 09:30 AM IST`;
+    if (isTradingDay(cursor)) return `${cursor.getUTCDate()} ${MONTHS[cursor.getUTCMonth()]}, 09:40 AM IST`;
     cursor = new Date(cursor.getTime() - 24 * 60 * 60 * 1000);
   }
   return "—";

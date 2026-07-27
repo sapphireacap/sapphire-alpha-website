@@ -1,0 +1,31 @@
+name: Momentum track record — daily evaluation
+
+# Fills in close/performance data for the Intraday Momentum Leaders scanner's
+# pending calls once their trading day has closed. Entry prices are already
+# captured automatically whenever the (external) daily sync replaces the
+# scanner's stock list — this is the other half, and previously had nothing
+# calling it on a schedule at all, so Historical Performance just stopped
+# updating. 10:15 UTC = 15:45 IST, 15 minutes after NSE close, weekdays only.
+# Safe to run on a holiday/weekend — evaluate_pending() just finds nothing to
+# evaluate and returns cleanly (see backend/momentum_track_record.py).
+on:
+  schedule:
+    - cron: "15 10 * * 1-5"
+  workflow_dispatch: {}
+
+jobs:
+  evaluate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Call momentum-track-evaluate
+        run: |
+          status=$(curl -s -o response.json -w "%{http_code}" -X POST \
+            "https://sapphire-alpha-backend.onrender.com/api/admin/terminal/momentum-track-evaluate" \
+            -H "X-Cron-Key: ${{ secrets.CRON_SECRET }}")
+          echo "HTTP status: $status"
+          cat response.json
+          echo
+          if [ "$status" != "200" ]; then
+            echo "::error::momentum-track-evaluate failed with status $status"
+            exit 1
+          fi
