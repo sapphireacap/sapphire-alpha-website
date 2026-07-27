@@ -675,6 +675,49 @@ const BlackBoxPanel = ({ onAuthError }) => {
   );
 };
 
+/* ------------------------- Momentum Track Record ------------------------- */
+const MomentumTrackRecordPanel = ({ onAuthError }) => {
+  const [running, setRunning] = useState(false);
+  const [lastResult, setLastResult] = useState(null);
+
+  const evaluateNow = async () => {
+    setRunning(true);
+    try {
+      const { data } = await axios.post(`${API}/admin/terminal/momentum-track-evaluate-now`, {}, authHeaders());
+      setLastResult(data);
+      toast.success(`Evaluated ${data.evaluated} call(s)${data.failed ? `, ${data.failed} failed` : ""}.`);
+    } catch (err) {
+      if (err?.response?.status === 401) { onAuthError(); return; }
+      toast.error(errMsg(err, "Evaluation failed."));
+    } finally {
+      setRunning(false);
+    }
+  };
+
+  return (
+    <div className="glass rounded-2xl p-6 md:p-8 mb-10" data-testid="admin-momentum-track-panel">
+      <div className="flex flex-wrap items-center justify-between gap-3 mb-2">
+        <h2 className="font-display text-xl font-bold text-white">Intraday Momentum Leaders — Track Record</h2>
+        <button onClick={evaluateNow} disabled={running} className="btn-ghost !px-4 !py-2 text-sm disabled:opacity-50" data-testid="momentum-track-evaluate-btn">
+          {running ? <><Loader2 size={16} className="animate-spin" /> Evaluating</> : <><RefreshCw size={15} /> Evaluate Now</>}
+        </button>
+      </div>
+      <p className="text-sm text-slate-500 mb-4">
+        Entry prices are captured automatically whenever the scanner's rows are replaced (the daily sync). "Evaluate Now" fetches
+        each pending call's real day OHLC once its session has closed and scores it — Bullish calls profit on a rise, Bearish
+        calls profit on a fall (a decline shows as positive performance for a Bearish call, same convention as scoring a short).
+        The external cron should hit <code className="text-slate-400">/api/admin/terminal/momentum-track-evaluate</code> once/day
+        shortly after 15:30 IST close.
+      </p>
+      {lastResult && (
+        <div className="text-xs text-slate-500 font-mono-ui" data-testid="momentum-track-last-result">
+          Evaluated: {lastResult.evaluated} · Not yet closed: {lastResult.not_yet_closed} · Failed: {lastResult.failed} · Total pending: {lastResult.total_pending}
+        </div>
+      )}
+    </div>
+  );
+};
+
 /* ------------------------------ IPO Section ------------------------------ */
 const EXCHANGES = ["NSE", "BSE"];
 const emptyIpo = () => ({
@@ -1058,6 +1101,7 @@ const Dashboard = ({ onLogout }) => {
         <QuantLabPanel onAuthError={onLogout} />
         <IpoPanel onAuthError={onLogout} />
         <BlackBoxPanel onAuthError={onLogout} />
+        <MomentumTrackRecordPanel onAuthError={onLogout} />
 
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-8">
           <div>

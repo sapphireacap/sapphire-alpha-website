@@ -18,6 +18,11 @@ from journal_analytics import create_analytics_router
 from quant_lab import create_quant_lab_router
 from ipo_routes import create_ipo_router
 from blackbox_routes import create_blackbox_router
+from momentum_track_record import (
+    capture_entries as capture_track_record_entries,
+    evaluate_pending as evaluate_track_record,
+    get_track_record_summary,
+)
 from journal_models import DEFAULT_SETUP_TAGS, DEFAULT_EMOTION_TAGS
 from pathlib import Path
 from pydantic import BaseModel, Field, EmailStr, ConfigDict
@@ -762,7 +767,41 @@ async def replace_scanner_stocks(payload: ScannerReplaceRequest, admin: dict = D
     ]
     if docs:
         await db.terminal_stocks.insert_many(docs)
+    try:
+        await capture_track_record_entries(db, definedge, payload.scanner, docs)
+    except Exception as e:  # noqa: BLE001 — never let track-record capture break the actual scanner replace
+        logger.warning("Track record entry capture failed for scanner=%s: %s", payload.scanner, e)
     return {"status": "ok", "count": len(docs)}
+
+
+# ---------------------------------------------------------------------------
+# Scanner track record — how a scanner's Bullish/Bearish calls actually
+# performed. Entry prices are captured automatically inside
+# replace_scanner_stocks() above (best-effort, non-blocking); evaluation
+# (fetching each call's day OHLC once its trading session has closed) is a
+# separate step, same cron+admin-manual split as every other scheduled job
+# in this codebase — see momentum_track_record.py for the actual logic.
+# ---------------------------------------------------------------------------
+@api_router.post("/admin/terminal/momentum-track-evaluate")
+async def momentum_track_evaluate_cron(request: Request):
+    """External-cron entry point — recommend once/day shortly after 15:30
+    IST market close. X-Cron-Key gated like every other scheduled job here,
+    not an admin login (machine caller)."""
+    if not CRON_SECRET or request.headers.get("X-Cron-Key") != CRON_SECRET:
+        raise HTTPException(status_code=401, detail="Invalid cron key")
+    return await evaluate_track_record(db, definedge, scanner="momentum")
+
+
+@api_router.post("/admin/terminal/momentum-track-evaluate-now")
+async def momentum_track_evaluate_admin(admin: dict = Depends(get_current_admin)):
+    """Same evaluation, for manual testing from the admin panel."""
+    return await evaluate_track_record(db, definedge, scanner="momentum")
+
+
+@api_router.get("/terminal/scanner-track-record")
+async def scanner_track_record(scanner: str = "momentum"):
+    _validate_scanner(scanner)
+    return await get_track_record_summary(db, scanner)
 
 
 # ---------------------------------------------------------------------------
@@ -1125,6 +1164,8 @@ async def on_startup():
         await db.playbooks.create_index("user_id")
         await db.nifty_signal_history.create_index([("updated_at", -1)])
         await db.index_signal_history.create_index([("index", 1), ("updated_at", -1)])
+        await db.scanner_track_record.create_index([("scanner", 1), ("date", -1)])
+        await db.scanner_track_record.create_index([("scanner", 1), ("date", 1), ("ticker", 1)], unique=True)
         await db.quant_lab_ewma_cache.create_index(
             [("segment", 1), ("symbol", 1), ("fast_span", 1), ("slow_span", 1)], unique=True
         )

@@ -596,6 +596,26 @@ class DefinedgeService:
         self._spot_cache[index_key] = (now, result)
         return result
 
+    async def equity_quote(self, segment: str, token: str) -> float:
+        """Uncached, one-shot LTP lookup for an arbitrary equity token (any
+        NSE/BSE stock, not just an index) — used by momentum_track_record.py
+        to capture a scanner recommendation's entry price at the moment it's
+        published. No caching here (unlike spot_quote/vix_quote): this is
+        called once per stock per day, not polled, so there's nothing to
+        protect against."""
+        session = await self._session_key()
+        url = f"{QUOTES_BASE}/quotes/{segment}/{token}"
+        async with httpx.AsyncClient(timeout=10) as c:
+            r = await c.get(url, headers={"Authorization": session})
+        if r.status_code == 401:
+            raise DefinedgeError("Definedge session expired. Please login again (OTP).")
+        if r.status_code != 200:
+            raise DefinedgeError(f"Quote failed ({r.status_code}) for {segment}/{token}.")
+        ltp = r.json().get("ltp")
+        if ltp is None:
+            raise DefinedgeError(f"No LTP in quote response for {segment}/{token}.")
+        return float(ltp)
+
     async def vix_quote(self) -> Optional[float]:
         """Cached India VIX LTP — same caching rationale as spot_quote() (many
         concurrent journal trade-enrichment calls shouldn't each hit Definedge).

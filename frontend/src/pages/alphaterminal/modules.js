@@ -43,7 +43,7 @@ export const MODULES = [
     kind: "scanner",
     scannerKey: "momentum",
     icon: Activity,
-    title: "Momentum Engine",
+    title: "Intraday Momentum Leaders",
     shortDescription: "Ranks institutional momentum across NSE.",
     category: "Screening Engine",
     status: "Operational",

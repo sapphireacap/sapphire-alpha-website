@@ -169,6 +169,96 @@ const LiveDashboard = ({ module, signals }) => (
   </Section>
 );
 
+/* ------------------------ Scanner track record (Momentum) ------------------------ */
+const fmtNum = (v, dp = 2) => (v == null ? "—" : Number(v).toFixed(dp));
+const fmtPctSigned = (v, dp = 2) => (v == null ? "—" : `${v > 0 ? "+" : ""}${Number(v).toFixed(dp)}%`);
+
+const ScannerStat = ({ label, value, tone = "text-white" }) => (
+  <div className={`${SURFACE} p-4 text-center`}>
+    <p className="font-mono-ui text-[10px] uppercase tracking-[0.16em] text-slate-500 mb-1.5">{label}</p>
+    <p className={`font-mono-ui text-xl font-bold ${tone}`}>{value}</p>
+  </div>
+);
+
+// Real, date-wise performance tracking for the "momentum" scanner — captured
+// automatically when the scanner's rows are replaced (entry price at that
+// moment) and scored once each day's session closes. See
+// backend/momentum_track_record.py for the bullish/bearish scoring rule.
+// This is the only scanner with real history right now; other scanner-kind
+// modules still fall through to the generic "still accumulating" message.
+const ScannerTrackRecord = ({ scannerKey }) => {
+  const [record, setRecord] = useState(null);
+  useEffect(() => {
+    axios.get(`${API}/terminal/scanner-track-record`, { params: { scanner: scannerKey } })
+      .then((r) => setRecord(r.data)).catch(() => setRecord({ has_data: false }));
+  }, [scannerKey]);
+
+  if (!record) {
+    return <div className="flex items-center justify-center py-16 text-slate-500 font-mono-ui text-sm gap-3"><Loader2 className="animate-spin" size={16} /> Loading…</div>;
+  }
+  if (!record.has_data) {
+    return (
+      <div className={`${SURFACE} border-dashed px-6 py-14 text-center`} data-testid="momentum-track-empty">
+        <p className="text-sm font-light text-slate-500 max-w-md mx-auto">
+          No calls have been scored yet. Each day's recommendations are graded once that trading session closes — check back after a few sessions for a meaningful read.
+        </p>
+      </div>
+    );
+  }
+
+  const { overall, bullish, bearish, recent, since } = record;
+  const winRatePct = (r) => (r?.win_rate != null ? `${(r.win_rate * 100).toFixed(0)}%` : "—");
+
+  return (
+    <>
+      <p className="text-xs text-slate-500 mb-4">
+        Tracking since <span className="text-slate-300">{since}</span> — {overall.count} call{overall.count === 1 ? "" : "s"} scored.
+      </p>
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
+        <ScannerStat label="Overall Win Rate" value={winRatePct(overall)} tone={overall.win_rate > 0.5 ? "text-emerald-400" : "text-white"} />
+        <ScannerStat label="Overall Avg. Performance" value={fmtPctSigned(overall.avg_performance_pct)} tone={overall.avg_performance_pct > 0 ? "text-emerald-400" : overall.avg_performance_pct < 0 ? "text-red-400" : "text-white"} />
+        <ScannerStat label={`Bullish (${bullish.count})`} value={winRatePct(bullish)} tone="text-emerald-400" />
+        <ScannerStat label={`Bearish (${bearish.count})`} value={winRatePct(bearish)} tone="text-red-400" />
+      </div>
+
+      {recent.length > 0 && (
+        <div className={`${SURFACE} overflow-hidden`}>
+          <div className="overflow-x-auto">
+            <table className="w-full text-left min-w-[640px]">
+              <thead>
+                <tr className="border-b border-white/10">
+                  {["Date", "Ticker", "Bias", "Entry", "Close", "Performance", "Result"].map((h) => (
+                    <th key={h} className="px-4 py-3 font-mono-ui text-[10px] uppercase tracking-[0.14em] text-slate-500 font-semibold whitespace-nowrap">{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {recent.map((r) => (
+                  <tr key={r.id} className="border-b border-white/[0.05] last:border-0" data-testid={`momentum-track-row-${r.id}`}>
+                    <td className="px-4 py-2.5 text-sm text-slate-300 whitespace-nowrap">{r.date}</td>
+                    <td className="px-4 py-2.5 text-sm font-bold text-white whitespace-nowrap">{r.ticker}</td>
+                    <td className="px-4 py-2.5 text-sm whitespace-nowrap"><span className={r.bias === "Bullish" ? "text-emerald-400" : "text-red-400"}>{r.bias}</span></td>
+                    <td className="px-4 py-2.5 font-mono-ui text-sm text-slate-300 whitespace-nowrap">₹{fmtNum(r.entry_price)}</td>
+                    <td className="px-4 py-2.5 font-mono-ui text-sm text-slate-300 whitespace-nowrap">₹{fmtNum(r.close_price)}</td>
+                    <td className={`px-4 py-2.5 font-mono-ui text-sm whitespace-nowrap ${r.performance_pct > 0 ? "text-emerald-400" : "text-red-400"}`}>{fmtPctSigned(r.performance_pct)}</td>
+                    <td className="px-4 py-2.5 text-sm whitespace-nowrap">
+                      {r.correct ? <span className="text-emerald-400">Correct</span> : <span className="text-red-400">Incorrect</span>}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+      <p className="text-[11px] font-light text-slate-600 mt-4">
+        A Bullish call profits if price rises by close; a Bearish call profits if price falls (shown as positive performance either way).
+        Past performance does not guarantee future results — not investment advice.
+      </p>
+    </>
+  );
+};
+
 /* -------------------------- Historical Performance -------------------------- */
 const HistoricalPerformance = ({ module, trackRecords, activeIndex, onChangeIndex }) => (
   <Section no="02" title="Historical Performance" testId="section-historical-performance" collapsible>
@@ -179,6 +269,8 @@ const HistoricalPerformance = ({ module, trackRecords, activeIndex, onChangeInde
           <TrackRecordPanel record={trackRecords[activeIndex]} />
         </div>
       </>
+    ) : module.scannerKey === "momentum" ? (
+      <ScannerTrackRecord scannerKey={module.scannerKey} />
     ) : (
       <div className={`${SURFACE} border-dashed px-6 py-14 text-center`} data-testid="historical-empty">
         <p className="text-sm font-light text-slate-500 max-w-md mx-auto">
