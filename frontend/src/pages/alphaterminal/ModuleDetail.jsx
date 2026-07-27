@@ -172,6 +172,11 @@ const LiveDashboard = ({ module, signals }) => (
 /* ------------------------ Scanner track record (Momentum) ------------------------ */
 const fmtNum = (v, dp = 2) => (v == null ? "—" : Number(v).toFixed(dp));
 const fmtPctSigned = (v, dp = 2) => (v == null ? "—" : `${v > 0 ? "+" : ""}${Number(v).toFixed(dp)}%`);
+const fmtDateLong = (iso) => {
+  if (!iso) return "—";
+  const d = new Date(`${iso}T00:00:00`);
+  return d.toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" });
+};
 
 const ScannerStat = ({ label, value, tone = "text-white" }) => (
   <div className={`${SURFACE} p-4 text-center`}>
@@ -188,6 +193,7 @@ const ScannerStat = ({ label, value, tone = "text-white" }) => (
 // modules still fall through to the generic "still accumulating" message.
 const ScannerTrackRecord = ({ scannerKey }) => {
   const [record, setRecord] = useState(null);
+  const [selectedDate, setSelectedDate] = useState("all");
   useEffect(() => {
     axios.get(`${API}/terminal/scanner-track-record`, { params: { scanner: scannerKey } })
       .then((r) => setRecord(r.data)).catch(() => setRecord({ has_data: false }));
@@ -208,6 +214,8 @@ const ScannerTrackRecord = ({ scannerKey }) => {
 
   const { overall, bullish, bearish, recent, since } = record;
   const winRatePct = (r) => (r?.win_rate != null ? `${(r.win_rate * 100).toFixed(0)}%` : "—");
+  const availableDates = [...new Set(recent.map((r) => r.date))].sort((a, b) => (a < b ? 1 : -1));
+  const visibleRows = selectedDate === "all" ? recent : recent.filter((r) => r.date === selectedDate);
 
   return (
     <>
@@ -223,26 +231,57 @@ const ScannerTrackRecord = ({ scannerKey }) => {
 
       {recent.length > 0 && (
         <div className={`${SURFACE} overflow-hidden`}>
+          <div className="flex items-center justify-between gap-3 px-4 py-3 border-b border-white/10">
+            <span className="font-mono-ui text-[10px] uppercase tracking-[0.14em] text-slate-500 font-semibold">
+              {visibleRows.length} call{visibleRows.length === 1 ? "" : "s"}
+            </span>
+            <label className="flex items-center gap-2 text-xs text-slate-400">
+              <span className="font-mono-ui uppercase tracking-[0.1em] text-[10px] text-slate-500">Date</span>
+              <select
+                value={selectedDate}
+                onChange={(e) => setSelectedDate(e.target.value)}
+                data-testid="momentum-track-date-filter"
+                className="bg-black/40 border border-white/10 rounded-md px-2.5 py-1.5 text-slate-200 text-xs font-mono-ui focus:outline-none focus:border-white/30"
+              >
+                <option value="all">All Dates</option>
+                {availableDates.map((d) => (
+                  <option key={d} value={d}>{fmtDateLong(d)}</option>
+                ))}
+              </select>
+            </label>
+          </div>
           <div className="overflow-x-auto">
-            <table className="w-full text-left min-w-[640px]">
+            <table className="w-full min-w-[920px]" style={{ fontVariantNumeric: "tabular-nums" }}>
               <thead>
                 <tr className="border-b border-white/10">
-                  {["Date", "Ticker", "Bias", "Entry", "Close", "Performance", "Result"].map((h) => (
-                    <th key={h} className="px-4 py-3 font-mono-ui text-[10px] uppercase tracking-[0.14em] text-slate-500 font-semibold whitespace-nowrap">{h}</th>
+                  {[
+                    ["Date", "left"], ["Ticker", "left"], ["Bias", "left"],
+                    ["Alert Price (9:40)", "right"], ["Day High", "right"], ["Day Low", "right"], ["Close", "right"],
+                    ["Close Return", "right"], ["Max Upside", "right"], ["Max Drawdown", "right"], ["Verdict", "left"],
+                  ].map(([h, align]) => (
+                    <th key={h} className={`px-4 py-3 font-mono-ui text-[10px] uppercase tracking-[0.14em] text-slate-500 font-semibold whitespace-nowrap text-${align}`}>{h}</th>
                   ))}
                 </tr>
               </thead>
               <tbody>
-                {recent.map((r) => (
+                {visibleRows.map((r) => (
                   <tr key={r.id} className="border-b border-white/[0.05] last:border-0" data-testid={`momentum-track-row-${r.id}`}>
-                    <td className="px-4 py-2.5 text-sm text-slate-300 whitespace-nowrap">{r.date}</td>
+                    <td className="px-4 py-2.5 text-sm text-slate-300 whitespace-nowrap">{fmtDateLong(r.date)}</td>
                     <td className="px-4 py-2.5 text-sm font-bold text-white whitespace-nowrap">{r.ticker}</td>
-                    <td className="px-4 py-2.5 text-sm whitespace-nowrap"><span className={r.bias === "Bullish" ? "text-emerald-400" : "text-red-400"}>{r.bias}</span></td>
-                    <td className="px-4 py-2.5 font-mono-ui text-sm text-slate-300 whitespace-nowrap">₹{fmtNum(r.entry_price)}</td>
-                    <td className="px-4 py-2.5 font-mono-ui text-sm text-slate-300 whitespace-nowrap">₹{fmtNum(r.close_price)}</td>
-                    <td className={`px-4 py-2.5 font-mono-ui text-sm whitespace-nowrap ${r.performance_pct > 0 ? "text-emerald-400" : "text-red-400"}`}>{fmtPctSigned(r.performance_pct)}</td>
                     <td className="px-4 py-2.5 text-sm whitespace-nowrap">
-                      {r.correct ? <span className="text-emerald-400">Correct</span> : <span className="text-red-400">Incorrect</span>}
+                      <span className={r.bias === "Bullish" ? "text-emerald-400" : "text-red-400"}>
+                        {r.bias === "Bullish" ? "🟢 Bullish" : "🔴 Bearish"}
+                      </span>
+                    </td>
+                    <td className="px-4 py-2.5 font-mono-ui text-sm text-right text-slate-300 whitespace-nowrap">₹{fmtNum(r.entry_price)}</td>
+                    <td className="px-4 py-2.5 font-mono-ui text-sm text-right text-slate-300 whitespace-nowrap">₹{fmtNum(r.high_price)}</td>
+                    <td className="px-4 py-2.5 font-mono-ui text-sm text-right text-slate-300 whitespace-nowrap">₹{fmtNum(r.low_price)}</td>
+                    <td className="px-4 py-2.5 font-mono-ui text-sm text-right text-slate-300 whitespace-nowrap">₹{fmtNum(r.close_price)}</td>
+                    <td className={`px-4 py-2.5 font-mono-ui text-sm text-right whitespace-nowrap ${r.performance_pct > 0 ? "text-emerald-400" : "text-red-400"}`}>{fmtPctSigned(r.performance_pct)}</td>
+                    <td className="px-4 py-2.5 font-mono-ui text-sm text-right text-emerald-400/90 whitespace-nowrap">{fmtPctSigned(r.best_case_pct)}</td>
+                    <td className="px-4 py-2.5 font-mono-ui text-sm text-right text-red-400/90 whitespace-nowrap">{fmtPctSigned(r.worst_case_pct)}</td>
+                    <td className="px-4 py-2.5 text-sm whitespace-nowrap">
+                      {r.correct ? <span className="text-emerald-400">✅ Correct</span> : <span className="text-red-400">❌ Incorrect</span>}
                     </td>
                   </tr>
                 ))}
