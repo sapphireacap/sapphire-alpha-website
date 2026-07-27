@@ -248,7 +248,10 @@ export const StraddleCompass = ({ signal, index = "NIFTY" }) => {
       data-testid={`straddle-compass-${index}`}
     >
       <div className="flex flex-col items-center text-center gap-4 p-6 md:p-8">
-        <p className="font-mono-ui text-[10px] uppercase tracking-[0.28em] text-slate-500">{label} Directional Bias</p>
+        <div className="flex flex-col items-center gap-1.5">
+          <p className="font-display text-3xl md:text-4xl font-extrabold text-white tracking-tight" data-testid="compass-index-name">{label}</p>
+          <p className="font-mono-ui text-[10px] uppercase tracking-[0.28em] text-slate-500">Directional Bias</p>
+        </div>
         <div className="flex items-center gap-4">
           <span className={`inline-flex h-12 w-12 items-center justify-center rounded-xl border ${style.ring} ${style.color}`}>
             <Icon size={26} />
