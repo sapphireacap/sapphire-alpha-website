@@ -249,8 +249,11 @@ class DefinedgeService:
         if not self.configured():
             raise DefinedgeError("Definedge API credentials are not configured.")
         url = f"{AUTH_BASE}/login/{self.api_token}"
-        async with httpx.AsyncClient(timeout=30) as c:
-            r = await c.get(url, headers={"api_secret": self.api_secret})
+        try:
+            async with httpx.AsyncClient(timeout=30) as c:
+                r = await c.get(url, headers={"api_secret": self.api_secret})
+        except httpx.HTTPError as e:
+            raise DefinedgeError(f"Network error reaching Definedge: {e}") from e
         if r.status_code != 200:
             raise DefinedgeError(f"OTP init failed ({r.status_code}): {r.text[:200]}")
         data = r.json()
@@ -262,8 +265,11 @@ class DefinedgeService:
         if not token:
             raise DefinedgeError("No OTP session. Trigger OTP first.")
         url = f"{AUTH_BASE}/token"
-        async with httpx.AsyncClient(timeout=30) as c:
-            r = await c.post(url, json={"otp_token": token, "otp": otp})
+        try:
+            async with httpx.AsyncClient(timeout=30) as c:
+                r = await c.post(url, json={"otp_token": token, "otp": otp})
+        except httpx.HTTPError as e:
+            raise DefinedgeError(f"Network error reaching Definedge: {e}") from e
         if r.status_code != 200:
             raise DefinedgeError(f"OTP verify failed ({r.status_code}): {r.text[:200]}")
         data = r.json()
@@ -297,8 +303,11 @@ class DefinedgeService:
         today = datetime.now(IST).strftime("%Y-%m-%d")
         if self._master_cache and self._master_cache[0] == today:
             return self._master_cache[1]
-        async with httpx.AsyncClient(timeout=60) as c:
-            r = await c.get(MASTER_URL)
+        try:
+            async with httpx.AsyncClient(timeout=60) as c:
+                r = await c.get(MASTER_URL)
+        except httpx.HTTPError as e:
+            raise DefinedgeError(f"Network error reaching Definedge: {e}") from e
         if r.status_code != 200:
             raise DefinedgeError(f"Master download failed ({r.status_code}).")
         with zipfile.ZipFile(io.BytesIO(r.content)) as z:
@@ -320,8 +329,11 @@ class DefinedgeService:
         today = datetime.now(IST).strftime("%Y-%m-%d")
         if self._all_master_cache and self._all_master_cache[0] == today:
             return self._all_master_cache[1]
-        async with httpx.AsyncClient(timeout=60) as c:
-            r = await c.get(ALL_MASTER_URL)
+        try:
+            async with httpx.AsyncClient(timeout=60) as c:
+                r = await c.get(ALL_MASTER_URL)
+        except httpx.HTTPError as e:
+            raise DefinedgeError(f"Network error reaching Definedge: {e}") from e
         if r.status_code != 200:
             raise DefinedgeError(f"All-master download failed ({r.status_code}).")
         with zipfile.ZipFile(io.BytesIO(r.content)) as z:
@@ -528,8 +540,11 @@ class DefinedgeService:
         if to is None:
             to = now.strftime("%d%m%Y%H%M")
         url = f"{DATA_BASE}/history/{segment}/{token}/minute/{frm}/{to}"
-        async with httpx.AsyncClient(timeout=45) as c:
-            r = await c.get(url, headers={"Authorization": session})
+        try:
+            async with httpx.AsyncClient(timeout=45) as c:
+                r = await c.get(url, headers={"Authorization": session})
+        except httpx.HTTPError as e:
+            raise DefinedgeError(f"Network error reaching Definedge: {e}") from e
         if r.status_code == 401:
             raise DefinedgeError("Definedge session expired. Please login again (OTP).")
         if r.status_code != 200:
@@ -556,8 +571,11 @@ class DefinedgeService:
         if to is None:
             to = now.strftime("%d%m%Y%H%M")
         url = f"{DATA_BASE}/history/{segment}/{token}/minute/{frm}/{to}"
-        async with httpx.AsyncClient(timeout=45) as c:
-            r = await c.get(url, headers={"Authorization": session})
+        try:
+            async with httpx.AsyncClient(timeout=45) as c:
+                r = await c.get(url, headers={"Authorization": session})
+        except httpx.HTTPError as e:
+            raise DefinedgeError(f"Network error reaching Definedge: {e}") from e
         if r.status_code == 401:
             raise DefinedgeError("Definedge session expired. Please login again (OTP).")
         if r.status_code != 200:
@@ -591,8 +609,11 @@ class DefinedgeService:
         frm = (now - timedelta(days=365 * years)).strftime("%d%m%Y0000")
         to = now.strftime("%d%m%Y%H%M")
         url = f"{DATA_BASE}/history/{segment}/{token}/day/{frm}/{to}"
-        async with httpx.AsyncClient(timeout=45) as c:
-            r = await c.get(url, headers={"Authorization": session})
+        try:
+            async with httpx.AsyncClient(timeout=45) as c:
+                r = await c.get(url, headers={"Authorization": session})
+        except httpx.HTTPError as e:
+            raise DefinedgeError(f"Network error reaching Definedge: {e}") from e
         if r.status_code == 401:
             raise DefinedgeError("Definedge session expired. Please login again (OTP).")
         if r.status_code != 200:
@@ -661,8 +682,11 @@ class DefinedgeService:
 
         session = await self._session_key()
         url = f"{QUOTES_BASE}/quotes/{cfg['spot_segment']}/{cfg['spot_token']}"
-        async with httpx.AsyncClient(timeout=10) as c:
-            r = await c.get(url, headers={"Authorization": session})
+        try:
+            async with httpx.AsyncClient(timeout=10) as c:
+                r = await c.get(url, headers={"Authorization": session})
+        except httpx.HTTPError as e:
+            raise DefinedgeError(f"Network error reaching Definedge: {e}") from e
         if r.status_code == 401:
             raise DefinedgeError("Definedge session expired. Please login again (OTP).")
         if r.status_code != 200:
@@ -691,8 +715,11 @@ class DefinedgeService:
         protect against."""
         session = await self._session_key()
         url = f"{QUOTES_BASE}/quotes/{segment}/{token}"
-        async with httpx.AsyncClient(timeout=10) as c:
-            r = await c.get(url, headers={"Authorization": session})
+        try:
+            async with httpx.AsyncClient(timeout=20) as c:
+                r = await c.get(url, headers={"Authorization": session})
+        except httpx.HTTPError as e:
+            raise DefinedgeError(f"Network error reaching Definedge: {e}") from e
         if r.status_code == 401:
             raise DefinedgeError("Definedge session expired. Please login again (OTP).")
         if r.status_code != 200:
