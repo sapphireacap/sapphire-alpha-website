@@ -83,8 +83,12 @@ const Header = ({ module }) => (
             <span className={`font-mono-ui text-xs uppercase tracking-wider ${module.status === "Operational" ? "text-emerald-300" : "text-slate-400"}`}>
               {module.status}
             </span>
-            <span className="text-slate-600">·</span>
-            <span className="font-mono-ui text-xs uppercase tracking-wider text-slate-400">{module.category}</span>
+            {module.category && (
+              <>
+                <span className="text-slate-600">·</span>
+                <span className="font-mono-ui text-xs uppercase tracking-wider text-slate-400">{module.category}</span>
+              </>
+            )}
           </div>
         </div>
 

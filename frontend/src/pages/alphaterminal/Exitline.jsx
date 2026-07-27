@@ -23,6 +23,18 @@ const fmtDate = (iso) => {
 
 const fmtNum = (v) => (v == null ? "—" : Number(v).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
 
+// lightweight-charts reads UTC getters off the Date it builds from a time
+// value (getUTCHours etc.) regardless of the browser's own timezone, so an
+// IST-correct epoch (which is what the backend sends) would otherwise
+// render as raw UTC on the axis/crosshair — 5.5h behind. Shift the display
+// copy by the IST offset so the UTC getters read back IST wall-clock digits;
+// the underlying series/range data (used for session-window math) is untouched.
+const IST_OFFSET_MS = 5.5 * 60 * 60 * 1000;
+const formatIstHm = (time) => {
+  const d = new Date(time * 1000 + IST_OFFSET_MS);
+  return `${String(d.getUTCHours()).padStart(2, "0")}:${String(d.getUTCMinutes()).padStart(2, "0")}`;
+};
+
 // Backend still computes all 11 levels (H1/H2/L1/L2 feed the mid-range
 // commentary text used elsewhere) but only these six are ever shown here —
 // H1/H2/L1/L2/L5 are dropped entirely from display, per request.
@@ -60,7 +72,11 @@ const TVChart = ({ chart, levels, ltp, interval, onIntervalChange, fetchGen }) =
     const tvChart = createChart(containerRef.current, {
       layout: { background: { type: ColorType.Solid, color: "transparent" }, textColor: "#94A3B8" },
       grid: { vertLines: { visible: false }, horzLines: { visible: false } },
-      timeScale: { timeVisible: true, secondsVisible: false, borderColor: "rgba(255,255,255,0.1)" },
+      localization: { timeFormatter: formatIstHm },
+      timeScale: {
+        timeVisible: true, secondsVisible: false, borderColor: "rgba(255,255,255,0.1)",
+        tickMarkFormatter: formatIstHm,
+      },
       rightPriceScale: { borderColor: "rgba(255,255,255,0.1)" },
       handleScale: {
         mouseWheel: true, pinch: true,
@@ -76,27 +92,7 @@ const TVChart = ({ chart, levels, ltp, interval, onIntervalChange, fetchGen }) =
     chartRef.current = tvChart;
     seriesRef.current = series;
 
-    // The library's own wheel handling (zoom/pan) fires fine, but the
-    // browser's default page-scroll ALSO fires unless explicitly blocked.
-    // A capture-phase listener on THIS container wasn't enough in
-    // practice — lightweight-charts may attach its own handling on
-    // `document` (common for chart libraries, so drag/zoom keeps working
-    // if the pointer briefly leaves the chart bounds), and capture phase
-    // runs outermost-first: a `document`-level listener fires before any
-    // listener on a descendant, no matter that descendant's own phase.
-    // Attaching on `document` itself, in capture phase, is the only place
-    // nothing in the DOM tree can possibly run before it — preventDefault()
-    // here cancels the browser's default scroll action only, it doesn't
-    // stop propagation, so the library's own zoom/pan handling downstream
-    // still runs normally.
-    const el = containerRef.current;
-    const blockPageScroll = (e) => {
-      if (el.contains(e.target)) e.preventDefault();
-    };
-    document.addEventListener("wheel", blockPageScroll, { passive: false, capture: true });
-
     return () => {
-      document.removeEventListener("wheel", blockPageScroll, { capture: true });
       tvChart.remove();
       chartRef.current = null;
       seriesRef.current = null;
@@ -188,7 +184,7 @@ const TVChart = ({ chart, levels, ltp, interval, onIntervalChange, fetchGen }) =
   return (
     <div className="glass rounded-2xl border border-white/10 p-4 md:p-6 mb-6" data-testid="exitline-chart">
       <div className="flex flex-wrap items-center justify-between gap-3 mb-3">
-        <p className="font-mono-ui text-[10px] uppercase tracking-[0.18em] text-slate-500">Today's Session · Live</p>
+        <p className="font-mono-ui text-[10px] uppercase tracking-[0.18em] text-slate-500">Today's Session</p>
         <div className="flex items-center gap-1 rounded-md border border-white/10 p-0.5" data-testid="exitline-interval-selector">
           {INTERVALS.map((iv) => (
             <button
@@ -205,16 +201,14 @@ const TVChart = ({ chart, levels, ltp, interval, onIntervalChange, fetchGen }) =
           ))}
         </div>
       </div>
-      {/* 1px-overflow scroll trap + overscroll-behavior: contain — browser-level scroll containment, independent of JS preventDefault (which alone hasn't stopped page-scroll on real desktop wheel input). */}
-      <div className="relative h-96" style={{ overflowY: "auto", overscrollBehavior: "contain" }}>
-        <div style={{ height: "calc(100% + 1px)" }}>
-          {isEmpty && (
-            <div className="absolute inset-0 flex items-center justify-center z-10" data-testid="exitline-chart-empty">
-              <p className="text-xs text-slate-500">No intraday bars yet for this session.</p>
-            </div>
-          )}
-          <div ref={containerRef} className="h-96" style={{ touchAction: "none" }} data-testid="exitline-tv-chart" />
-        </div>
+      <div className="relative h-96">
+        {isEmpty && (
+          <div className="absolute inset-0 flex items-center justify-center z-10" data-testid="exitline-chart-empty">
+            <p className="text-xs text-slate-500">No intraday bars yet for this session.</p>
+          </div>
+        )}
+        {/* App-wide Lenis smooth-scroll (SmoothScroll.jsx) reads wheel deltas on its own listener and animates the page regardless of preventDefault() elsewhere — data-lenis-prevent-wheel is Lenis's own opt-out, the actual fix; the chart library's built-in wheel handler already preventDefaults correctly on its own once Lenis is out of the way. */}
+        <div ref={containerRef} className="h-96" style={{ touchAction: "none" }} data-lenis-prevent-wheel="true" data-testid="exitline-tv-chart" />
       </div>
     </div>
   );
@@ -279,10 +273,6 @@ const ExitlineResults = ({ result, interval, onIntervalChange }) => (
     <div className="mb-6">
       <Ladder levels={result.levels} ltp={result.ltp} />
     </div>
-
-    <p className="text-[11px] font-light text-slate-600 max-w-2xl">
-      These levels are fixed for the trading day, computed from the previous session's H/L/C. Not investment advice.
-    </p>
   </div>
 );
 
