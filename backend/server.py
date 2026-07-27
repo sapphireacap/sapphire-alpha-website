@@ -23,6 +23,7 @@ from swing_picks_lcp import update_swing_picks_lcp
 from momentum_track_record import (
     capture_entries as capture_track_record_entries,
     evaluate_pending as evaluate_track_record,
+    reevaluate_all as reevaluate_track_record,
     get_track_record_summary,
 )
 from journal_models import DEFAULT_SETUP_TAGS, DEFAULT_EMOTION_TAGS
@@ -822,6 +823,15 @@ async def momentum_track_evaluate_cron(request: Request):
 async def momentum_track_evaluate_admin(admin: dict = Depends(get_current_admin)):
     """Same evaluation, for manual testing from the admin panel."""
     return await evaluate_track_record(db, definedge, scanner="momentum")
+
+
+@api_router.post("/admin/terminal/momentum-track-reevaluate-all")
+async def momentum_track_reevaluate_all_admin(admin: dict = Depends(get_current_admin)):
+    """One-off migration trigger: re-scores every already-evaluated momentum
+    record with the current post-entry-only high/low methodology (see
+    reevaluate_all()'s docstring in momentum_track_record.py). Not meant to
+    be called routinely — only after a change to the scoring logic."""
+    return await reevaluate_track_record(db, definedge, scanner="momentum")
 
 
 @api_router.get("/terminal/scanner-track-record")

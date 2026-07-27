@@ -235,6 +235,7 @@ const ScannerStat = ({ label, value, tone = "text-white" }) => (
 const ScannerTrackRecord = ({ scannerKey }) => {
   const [record, setRecord] = useState(null);
   const [selectedDate, setSelectedDate] = useState("all");
+  const [logsOpen, setLogsOpen] = useState(false);
   useEffect(() => {
     axios.get(`${API}/terminal/scanner-track-record`, { params: { scanner: scannerKey } })
       .then((r) => setRecord(r.data)).catch(() => setRecord({ has_data: false }));
@@ -253,87 +254,141 @@ const ScannerTrackRecord = ({ scannerKey }) => {
     );
   }
 
-  const { overall, bullish, bearish, recent, since } = record;
+  const { overall, bullish, bearish, recent, since, trading_days, best_call, worst_call } = record;
   const winRatePct = (r) => (r?.win_rate != null ? `${(r.win_rate * 100).toFixed(0)}%` : "—");
+  const ratioFmt = (r) => (r != null ? `${r.toFixed(2)} : 1` : "—");
   const availableDates = [...new Set(recent.map((r) => r.date))].sort((a, b) => (a < b ? 1 : -1));
   const visibleRows = selectedDate === "all" ? recent : recent.filter((r) => r.date === selectedDate);
+  const perfTone = (v) => (v > 0 ? "text-emerald-400" : v < 0 ? "text-red-400" : "text-white");
 
   return (
     <>
       <p className="text-xs text-slate-500 mb-4">
         Tracking since <span className="text-slate-300">{since}</span> — {overall.count} call{overall.count === 1 ? "" : "s"} scored.
       </p>
-      <div className="grid grid-cols-2 md:grid-cols-3 gap-3 mb-6">
+
+      <p className="font-mono-ui text-[10px] uppercase tracking-[0.16em] text-slate-500 font-semibold mb-3">Key Metrics</p>
+      <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mb-4">
         <ScannerStat label="Overall Win Rate" value={winRatePct(overall)} tone={overall.win_rate > 0.5 ? "text-emerald-400" : "text-white"} />
+        <ScannerStat label="Average Return" value={fmtPctSigned(overall.avg_performance_pct)} tone={perfTone(overall.avg_performance_pct)} />
+        <ScannerStat label="Median Return" value={fmtPctSigned(overall.median_performance_pct)} tone={perfTone(overall.median_performance_pct)} />
+        <ScannerStat label="Total Calls" value={overall.count} />
+        <ScannerStat label="Trading Days" value={trading_days} />
+        <ScannerStat label="Avg. Max Upside" value={fmtPctSigned(overall.avg_best_case_pct)} tone="text-emerald-400" />
+        <ScannerStat label="Avg. Max Drawdown" value={fmtPctSigned(overall.avg_worst_case_pct)} tone="text-red-400" />
+        <ScannerStat label="Risk : Reward" value={ratioFmt(overall.risk_reward)} />
         <ScannerStat label={`Bullish (${bullish.count}) Win Rate`} value={winRatePct(bullish)} tone="text-emerald-400" />
         <ScannerStat label={`Bearish (${bearish.count}) Win Rate`} value={winRatePct(bearish)} tone="text-red-400" />
-        <ScannerStat label="Overall Avg. Performance" value={fmtPctSigned(overall.avg_performance_pct)} tone={overall.avg_performance_pct > 0 ? "text-emerald-400" : overall.avg_performance_pct < 0 ? "text-red-400" : "text-white"} />
-        <ScannerStat label="Bullish Avg. Performance" value={fmtPctSigned(bullish.avg_performance_pct)} tone={bullish.avg_performance_pct > 0 ? "text-emerald-400" : bullish.avg_performance_pct < 0 ? "text-red-400" : "text-white"} />
-        <ScannerStat label="Bearish Avg. Performance" value={fmtPctSigned(bearish.avg_performance_pct)} tone={bearish.avg_performance_pct > 0 ? "text-emerald-400" : bearish.avg_performance_pct < 0 ? "text-red-400" : "text-white"} />
       </div>
+      <div className="grid grid-cols-2 gap-3 mb-6">
+        <ScannerStat label="Bullish Avg. Return" value={fmtPctSigned(bullish.avg_performance_pct)} tone={perfTone(bullish.avg_performance_pct)} />
+        <ScannerStat label="Bearish Avg. Return" value={fmtPctSigned(bearish.avg_performance_pct)} tone={perfTone(bearish.avg_performance_pct)} />
+      </div>
+
+      {(best_call || worst_call) && (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-6">
+          {best_call && (
+            <div className={`${SURFACE} p-4`}>
+              <p className="font-mono-ui text-[10px] uppercase tracking-[0.16em] text-slate-500 mb-2">Best Call</p>
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm font-bold text-white">{best_call.ticker} <span className="text-slate-500 font-normal">· {fmtDateLong(best_call.date)}</span></p>
+                  <p className={`text-xs ${best_call.bias === "Bullish" ? "text-emerald-400" : "text-red-400"}`}>{best_call.bias}</p>
+                </div>
+                <p className="font-mono-ui text-xl font-bold text-emerald-400">{fmtPctSigned(best_call.performance_pct)}</p>
+              </div>
+            </div>
+          )}
+          {worst_call && (
+            <div className={`${SURFACE} p-4`}>
+              <p className="font-mono-ui text-[10px] uppercase tracking-[0.16em] text-slate-500 mb-2">Worst Call</p>
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm font-bold text-white">{worst_call.ticker} <span className="text-slate-500 font-normal">· {fmtDateLong(worst_call.date)}</span></p>
+                  <p className={`text-xs ${worst_call.bias === "Bullish" ? "text-emerald-400" : "text-red-400"}`}>{worst_call.bias}</p>
+                </div>
+                <p className="font-mono-ui text-xl font-bold text-red-400">{fmtPctSigned(worst_call.performance_pct)}</p>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      <p className="text-[11px] font-light text-slate-600 mb-6">
+        A Bullish call profits if price rises by close; a Bearish call profits if price falls (shown as positive performance either way).
+        High/Low are measured from the 9:40 alert price onward only, not the full trading day. Past performance does not guarantee future results — not investment advice.
+      </p>
 
       {recent.length > 0 && (
         <div className={`${SURFACE} overflow-hidden`}>
-          <div className="flex items-center justify-between gap-3 px-4 py-3 border-b border-white/10">
-            <span className="font-mono-ui text-[10px] uppercase tracking-[0.14em] text-slate-500 font-semibold">
-              {visibleRows.length} call{visibleRows.length === 1 ? "" : "s"}
+          <button
+            type="button"
+            onClick={() => setLogsOpen((o) => !o)}
+            className="w-full flex items-center justify-between gap-3 px-4 py-3.5 text-left"
+            data-testid="momentum-track-logs-toggle"
+          >
+            <span className="font-mono-ui text-[10px] uppercase tracking-[0.14em] text-slate-400 font-semibold">
+              Logs — {recent.length} call{recent.length === 1 ? "" : "s"}
             </span>
-            <label className="flex items-center gap-2 text-xs text-slate-400">
-              <span className="font-mono-ui uppercase tracking-[0.1em] text-[10px] text-slate-500">Date</span>
-              <select
-                value={selectedDate}
-                onChange={(e) => setSelectedDate(e.target.value)}
-                data-testid="momentum-track-date-filter"
-                className="bg-black/40 border border-white/10 rounded-md px-2.5 py-1.5 text-slate-200 text-xs font-mono-ui focus:outline-none focus:border-white/30"
-              >
-                <option value="all">All Dates</option>
-                {availableDates.map((d) => (
-                  <option key={d} value={d}>{fmtDateLong(d)}</option>
-                ))}
-              </select>
-            </label>
-          </div>
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[920px]" style={{ fontVariantNumeric: "tabular-nums" }}>
-              <thead>
-                <tr className="border-b border-white/10">
-                  {[
-                    ["Date", "left"], ["Ticker", "left"], ["Bias", "left"],
-                    ["Alert Price (9:40)", "right"], ["Day High", "right"], ["Day Low", "right"], ["Close", "right"],
-                    ["Close Return", "right"], ["Max Upside", "right"], ["Max Drawdown", "right"],
-                  ].map(([h, align]) => (
-                    <th key={h} className={`px-4 py-3 font-mono-ui text-[10px] uppercase tracking-[0.14em] text-slate-500 font-semibold whitespace-nowrap text-${align}`}>{h}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {visibleRows.map((r) => (
-                  <tr key={r.id} className="border-b border-white/[0.05] last:border-0" data-testid={`momentum-track-row-${r.id}`}>
-                    <td className="px-4 py-2.5 text-sm text-slate-300 whitespace-nowrap">{fmtDateLong(r.date)}</td>
-                    <td className="px-4 py-2.5 text-sm font-bold text-white whitespace-nowrap">{r.ticker}</td>
-                    <td className="px-4 py-2.5 text-sm whitespace-nowrap">
-                      <span className={r.bias === "Bullish" ? "text-emerald-400" : "text-red-400"}>
-                        {r.bias === "Bullish" ? "🟢 Bullish" : "🔴 Bearish"}
-                      </span>
-                    </td>
-                    <td className="px-4 py-2.5 font-mono-ui text-sm text-right text-slate-300 whitespace-nowrap">₹{fmtNum(r.entry_price)}</td>
-                    <td className="px-4 py-2.5 font-mono-ui text-sm text-right text-slate-300 whitespace-nowrap">₹{fmtNum(r.high_price)}</td>
-                    <td className="px-4 py-2.5 font-mono-ui text-sm text-right text-slate-300 whitespace-nowrap">₹{fmtNum(r.low_price)}</td>
-                    <td className="px-4 py-2.5 font-mono-ui text-sm text-right text-slate-300 whitespace-nowrap">₹{fmtNum(r.close_price)}</td>
-                    <td className={`px-4 py-2.5 font-mono-ui text-sm text-right whitespace-nowrap ${r.performance_pct > 0 ? "text-emerald-400" : "text-red-400"}`}>{fmtPctSigned(r.performance_pct)}</td>
-                    <td className="px-4 py-2.5 font-mono-ui text-sm text-right text-emerald-400/90 whitespace-nowrap">{fmtPctSigned(r.best_case_pct)}</td>
-                    <td className="px-4 py-2.5 font-mono-ui text-sm text-right text-red-400/90 whitespace-nowrap">{fmtPctSigned(r.worst_case_pct)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+            <ChevronDown size={16} className={`text-slate-500 transition-transform duration-300 shrink-0 ${logsOpen ? "rotate-180" : ""}`} />
+          </button>
+          {logsOpen && (
+            <>
+              <div className="flex items-center justify-end gap-3 px-4 py-3 border-t border-white/10">
+                <label className="flex items-center gap-2 text-xs text-slate-400">
+                  <span className="font-mono-ui uppercase tracking-[0.1em] text-[10px] text-slate-500">Date</span>
+                  <select
+                    value={selectedDate}
+                    onChange={(e) => setSelectedDate(e.target.value)}
+                    data-testid="momentum-track-date-filter"
+                    className="bg-black/40 border border-white/10 rounded-md px-2.5 py-1.5 text-slate-200 text-xs font-mono-ui focus:outline-none focus:border-white/30"
+                  >
+                    <option value="all">All Dates</option>
+                    {availableDates.map((d) => (
+                      <option key={d} value={d}>{fmtDateLong(d)}</option>
+                    ))}
+                  </select>
+                </label>
+              </div>
+              <div className="overflow-x-auto">
+                <table className="w-full min-w-[920px]" style={{ fontVariantNumeric: "tabular-nums" }}>
+                  <thead>
+                    <tr className="border-b border-white/10">
+                      {[
+                        ["Date", "left"], ["Ticker", "left"], ["Bias", "left"],
+                        ["Alert Price (9:40)", "right"], ["High After 9:40", "right"], ["Low After 9:40", "right"], ["Close", "right"],
+                        ["Return", "right"], ["Max Upside", "right"], ["Max Drawdown", "right"],
+                      ].map(([h, align]) => (
+                        <th key={h} className={`px-4 py-3 font-mono-ui text-[10px] uppercase tracking-[0.14em] text-slate-500 font-semibold whitespace-nowrap text-${align}`}>{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {visibleRows.map((r) => (
+                      <tr key={r.id} className="border-b border-white/[0.05] last:border-0" data-testid={`momentum-track-row-${r.id}`}>
+                        <td className="px-4 py-2.5 text-sm text-slate-300 whitespace-nowrap">{fmtDateLong(r.date)}</td>
+                        <td className="px-4 py-2.5 text-sm font-bold text-white whitespace-nowrap">{r.ticker}</td>
+                        <td className="px-4 py-2.5 text-sm whitespace-nowrap">
+                          <span className={r.bias === "Bullish" ? "text-emerald-400" : "text-red-400"}>
+                            {r.bias === "Bullish" ? "🟢 Bullish" : "🔴 Bearish"}
+                          </span>
+                        </td>
+                        <td className="px-4 py-2.5 font-mono-ui text-sm text-right text-slate-300 whitespace-nowrap">₹{fmtNum(r.entry_price)}</td>
+                        <td className="px-4 py-2.5 font-mono-ui text-sm text-right text-slate-300 whitespace-nowrap">₹{fmtNum(r.high_price)}</td>
+                        <td className="px-4 py-2.5 font-mono-ui text-sm text-right text-slate-300 whitespace-nowrap">₹{fmtNum(r.low_price)}</td>
+                        <td className="px-4 py-2.5 font-mono-ui text-sm text-right text-slate-300 whitespace-nowrap">₹{fmtNum(r.close_price)}</td>
+                        <td className={`px-4 py-2.5 font-mono-ui text-sm text-right whitespace-nowrap ${r.performance_pct > 0 ? "text-emerald-400" : "text-red-400"}`}>{fmtPctSigned(r.performance_pct)}</td>
+                        <td className="px-4 py-2.5 font-mono-ui text-sm text-right text-emerald-400/90 whitespace-nowrap">{fmtPctSigned(r.best_case_pct)}</td>
+                        <td className="px-4 py-2.5 font-mono-ui text-sm text-right text-red-400/90 whitespace-nowrap">{fmtPctSigned(r.worst_case_pct)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </>
+          )}
         </div>
       )}
-      <p className="text-[11px] font-light text-slate-600 mt-4">
-        A Bullish call profits if price rises by close; a Bearish call profits if price falls (shown as positive performance either way).
-        Past performance does not guarantee future results — not investment advice.
-      </p>
     </>
   );
 };

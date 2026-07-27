@@ -13,8 +13,9 @@ Flow:
      date. That moment IS "9:40am" for all practical purposes, since that's
      when the daily sync runs — no separate timing logic needed.
   2. Once that trading day has closed (15:30 IST), evaluate_pending() fetches
-     the day's real OHLC bar for each pending stock and computes how the
-     call actually performed, via compute_performance() below.
+     minute bars from the exact captured entry_time through 15:30 IST for
+     each pending stock and computes how the call actually performed, via
+     compute_performance() below.
 
 Bullish/Bearish scoring — the actual "logic for bullish and bearish scrips":
   - A Bullish call profits if price rises: performance_pct = (close-entry)/entry*100.
@@ -23,10 +24,14 @@ Bullish/Bearish scoring — the actual "logic for bullish and bearish scrips":
     same convention as scoring a short position (this is deliberate: a
     single "performance_pct > 0 = correct" rule then works for both
     directions without a second branch anywhere else in the codebase).
-  - best_case/worst_case mirror the same way using the day's high/low: a
-    Bullish call's best case is the day's high (how far it could have run),
-    worst case is the day's low; a Bearish call's best case is the day's
-    low (how far it could have fallen), worst case is the day's high.
+  - best_case/worst_case use the high/low of the minute bars AFTER entry
+    only (not the full trading day) — the alert fires mid-session, so
+    whatever happened 09:15-09:40 was never capturable by anyone acting on
+    the call, and including it would inflate both the upside and the
+    drawdown. A Bullish call's best case is the post-entry high (how far it
+    could have run), worst case is the post-entry low; a Bearish call's
+    best case is the post-entry low (how far it could have fallen), worst
+    case is the post-entry high.
   - "correct" = performance_pct > 0, i.e. the call resolved in the
     predicted direction by that day's close.
 """
@@ -126,6 +131,39 @@ async def capture_entries(db, definedge, scanner: str, stocks: list):
         )
 
 
+async def _evaluate_one(db, definedge, master, rec) -> bool:
+    """Evaluates a single record using minute bars from its actual captured
+    entry_time through that date's 15:30 IST close — not the day's full
+    OHLC bar, which would include pre-entry movement nobody acting on the
+    call could have captured. Returns whether it evaluated successfully."""
+    resolved = definedge.resolve_symbol(master, "NSE", rec["ticker"])
+    if not resolved:
+        return False
+    entry_dt = datetime.fromisoformat(rec["entry_time"]).astimezone(IST)
+    close_dt = datetime.strptime(rec["date"], "%Y-%m-%d").replace(
+        hour=15, minute=30, second=0, tzinfo=IST
+    )
+    frm = entry_dt.strftime("%d%m%Y%H%M")
+    to = close_dt.strftime("%d%m%Y%H%M")
+    bars = await definedge.minute_ohlc("NSE", resolved["token"], frm=frm, to=to)
+    if not bars:
+        return False
+    close = bars[-1]["close"]
+    high_after_entry = max(b["high"] for b in bars)
+    low_after_entry = min(b["low"] for b in bars)
+    perf = compute_performance(rec["bias"], rec["entry_price"], close, low_after_entry, high_after_entry)
+    await db.scanner_track_record.update_one(
+        {"id": rec["id"]},
+        {"$set": {
+            "close_price": close, "low_price": low_after_entry, "high_price": high_after_entry,
+            **perf,
+            "status": "evaluated",
+            "evaluated_at": datetime.now(timezone.utc).isoformat(),
+        }},
+    )
+    return True
+
+
 async def evaluate_pending(db, definedge, scanner: str = None) -> dict:
     """Fills in close/low/high + performance for every 'pending' record
     whose trading day has already closed. Safe to call repeatedly (already-
@@ -145,26 +183,10 @@ async def evaluate_pending(db, definedge, scanner: str = None) -> dict:
         try:
             if master is None:
                 master = await definedge._get_all_master()
-            resolved = definedge.resolve_symbol(master, "NSE", rec["ticker"])
-            if not resolved:
+            if await _evaluate_one(db, definedge, master, rec):
+                evaluated += 1
+            else:
                 failed += 1
-                continue
-            bars = await definedge.daily_history("NSE", resolved["token"], years=1)
-            bar = next((b for b in bars if b["date"] == rec["date"]), None)
-            if not bar:
-                failed += 1
-                continue
-            perf = compute_performance(rec["bias"], rec["entry_price"], bar["close"], bar["low"], bar["high"])
-            await db.scanner_track_record.update_one(
-                {"id": rec["id"]},
-                {"$set": {
-                    "close_price": bar["close"], "low_price": bar["low"], "high_price": bar["high"],
-                    **perf,
-                    "status": "evaluated",
-                    "evaluated_at": datetime.now(timezone.utc).isoformat(),
-                }},
-            )
-            evaluated += 1
         except Exception as e:  # noqa: BLE001
             logger.warning("Track record: failed to evaluate %s %s: %s", rec.get("ticker"), rec.get("date"), e)
             failed += 1
@@ -172,14 +194,57 @@ async def evaluate_pending(db, definedge, scanner: str = None) -> dict:
     return {"evaluated": evaluated, "not_yet_closed": not_closed, "failed": failed, "total_pending": len(pending)}
 
 
+async def reevaluate_all(db, definedge, scanner: str) -> dict:
+    """One-off admin migration: re-scores every already-evaluated record
+    (not just pending ones) with the current compute_performance()/entry-
+    time-onward-bars logic. Needed once, the day the high/low methodology
+    changed from full-day OHLC to post-entry-only — existing rows had the
+    old, inflated day-wide high/low baked in under the same field names, so
+    leaving them alone would mean the dashboard mixes two different
+    methodologies with no way to tell them apart."""
+    docs = await db.scanner_track_record.find(
+        {"scanner": scanner, "status": "evaluated"}, {"_id": 0}
+    ).to_list(2000)
+    master = await definedge._get_all_master()
+    done, failed = 0, 0
+    for rec in docs:
+        try:
+            if await _evaluate_one(db, definedge, master, rec):
+                done += 1
+            else:
+                failed += 1
+        except Exception as e:  # noqa: BLE001
+            logger.warning("Track record: failed to re-evaluate %s %s: %s", rec.get("ticker"), rec.get("date"), e)
+            failed += 1
+    return {"reevaluated": done, "failed": failed, "total": len(docs)}
+
+
+def _median(values: list) -> float:
+    s = sorted(values)
+    n = len(s)
+    mid = n // 2
+    return s[mid] if n % 2 else (s[mid - 1] + s[mid]) / 2
+
+
 def _stats_for(rows: list) -> dict:
     if not rows:
-        return {"count": 0, "win_rate": None, "avg_performance_pct": None}
+        return {
+            "count": 0, "win_rate": None, "avg_performance_pct": None, "median_performance_pct": None,
+            "avg_best_case_pct": None, "avg_worst_case_pct": None, "risk_reward": None,
+        }
     wins = sum(1 for r in rows if r["correct"])
+    avg_best = sum(r["best_case_pct"] for r in rows) / len(rows)
+    avg_worst = sum(r["worst_case_pct"] for r in rows) / len(rows)
     return {
         "count": len(rows),
         "win_rate": wins / len(rows),
         "avg_performance_pct": sum(r["performance_pct"] for r in rows) / len(rows),
+        "median_performance_pct": _median([r["performance_pct"] for r in rows]),
+        "avg_best_case_pct": avg_best,
+        "avg_worst_case_pct": avg_worst,
+        # Avg. Max Upside / Avg. Max Drawdown, expressed as a positive ratio
+        # (worst_case_pct is a signed adverse move, typically negative).
+        "risk_reward": abs(avg_best / avg_worst) if avg_worst else None,
     }
 
 
@@ -195,12 +260,17 @@ async def get_track_record_summary(db, scanner: str) -> dict:
 
     bullish = [d for d in docs if d["bias"] == "Bullish"]
     bearish = [d for d in docs if d["bias"] == "Bearish"]
+    best_call = max(docs, key=lambda d: d["performance_pct"])
+    worst_call = min(docs, key=lambda d: d["performance_pct"])
 
     return {
         "has_data": True,
         "since": docs[-1]["date"],
+        "trading_days": len({d["date"] for d in docs}),
         "overall": _stats_for(docs),
         "bullish": _stats_for(bullish),
         "bearish": _stats_for(bearish),
         "recent": docs[:60],
+        "best_call": best_call,
+        "worst_call": worst_call,
     }
