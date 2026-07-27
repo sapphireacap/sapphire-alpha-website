@@ -6,7 +6,21 @@ same pattern as Quant Lab's EWMA/Sharpe tools, no per-visitor broker login.
 
 Flow: segment (NSE/FUT/OPT) -> scrip (+ expiry/strike/CE-PE for FUT/OPT,
 always manual, never auto-picked) -> previous day's H/L/C from Definedge
--> 8-level Camarilla ladder -> zone classification against live LTP -> SL/TP.
+-> Pivot + H1-H5/L1-L5 ladder -> zone classification against live LTP -> SL/TP.
+
+Recalibrated 2026-07-27 to match a real reference chart's exact levels
+(verified: Pivot, H4, H3, L4, L3, and the H5/L5 pair all matched the
+reference to the cent on a real TCS-EQ example) — this is a different,
+well-known Camarilla variant from the textbook R1-R4/S1-S4 scheme this
+module used originally: a real central Pivot exists here, and the H/L
+divisors are 1.1 divided by 12/6/4/2 rather than the textbook's direct
+0.183/0.366/0.55/1.1 multipliers. H4/L4 keep the same structural role the
+old R4/S4 breakout boundary had; H3/L3 keep the old R3/S3 trading-zone-edge
+role; H1/H2/L1/L2 keep the old R1/R2/S1/S2 momentum-commentary-only role.
+H5/L5 are shown on the ladder (matching the reference) but aren't a
+signal boundary — real Camarilla practice treats them as rarely-used
+extreme/panic targets, and the original zone design was never spec'd
+beyond the H4/L4 edge.
 
 Reuses DefinedgeService's existing OTP-session auth and allmaster.zip
 master file (same unified NSE/BSE/NFO/BFO/MCX/CDS frame Index Vector and
@@ -39,92 +53,98 @@ DERIVATIVE_SEGMENTS = ("NFO", "BFO")  # stock/index derivatives can live in eith
 
 
 # ---------------------------------------------------------------------------
-# Camarilla levels — pure, unit-testable
+# Level ladder — pure, unit-testable. Verified 2026-07-27 against a real
+# reference chart for TCS-EQ (H=2264.30 L=2205.10 C=2254.30): Pivot, H4, H3,
+# L4, L3, and H5/L5 all matched the reference to the cent.
 # ---------------------------------------------------------------------------
 def compute_camarilla_levels(high: float, low: float, close: float) -> dict:
     r = high - low
+    h5 = (high / low) * close
     return {
-        "R4": close + r * 1.1000,
-        "R3": close + r * 0.5500,
-        "R2": close + r * 0.3660,
-        "R1": close + r * 0.1830,
-        "S1": close - r * 0.1830,
-        "S2": close - r * 0.3660,
-        "S3": close - r * 0.5500,
-        "S4": close - r * 1.1000,
+        "H5": h5,
+        "H4": close + r * 1.1 / 2,
+        "H3": close + r * 1.1 / 4,
+        "H2": close + r * 1.1 / 6,
+        "H1": close + r * 1.1 / 12,
+        "Pivot": (high + low + close) / 3,
+        "L1": close - r * 1.1 / 12,
+        "L2": close - r * 1.1 / 6,
+        "L3": close - r * 1.1 / 4,
+        "L4": close - r * 1.1 / 2,
+        "L5": 2 * close - h5,
     }
 
 
 def classify_and_suggest(levels: dict, ltp: float, prev_close: float) -> dict:
-    """Zone classification + SL/TP, per the Camarilla rules in the module
-    docstring's design brief:
-      - Beyond R4/S4: Breakout Zone, trend day, no fixed TP, trail the stop.
-      - At/between R3-R4 (or S4-S3): Trading Zone edge, mean-reversion
-        trigger — short at R3 (SL above R4, TP toward R1/R2/prev close),
-        long at S3 (SL below S4, TP toward S1/S2/prev close).
-      - Between S3 and R3 but not near either edge: mid-range, no
-        standalone trigger — R1/R2/S1/S2 only ever surface as momentum
-        commentary here, never a separate signal.
+    """Zone classification + SL/TP:
+      - Beyond H4/L4: Breakout Zone, trend day, no fixed TP, trail the stop.
+      - At/between H3-H4 (or L4-L3): Trading Zone edge, mean-reversion
+        trigger — short at H3 (SL above H4, TP toward H1/H2/prev close),
+        long at L3 (SL below L4, TP toward L1/L2/prev close).
+      - Between L3 and H3 but not near either edge: mid-range, no
+        standalone trigger — H1/H2/L1/L2 only ever surface as momentum
+        commentary here, never a separate signal. H5/L5 are shown on the
+        ladder but are never a signal boundary either way.
     """
-    R4, R3, R2, R1 = levels["R4"], levels["R3"], levels["R2"], levels["R1"]
-    S1, S2, S3, S4 = levels["S1"], levels["S2"], levels["S3"], levels["S4"]
+    H4, H3, H2, H1 = levels["H4"], levels["H3"], levels["H2"], levels["H1"]
+    L1, L2, L3, L4 = levels["L1"], levels["L2"], levels["L3"], levels["L4"]
 
-    if ltp > R4:
+    if ltp > H4:
         return {
             "zone": "breakout_upper",
             "zone_label": "Breakout Zone (Upper)",
             "bias": "Long",
-            "sl": round(R4, 2),
+            "sl": round(H4, 2),
             "tp": None,
             "tp_alt": None,
             "trail_stop": True,
-            "reason": f"Broke above R4 ({R4:.2f}) — trend day, mean-reversion invalidated. Buy the breakout (or on retest of R4); no fixed target, trail the stop.",
+            "reason": f"Broke above H4 ({H4:.2f}) — trend day, mean-reversion invalidated. Buy the breakout (or on retest of H4); no fixed target, trail the stop.",
             "commentary": None,
         }
-    if ltp < S4:
+    if ltp < L4:
         return {
             "zone": "breakout_lower",
             "zone_label": "Breakout Zone (Lower)",
             "bias": "Short",
-            "sl": round(S4, 2),
+            "sl": round(L4, 2),
             "tp": None,
             "tp_alt": None,
             "trail_stop": True,
-            "reason": f"Broke below S4 ({S4:.2f}) — trend day, mean-reversion invalidated. Short the breakdown (or on retest of S4); no fixed target, trail the stop.",
+            "reason": f"Broke below L4 ({L4:.2f}) — trend day, mean-reversion invalidated. Short the breakdown (or on retest of L4); no fixed target, trail the stop.",
             "commentary": None,
         }
-    if R3 <= ltp <= R4:
+    if H3 <= ltp <= H4:
         return {
             "zone": "trading_upper",
-            "zone_label": "Trading Zone — At R3",
+            "zone_label": "Trading Zone — At H3",
             "bias": "Short",
-            "sl": round(R4 * 1.001, 2),
-            "tp": round(R1, 2),
-            "tp_alt": round(R2, 2),
+            "sl": round(H4 * 1.001, 2),
+            "tp": round(H1, 2),
+            "tp_alt": round(H2, 2),
             "trail_stop": False,
-            "reason": f"At R3 ({R3:.2f}) — short bias, TP toward R1/R2 or previous close ({prev_close:.2f}), SL just above R4.",
+            "reason": f"At H3 ({H3:.2f}) — short bias, TP toward H1/H2 or previous close ({prev_close:.2f}), SL just above H4.",
             "commentary": None,
         }
-    if S4 <= ltp <= S3:
+    if L4 <= ltp <= L3:
         return {
             "zone": "trading_lower",
-            "zone_label": "Trading Zone — At S3",
+            "zone_label": "Trading Zone — At L3",
             "bias": "Long",
-            "sl": round(S4 * 0.999, 2),
-            "tp": round(S1, 2),
-            "tp_alt": round(S2, 2),
+            "sl": round(L4 * 0.999, 2),
+            "tp": round(L1, 2),
+            "tp_alt": round(L2, 2),
             "trail_stop": False,
-            "reason": f"At S3 ({S3:.2f}) — long bias, TP toward S1/S2 or previous close ({prev_close:.2f}), SL just below S4.",
+            "reason": f"At L3 ({L3:.2f}) — long bias, TP toward L1/L2 or previous close ({prev_close:.2f}), SL just below L4.",
             "commentary": None,
         }
 
-    # Mid-range (strictly inside S3..R3): no standalone trigger. R1/R2/S1/S2
+    # Mid-range (strictly inside L3..H3): no standalone trigger. H1/H2/L1/L2
     # are checkpoints only — surfaced as momentum commentary on whichever one
     # price currently sits closest to.
-    checkpoints = [("R2", R2), ("R1", R1), ("S1", S1), ("S2", S2)]
+    checkpoints = [("H2", H2), ("H1", H1), ("L1", L1), ("L2", L2)]
     label, val = min(checkpoints, key=lambda kv: abs(ltp - kv[1]))
     above = ltp >= val
-    if label in ("R1", "R2"):
+    if label in ("H1", "H2"):
         commentary = (
             f"Holding above {label} ({val:.2f}) — firm bullish momentum, not a standalone trigger."
             if above else
@@ -144,7 +164,7 @@ def classify_and_suggest(levels: dict, ltp: float, prev_close: float) -> dict:
         "tp": None,
         "tp_alt": None,
         "trail_stop": False,
-        "reason": "Inside S3/R3 — range-bound, no standalone entry trigger at current levels.",
+        "reason": "Inside L3/H3 — range-bound, no standalone entry trigger at current levels.",
         "commentary": commentary,
     }
 

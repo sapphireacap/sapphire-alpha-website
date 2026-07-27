@@ -40,9 +40,16 @@ const BIAS_TONE = {
 };
 
 const LEVEL_COLORS = {
-  R4: "#34D399", R3: "#34D399", R2: "#6EE7B7", R1: "#A7F3D0",
-  S1: "#FECACA", S2: "#FCA5A5", S3: "#F87171", S4: "#F87171",
+  H5: "#34D399", H4: "#34D399", H3: "#34D399", H2: "#6EE7B7", H1: "#A7F3D0",
+  Pivot: "#94A3B8",
+  L1: "#FECACA", L2: "#FCA5A5", L3: "#F87171", L4: "#F87171", L5: "#F87171",
 };
+
+// H1/H2/H5/L1/L2/L5 sit close together and to Pivot on most instruments —
+// labeling all 11 lines collides on the chart. The signal-relevant ones
+// (H4/H3/L3/L4 boundaries + Pivot) get a text label; the rest still draw as
+// dashed reference lines, just unlabeled — full values are in the ladder.
+const LABELED_LEVELS = new Set(["H4", "H3", "Pivot", "L3", "L4"]);
 
 const Candle = (props) => {
   const { x, y, width, height, payload } = props;
@@ -105,7 +112,7 @@ const ExitlineChart = ({ chart, levels, ltp }) => {
             {Object.entries(levels).map(([k, v]) => (
               <ReferenceLine
                 key={k} y={v} stroke={LEVEL_COLORS[k] || "#64748B"} strokeDasharray="3 3" strokeOpacity={0.65}
-                label={{ value: k, position: "right", fill: LEVEL_COLORS[k] || "#64748B", fontSize: 10 }}
+                label={LABELED_LEVELS.has(k) ? { value: k, position: "right", fill: LEVEL_COLORS[k] || "#64748B", fontSize: 10 } : undefined}
               />
             ))}
             <ReferenceLine
@@ -135,7 +142,7 @@ const Ladder = ({ levels, ltp }) => {
             r.isLtp ? "bg-sapphire-light/15 border-y border-sapphire-light/40" : ""
           }`}
         >
-          <span className={`font-mono-ui text-xs uppercase tracking-[0.14em] ${r.isLtp ? "text-sapphire-light font-bold" : r.key.startsWith("R") ? "text-emerald-400/80" : r.key.startsWith("S") ? "text-red-400/80" : "text-white"}`}>
+          <span className={`font-mono-ui text-xs uppercase tracking-[0.14em] ${r.isLtp ? "text-sapphire-light font-bold" : r.key.startsWith("H") ? "text-emerald-400/80" : r.key.startsWith("L") ? "text-red-400/80" : "text-white"}`}>
             {r.isLtp ? "◆ LTP (Current)" : r.key}
           </span>
           <span className={`font-mono-ui text-sm ${r.isLtp ? "text-white font-bold" : "text-slate-300"}`}>₹{fmtNum(r.value)}</span>
