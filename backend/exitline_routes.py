@@ -13,7 +13,7 @@ from typing import Optional
 from fastapi import APIRouter, HTTPException
 
 from definedge_service import DefinedgeError
-from exitline import build_exitline_response, list_symbols, list_expiries, list_strikes
+from exitline import build_exitline_response, list_symbols, list_expiries, list_strikes, VALID_INTERVALS
 
 VALID_SEGMENTS = ("NSE", "FUT", "OPT")
 
@@ -55,15 +55,18 @@ def create_exitline_router(db, definedge) -> APIRouter:
 
     @router.get("/levels")
     async def levels(segment: str, symbol: str, expiry: Optional[str] = None,
-                      strike: Optional[float] = None, option_type: Optional[str] = None):
+                      strike: Optional[float] = None, option_type: Optional[str] = None,
+                      interval: int = 5):
         segment = _check_segment(segment)
         if segment == "FUT" and not expiry:
             raise HTTPException(status_code=400, detail="expiry is required for FUT")
         if segment == "OPT" and not (expiry and strike is not None and option_type):
             raise HTTPException(status_code=400, detail="expiry, strike, and option_type are required for OPT")
+        if interval not in VALID_INTERVALS:
+            raise HTTPException(status_code=400, detail=f"interval must be one of {VALID_INTERVALS}")
 
         try:
-            return await build_exitline_response(db, definedge, segment, symbol, expiry, strike, option_type)
+            return await build_exitline_response(db, definedge, segment, symbol, expiry, strike, option_type, interval)
         except DefinedgeError as e:
             raise HTTPException(status_code=502, detail=_public_error(e))
 

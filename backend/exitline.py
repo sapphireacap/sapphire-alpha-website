@@ -269,13 +269,16 @@ def resolve_instrument(df: pd.DataFrame, exitline_segment: str, symbol: str,
 
 
 # ---------------------------------------------------------------------------
-# Intraday chart — today's session, 5-minute bars aggregated from real
-# 1-minute OHLC (not just close), for Exitline's candlestick chart with the
-# Camarilla ladder overlaid as reference lines.
+# Intraday chart — today's session, aggregated from real 1-minute OHLC (not
+# just close) into a caller-chosen bucket size, for Exitline's candlestick
+# chart with the level ladder overlaid as reference lines.
 # ---------------------------------------------------------------------------
-def _aggregate_5min(bars: list) -> list:
-    """Group 1-minute bars into 5-minute buckets aligned to market open
-    (09:15) — bucket N covers [09:15 + 5N, 09:15 + 5N + 5) minutes."""
+VALID_INTERVALS = (1, 3, 5, 15, 30, 60)
+
+
+def _aggregate_bars(bars: list, minutes: int) -> list:
+    """Group 1-minute bars into `minutes`-wide buckets aligned to market
+    open (09:15) — bucket N covers [09:15 + N*minutes, 09:15 + (N+1)*minutes)."""
     buckets = {}
     for b in bars:
         try:
@@ -285,7 +288,7 @@ def _aggregate_5min(bars: list) -> list:
         minutes_since_open = (dt.hour * 60 + dt.minute) - (9 * 60 + 15)
         if minutes_since_open < 0:
             continue
-        bucket_start = dt.replace(hour=9, minute=15, second=0, microsecond=0) + timedelta(minutes=5 * (minutes_since_open // 5))
+        bucket_start = dt.replace(hour=9, minute=15, second=0, microsecond=0) + timedelta(minutes=minutes * (minutes_since_open // minutes))
         key = bucket_start.strftime("%d%m%Y%H%M")
         if key not in buckets:
             buckets[key] = {"ts": key, "open": b["open"], "high": b["high"], "low": b["low"], "close": b["close"]}
@@ -297,12 +300,12 @@ def _aggregate_5min(bars: list) -> list:
     return [buckets[k] for k in sorted(buckets)]
 
 
-async def intraday_5min_chart(definedge, segment: str, token: str) -> list:
-    """Today's session so far, as 5-minute candles — best-effort: an empty
-    list (pre-market, holiday, or an illiquid contract with zero prints
-    today) is a normal, valid result, not an error, and must never take
-    down the rest of the /levels response (the ladder/SL/TP don't depend
-    on this at all)."""
+async def intraday_chart(definedge, segment: str, token: str, interval_minutes: int = 5) -> list:
+    """Today's session so far, as `interval_minutes`-wide candles — best-
+    effort: an empty list (pre-market, holiday, or an illiquid contract
+    with zero prints today) is a normal, valid result, not an error, and
+    must never take down the rest of the /levels response (the ladder
+    doesn't depend on this at all)."""
     now = datetime.now(IST)
     if now.hour * 60 + now.minute < 9 * 60 + 15:
         return []  # before market open — frm(09:15) > to(now) would 400 upstream
@@ -311,7 +314,7 @@ async def intraday_5min_chart(definedge, segment: str, token: str) -> list:
     except DefinedgeError as e:
         logger.warning("Exitline: intraday chart unavailable for %s/%s: %s", segment, token, e)
         return []
-    agg = _aggregate_5min(bars)
+    agg = _aggregate_bars(bars, interval_minutes)
     out = []
     for b in agg:
         try:
@@ -366,7 +369,8 @@ async def get_or_compute_levels(db, definedge, segment: str, token: str, trading
 
 
 async def build_exitline_response(db, definedge, exitline_segment: str, symbol: str,
-                                   expiry: str = None, strike: float = None, option_type: str = None) -> dict:
+                                   expiry: str = None, strike: float = None, option_type: str = None,
+                                   interval_minutes: int = 5) -> dict:
     master = await definedge._get_all_master()
     resolved = resolve_instrument(master, exitline_segment, symbol, expiry, strike, option_type)
     if not resolved:
@@ -375,7 +379,7 @@ async def build_exitline_response(db, definedge, exitline_segment: str, symbol: 
     levels_doc = await get_or_compute_levels(db, definedge, resolved["segment"], resolved["token"], resolved["tradingsymbol"])
     ltp, chart = await asyncio.gather(
         definedge.equity_quote(resolved["segment"], resolved["token"]),
-        intraday_5min_chart(definedge, resolved["segment"], resolved["token"]),
+        intraday_chart(definedge, resolved["segment"], resolved["token"], interval_minutes),
     )
     zone = classify_and_suggest(levels_doc["levels"], ltp, levels_doc["close"])
 
