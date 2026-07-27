@@ -1,8 +1,8 @@
 import { useEffect, useState } from "react";
 import axios from "axios";
-import { motion } from "framer-motion";
+import { motion, AnimatePresence } from "framer-motion";
 import { Link } from "react-router-dom";
-import { ArrowUpRight, TrendingUp, TrendingDown, Minus, ExternalLink } from "lucide-react";
+import { ArrowUpRight, TrendingUp, TrendingDown, Minus, ExternalLink, X } from "lucide-react";
 import Navbar from "../components/site/Navbar";
 import Footer from "../components/site/Footer";
 import ParticleField from "../components/site/ParticleField";
@@ -354,7 +354,7 @@ const useLastUpdateLabel = (module) => {
   return "On demand";
 };
 
-const DirectoryCard = ({ module, index }) => {
+const DirectoryCard = ({ module, index, onAbout }) => {
   const lastUpdate = useLastUpdateLabel(module);
   const Icon = module.icon;
 
@@ -376,9 +376,14 @@ const DirectoryCard = ({ module, index }) => {
             </span>
             <span className="font-mono-ui text-xs text-sapphire-light">{module.no}</span>
           </span>
-          <span className="rounded-full border border-white/15 px-3 py-1 font-mono-ui text-[9px] uppercase tracking-wider text-slate-400 whitespace-nowrap shrink-0">
+          <button
+            type="button"
+            onClick={(e) => { e.preventDefault(); e.stopPropagation(); onAbout(module); }}
+            className="rounded-full border border-white/15 px-3 py-1 font-mono-ui text-[9px] uppercase tracking-wider text-slate-400 whitespace-nowrap shrink-0 hover:border-sapphire-light/50 hover:text-white transition-colors"
+            data-testid={`about-module-${module.slug}`}
+          >
             About Module
-          </span>
+          </button>
         </div>
 
         <h3 className="font-display text-xl font-bold text-white tracking-tight mb-1.5">{module.title}</h3>
@@ -398,8 +403,60 @@ const DirectoryCard = ({ module, index }) => {
   );
 };
 
+// Small popup, not a page section — triggered by a directory card's "About
+// Module" badge. Deliberately the only place Overview copy (purpose/what it
+// measures/how to interpret) shows up at all; the module's own detail page
+// no longer has an Overview section.
+const AboutModuleModal = ({ module, onClose }) => (
+  <motion.div
+    initial={{ opacity: 0 }}
+    animate={{ opacity: 1 }}
+    exit={{ opacity: 0 }}
+    transition={{ duration: 0.25 }}
+    className="fixed inset-0 z-50 flex items-center justify-center bg-void/80 backdrop-blur-sm px-6"
+    onClick={onClose}
+    data-testid="about-module-modal-overlay"
+  >
+    <motion.div
+      initial={{ opacity: 0, y: 12, scale: 0.97 }}
+      animate={{ opacity: 1, y: 0, scale: 1 }}
+      exit={{ opacity: 0, y: 8, scale: 0.98 }}
+      transition={{ duration: 0.25, ease: EASE }}
+      onClick={(e) => e.stopPropagation()}
+      className="relative w-full max-w-md rounded-2xl border border-white/10 bg-[#0A0D18] p-6 md:p-7"
+      data-testid="about-module-modal"
+    >
+      <button
+        type="button"
+        onClick={onClose}
+        className="absolute top-4 right-4 text-slate-500 hover:text-white transition-colors"
+        data-testid="about-module-close"
+      >
+        <X size={18} />
+      </button>
+      <p className="font-mono-ui text-[10px] uppercase tracking-[0.2em] text-sapphire-light mb-2">About Module</p>
+      <h3 className="font-display text-xl font-bold text-white tracking-tight mb-5">{module.title}</h3>
+      <div className="space-y-4">
+        <div>
+          <p className="font-mono-ui text-[10px] uppercase tracking-[0.16em] text-slate-500 mb-1">Purpose</p>
+          <p className="text-sm text-slate-300 leading-relaxed">{module.overview.purpose}</p>
+        </div>
+        <div>
+          <p className="font-mono-ui text-[10px] uppercase tracking-[0.16em] text-slate-500 mb-1">What It Measures</p>
+          <p className="text-sm text-slate-300 leading-relaxed">{module.overview.whatItMeasures}</p>
+        </div>
+        <div>
+          <p className="font-mono-ui text-[10px] uppercase tracking-[0.16em] text-slate-500 mb-1">How To Interpret</p>
+          <p className="text-sm text-slate-300 leading-relaxed">{module.overview.interpret}</p>
+        </div>
+      </div>
+    </motion.div>
+  </motion.div>
+);
+
 /* --------------------------------- Directory --------------------------------- */
 export default function AlphaTerminal() {
+  const [aboutModule, setAboutModule] = useState(null);
   useEffect(() => { window.scrollTo(0, 0); }, []);
 
   return (
@@ -444,12 +501,15 @@ export default function AlphaTerminal() {
         <section className="relative pb-24 md:pb-32">
           <div className="container-x">
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5" data-testid="module-directory">
-              {MODULES.map((m, i) => <DirectoryCard key={m.slug} module={m} index={i} />)}
+              {MODULES.map((m, i) => <DirectoryCard key={m.slug} module={m} index={i} onAbout={setAboutModule} />)}
             </div>
           </div>
         </section>
       </main>
       <Footer />
+      <AnimatePresence>
+        {aboutModule && <AboutModuleModal module={aboutModule} onClose={() => setAboutModule(null)} />}
+      </AnimatePresence>
     </>
   );
 }

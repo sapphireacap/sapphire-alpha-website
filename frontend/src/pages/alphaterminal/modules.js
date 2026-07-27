@@ -36,13 +36,6 @@ export const MODULES = [
       whatItMeasures: "Aggregates signals across each index's options market structure into a single Bullish, Bearish, or Neutral read.",
       interpret: "Use it as confirmation, not a standalone entry signal — an aligned bias supports a trade idea already in place; an opposing bias is a caution flag.",
     },
-    methodology: "The Vector reads each index's options market structure for directional pressure across its available expiries and combines them into one confluence read. Exact mechanics, parameters, and decision rules are proprietary and not disclosed.",
-    researchNotes: [
-      { date: "2026-07-27", note: "Extended from NIFTY-only to also cover BANKNIFTY, SENSEX, and BANKEX, renamed from \"Sapphire Nifty Vector\" to \"Index Vector\" accordingly. Same parameters throughout; BANKNIFTY/BANKEX run a 4-signal monthly-only read since neither lists a real weekly contract." },
-      { date: "2026-07-27", note: "Public output limited to bias, spot, and update time — underlying signal construction is no longer exposed on this page." },
-      { date: "2026-07-27", note: "Track record reset to begin counting fresh from live data." },
-      { date: "2026-07-26", note: "Extended to a 6-signal weekly + monthly confluence model, up from the original 2-signal weekly-only version." },
-    ],
   },
   {
     slug: "momentum-engine",
@@ -61,10 +54,6 @@ export const MODULES = [
       whatItMeasures: "Ranks stocks by a composite momentum score built from price action, volume, and conviction scoring.",
       interpret: "A higher score reflects stronger, more confirmed momentum — treat the list as a daily research starting point, not a buy list.",
     },
-    methodology: "Combines price momentum, volume surge, and conviction scoring into a single ranked list, refreshed each session. The exact weighting and thresholds are proprietary and not disclosed.",
-    researchNotes: [
-      { date: "2026-07-27", note: "Sync workflow moved to a single-direction-per-day model — the leaderboard now shows exactly one confirmed read (bullish or bearish) rather than a fixed top-3/bottom-3 split." },
-    ],
   },
   {
     slug: "relative-strength",
@@ -83,10 +72,6 @@ export const MODULES = [
       whatItMeasures: "Compares each stock's price performance against its peer universe across multiple lookback windows.",
       interpret: "Strength here is relative, not absolute — a stock can rank highly while still falling, simply by falling less than its peers.",
     },
-    methodology: "Scores each name's price performance relative to its peer universe across multiple lookback windows. The exact universe construction and weighting are proprietary and not disclosed.",
-    researchNotes: [
-      { date: "2026-07-27", note: "Module registered — data feed is being calibrated before the leaderboard goes live." },
-    ],
   },
   {
     slug: "sharpe-dashboard",
@@ -104,10 +89,6 @@ export const MODULES = [
       whatItMeasures: "Computes Sharpe, Sortino, and maximum drawdown across the Nifty 500 for any basket you choose, or the full ranked universe.",
       interpret: "A higher Sharpe reflects steadier, more risk-efficient returns — useful for comparing very different names on equal footing.",
     },
-    methodology: "Computes Sharpe, Sortino, and maximum drawdown from each name's historical daily returns over the selected lookback window, using standard risk-adjusted return formulas.",
-    researchNotes: [
-      { date: "2026-07-20", note: "Module launched with support for custom baskets and full Nifty 500 ranking." },
-    ],
   },
   {
     slug: "ewma-scanner",
@@ -125,10 +106,6 @@ export const MODULES = [
       whatItMeasures: "Runs an exponentially-weighted moving-average crossover, with an acceleration filter, against buy-and-hold on any symbol you choose.",
       interpret: "A fresh bullish crossover suggests emerging upward momentum; a bearish crossover suggests the opposite — always shown against its own buy-and-hold benchmark for context.",
     },
-    methodology: "Runs fast/slow exponentially-weighted moving-average crossovers with an acceleration filter, backtested against buy-and-hold on the chosen symbol. Exact period parameters are configurable per run, not fixed or disclosed as a single ruleset.",
-    researchNotes: [
-      { date: "2026-07-18", note: "Module launched, supporting any NSE/BSE/NFO/BFO symbol." },
-    ],
   },
   {
     slug: "breakout-candidates",
@@ -147,10 +124,6 @@ export const MODULES = [
       whatItMeasures: "Screens for price action nearing a defined resistance or support level alongside volume confirmation.",
       interpret: "A candidate here is a setup to watch, not a trigger — confirmation typically requires the breakout to hold with follow-through volume.",
     },
-    methodology: "Flags price action clearing a defined structural level on above-average volume. The exact level construction and volume threshold are proprietary and not disclosed.",
-    researchNotes: [
-      { date: "2026-07-27", note: "Module registered — data feed is being calibrated before the leaderboard goes live." },
-    ],
   },
   {
     slug: "positional-opportunities",
@@ -169,10 +142,6 @@ export const MODULES = [
       whatItMeasures: "Looks for structural setups that develop over several sessions rather than within a single day.",
       interpret: "Positions flagged here are meant to be held and reviewed over days to weeks, not exited same-day.",
     },
-    methodology: "Screens for structural setups that develop over multiple sessions rather than intraday turnover. The exact setup criteria are proprietary and not disclosed.",
-    researchNotes: [
-      { date: "2026-07-27", note: "Module registered — data feed is being calibrated before the leaderboard goes live." },
-    ],
   },
 ];
 

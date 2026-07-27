@@ -102,24 +102,6 @@ const Header = ({ module }) => (
   </section>
 );
 
-/* ------------------------------- Overview ------------------------------- */
-const Row = ({ label, value }) => (
-  <div className="py-4 border-b border-white/[0.06] last:border-0 grid grid-cols-1 sm:grid-cols-[160px_1fr] gap-1 sm:gap-6">
-    <p className="font-mono-ui text-[10px] uppercase tracking-[0.16em] text-slate-500">{label}</p>
-    <p className="text-sm text-slate-300 leading-relaxed">{value}</p>
-  </div>
-);
-
-const Overview = ({ overview }) => (
-  <Section no="01" title="Overview" testId="section-overview">
-    <div className={`${SURFACE} p-6 md:p-8`}>
-      <Row label="Purpose" value={overview.purpose} />
-      <Row label="What It Measures" value={overview.whatItMeasures} />
-      <Row label="How To Interpret" value={overview.interpret} />
-    </div>
-  </Section>
-);
-
 /* ----------------------------- Live Dashboard ----------------------------- */
 const ScannerDashboard = ({ scannerKey }) => {
   const [rows, setRows] = useState(null);
@@ -168,13 +150,18 @@ const IndexTabs = ({ indices, active, onChange }) => (
   </div>
 );
 
-const LiveDashboard = ({ module, signals, activeIndex, onChangeIndex }) => (
-  <Section no="02" title="Live Dashboard" testId="section-live-dashboard">
+// Live Dashboard shows all 4 covered indices at once as cards (no selector
+// needed — this is the "what's happening right now" view). Historical
+// Performance below is the one that still uses IndexTabs, since a track
+// record is denser and reads better one index at a time.
+const LiveDashboard = ({ module, signals }) => (
+  <Section no="01" title="Live Dashboard" testId="section-live-dashboard">
     {module.kind === "vector" && (
-      <>
-        <IndexTabs indices={module.indices} active={activeIndex} onChange={onChangeIndex} />
-        <StraddleCompass signal={signals[activeIndex]} index={activeIndex} />
-      </>
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4" data-testid="vector-index-grid">
+        {module.indices.map((idx) => (
+          <StraddleCompass key={idx} signal={signals[idx]} index={idx} />
+        ))}
+      </div>
     )}
     {module.kind === "scanner" && <ScannerDashboard scannerKey={module.scannerKey} />}
     {module.kind === "ewma" && <EwmaCrossoverTool />}
@@ -184,7 +171,7 @@ const LiveDashboard = ({ module, signals, activeIndex, onChangeIndex }) => (
 
 /* -------------------------- Historical Performance -------------------------- */
 const HistoricalPerformance = ({ module, trackRecords, activeIndex, onChangeIndex }) => (
-  <Section no="03" title="Historical Performance" testId="section-historical-performance" collapsible>
+  <Section no="02" title="Historical Performance" testId="section-historical-performance" collapsible>
     {module.kind === "vector" ? (
       <>
         <IndexTabs indices={module.indices} active={activeIndex} onChange={onChangeIndex} />
@@ -199,35 +186,6 @@ const HistoricalPerformance = ({ module, trackRecords, activeIndex, onChangeInde
         </p>
       </div>
     )}
-  </Section>
-);
-
-/* -------------------------------- Methodology -------------------------------- */
-const Methodology = ({ text }) => (
-  <Section no="04" title="Methodology" testId="section-methodology">
-    <div className={`${SURFACE} p-6 md:p-8 border-l-2 border-l-sapphire`}>
-      <p className="text-base md:text-lg font-light text-slate-300 leading-relaxed italic max-w-3xl">"{text}"</p>
-    </div>
-  </Section>
-);
-
-/* ------------------------------- Research Notes ------------------------------- */
-const fmtNoteDate = (iso) => {
-  const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-  const [y, m, d] = iso.split("-");
-  return `${d} ${MONTHS[Number(m) - 1]} ${y}`;
-};
-
-const ResearchNotes = ({ notes }) => (
-  <Section no="05" title="Research Notes" testId="section-research-notes" collapsible>
-    <div className={`${SURFACE} divide-y divide-white/[0.06]`}>
-      {notes.map((n, i) => (
-        <div key={i} className="flex gap-6 px-6 py-4">
-          <span className="font-mono-ui text-xs text-slate-500 shrink-0 w-24">{fmtNoteDate(n.date)}</span>
-          <span className="text-sm text-slate-300 leading-relaxed">{n.note}</span>
-        </div>
-      ))}
-    </div>
   </Section>
 );
 
@@ -286,11 +244,8 @@ export default function ModuleDetail() {
       <main className="relative bg-void min-h-screen">
         <Header module={module} />
         <div className="container-x">
-          <Overview overview={module.overview} />
-          <LiveDashboard module={module} signals={signals} activeIndex={activeIndex} onChangeIndex={setActiveIndex} />
+          <LiveDashboard module={module} signals={signals} />
           <HistoricalPerformance module={module} trackRecords={trackRecords} activeIndex={activeIndex} onChangeIndex={setActiveIndex} />
-          <Methodology text={module.methodology} />
-          <ResearchNotes notes={module.researchNotes} />
         </div>
       </main>
       <Footer />
