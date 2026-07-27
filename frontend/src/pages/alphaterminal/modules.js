@@ -5,29 +5,40 @@ import {
 // Every research module shown on the Alpha Terminal directory and served at
 // its own /alpha-terminal/:slug page (ModuleDetail.jsx). `kind` decides what
 // ModuleDetail's Live Dashboard section renders:
-//   "vector"  -> StraddleCompass (the Nifty Vector's public bias/spot read)
+//   "vector"  -> one StraddleCompass per covered index (see indices below) —
+//                the Index Vector's public bias/spot read, per index
 //   "scanner" -> MomentumTable against /terminal/stocks?scanner=<scannerKey>
 //   "ewma"    -> the standalone EwmaCrossoverTool, embedded
 //   "sharpe"  -> the standalone SharpeDashboardTool, embedded
 export const MODULES = [
   {
-    slug: "nifty-vector",
+    slug: "index-vector",
     no: "01",
     kind: "vector",
     icon: Compass,
-    title: "Sapphire Nifty Vector",
+    title: "Index Vector",
     shortDescription: "Institutional market regime confirmation model.",
     category: "Market Intelligence",
     status: "Operational",
-    universe: "NIFTY Index Options",
+    universe: "NIFTY, BANKNIFTY, SENSEX, BANKEX Index Options",
     coverage: "Weekly & Monthly Expiries",
+    // Displayed inside the module page, one compass per index, in this
+    // order. Same P&F box%/reversal parameters and same all-legs-must-agree
+    // confluence rule for every index — only the underlying contracts
+    // differ. NIFTY/SENSEX still list real weekly-cadence contracts;
+    // BANKNIFTY/BANKEX are monthly-only now (confirmed live against
+    // Definedge's master data), so those two skip the weekly leg entirely
+    // rather than reading a fake one — see definedge_service.py's
+    // INDEX_CONFIG chart_mode for the backend side of this.
+    indices: ["NIFTY", "BANKNIFTY", "SENSEX", "BANKEX"],
     overview: {
-      purpose: "Confirms the near-term directional regime for NIFTY before you commit to a trade.",
-      whatItMeasures: "Aggregates signals across NIFTY's options market structure into a single Bullish, Bearish, or Neutral read.",
+      purpose: "Confirms the near-term directional regime for NIFTY, BANKNIFTY, SENSEX, and BANKEX before you commit to a trade.",
+      whatItMeasures: "Aggregates signals across each index's options market structure into a single Bullish, Bearish, or Neutral read.",
       interpret: "Use it as confirmation, not a standalone entry signal — an aligned bias supports a trade idea already in place; an opposing bias is a caution flag.",
     },
-    methodology: "The Vector reads NIFTY's options market structure for directional pressure across multiple expiries and combines them into one confluence read. Exact mechanics, parameters, and decision rules are proprietary and not disclosed.",
+    methodology: "The Vector reads each index's options market structure for directional pressure across its available expiries and combines them into one confluence read. Exact mechanics, parameters, and decision rules are proprietary and not disclosed.",
     researchNotes: [
+      { date: "2026-07-27", note: "Extended from NIFTY-only to also cover BANKNIFTY, SENSEX, and BANKEX, renamed from \"Sapphire Nifty Vector\" to \"Index Vector\" accordingly. Same parameters throughout; BANKNIFTY/BANKEX run a 4-signal monthly-only read since neither lists a real weekly contract." },
       { date: "2026-07-27", note: "Public output limited to bias, spot, and update time — underlying signal construction is no longer exposed on this page." },
       { date: "2026-07-27", note: "Track record reset to begin counting fresh from live data." },
       { date: "2026-07-26", note: "Extended to a 6-signal weekly + monthly confluence model, up from the original 2-signal weekly-only version." },

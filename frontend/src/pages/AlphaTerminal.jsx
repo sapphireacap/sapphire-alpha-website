@@ -213,26 +213,30 @@ export const BIAS_STYLE = {
 // about how the bias is computed (no strikes, expiries, or leg trends): the
 // public signal API itself only ever returns bias/spot/note/updated_at now,
 // so there is nothing to leak here even if this component tried to.
-export const StraddleCompass = ({ signal }) => {
+export const INDEX_LABELS = { NIFTY: "NIFTY", BANKNIFTY: "BANKNIFTY", SENSEX: "SENSEX", BANKEX: "BANKEX" };
+
+export const StraddleCompass = ({ signal, index = "NIFTY" }) => {
   const s = signal || {};
   const bias = s.bias || "Neutral";
   const style = BIAS_STYLE[bias] || BIAS_STYLE.Neutral;
   const { Icon } = style;
   const live = isNseSessionLive();
   const elapsed = useElapsedLabel(s.updated_at);
+  const label = INDEX_LABELS[index] || index;
 
   const [liveSpot, setLiveSpot] = useState(null);
   useEffect(() => {
+    setLiveSpot(null);
     const tick = () => {
       if (!isNseSessionLive()) return;
-      axios.get(`${API}/terminal/spot`).then((r) => {
+      axios.get(`${API}/terminal/spot`, { params: { index } }).then((r) => {
         if (r.data?.spot) setLiveSpot(r.data);
       }).catch(() => {});
     };
     tick();
     const id = setInterval(tick, 3000);
     return () => clearInterval(id);
-  }, []);
+  }, [index]);
 
   const displaySpot = liveSpot?.spot || s.spot;
   const changeNegative = liveSpot?.change?.startsWith("-");
@@ -241,10 +245,10 @@ export const StraddleCompass = ({ signal }) => {
     <div
       className={`relative rounded-xl border ${style.ring} overflow-hidden`}
       style={{ boxShadow: `0 0 40px ${style.glow} inset`, borderLeftWidth: 3 }}
-      data-testid="straddle-compass"
+      data-testid={`straddle-compass-${index}`}
     >
       <div className="flex flex-col items-center text-center gap-4 p-6 md:p-8">
-        <p className="font-mono-ui text-[10px] uppercase tracking-[0.28em] text-slate-500">Nifty Directional Bias</p>
+        <p className="font-mono-ui text-[10px] uppercase tracking-[0.28em] text-slate-500">{label} Directional Bias</p>
         <div className="flex items-center gap-4">
           <span className={`inline-flex h-12 w-12 items-center justify-center rounded-xl border ${style.ring} ${style.color}`}>
             <Icon size={26} />
@@ -268,7 +272,7 @@ export const StraddleCompass = ({ signal }) => {
           <span className="ml-4 text-slate-600">{elapsed}</span>
           {displaySpot && (
             <span className="ml-4">
-              NIFTY SPOT: <span className="text-slate-300">{displaySpot}</span>
+              {label} SPOT: <span className="text-slate-300">{displaySpot}</span>
               {liveSpot?.change && (
                 <span className={`ml-1 ${changeNegative ? "text-red-400" : "text-emerald-400"}`}>
                   ({liveSpot.change}, {liveSpot.change_pct}%)
@@ -372,7 +376,9 @@ const DirectoryCard = ({ module, index }) => {
             </span>
             <span className="font-mono-ui text-xs text-sapphire-light">{module.no}</span>
           </span>
-          <ArrowUpRight size={16} className="text-slate-600 group-hover:text-sapphire-light transition-all duration-300 group-hover:translate-x-0.5 group-hover:-translate-y-0.5 shrink-0" />
+          <span className="rounded-full border border-white/15 px-3 py-1 font-mono-ui text-[9px] uppercase tracking-wider text-slate-400 whitespace-nowrap shrink-0">
+            About Module
+          </span>
         </div>
 
         <h3 className="font-display text-xl font-bold text-white tracking-tight mb-1.5">{module.title}</h3>
@@ -394,18 +400,7 @@ const DirectoryCard = ({ module, index }) => {
 
 /* --------------------------------- Directory --------------------------------- */
 export default function AlphaTerminal() {
-  const [signal, setSignal] = useState(null);
-
-  useEffect(() => {
-    window.scrollTo(0, 0);
-    axios.get(`${API}/terminal/signal`).then((r) => setSignal(r.data)).catch(() => {});
-  }, []);
-
-  const bias = signal?.bias || "Neutral";
-  const style = BIAS_STYLE[bias] || BIAS_STYLE.Neutral;
-  const lastUpdateTime = signal?.updated_at
-    ? new Date(signal.updated_at).toLocaleTimeString("en-US", { timeZone: "Asia/Kolkata", hour: "numeric", minute: "2-digit" })
-    : "—";
+  useEffect(() => { window.scrollTo(0, 0); }, []);
 
   return (
     <>
@@ -432,7 +427,7 @@ export default function AlphaTerminal() {
               transition={{ duration: 0.9, ease: EASE, delay: 0.1 }}
               className="font-display font-black tracking-tighter text-white text-5xl md:text-6xl leading-[0.95]"
             >
-              Institutional Market Intelligence
+              Market Intelligence
             </motion.h1>
             <motion.p
               initial={{ opacity: 0, y: 24 }}
@@ -443,28 +438,6 @@ export default function AlphaTerminal() {
             >
               Proprietary quantitative models, systematic screening engines and market intelligence built for disciplined investors.
             </motion.p>
-
-            <motion.div
-              initial={{ opacity: 0, y: 24 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.9, ease: EASE, delay: 0.3 }}
-              className="mt-10 inline-flex flex-wrap items-center gap-x-10 gap-y-4 rounded-2xl border border-white/10 bg-[#0A0D18] px-6 py-5"
-              data-testid="system-status-bar"
-            >
-              <span className="font-mono-ui text-[10px] uppercase tracking-[0.2em] text-slate-500">Current System Status</span>
-              <span>
-                <span className="block font-mono-ui text-[10px] uppercase tracking-[0.16em] text-slate-500 mb-1">Market Bias</span>
-                <span className={`font-display text-lg font-bold ${style.color}`} data-testid="status-bias">{bias.toUpperCase()}</span>
-              </span>
-              <span>
-                <span className="block font-mono-ui text-[10px] uppercase tracking-[0.16em] text-slate-500 mb-1">Last Update</span>
-                <span className="text-sm text-slate-300">{lastUpdateTime}</span>
-              </span>
-              <span>
-                <span className="block font-mono-ui text-[10px] uppercase tracking-[0.16em] text-slate-500 mb-1">System State</span>
-                <span className="text-sm text-emerald-300 flex items-center gap-1.5"><LivePulseDot size="h-1.5 w-1.5" /> Operational</span>
-              </span>
-            </motion.div>
           </div>
         </section>
 

@@ -146,9 +146,36 @@ const ScannerDashboard = ({ scannerKey }) => {
   );
 };
 
-const LiveDashboard = ({ module, signal }) => (
+// Shared by Live Dashboard and Historical Performance for a "vector" kind
+// module — one small pill row selects which of the covered indices both
+// sections show, so switching updates them together rather than needing two
+// independent selectors.
+const IndexTabs = ({ indices, active, onChange }) => (
+  <div className="flex items-center gap-2 mb-5" data-testid="index-tabs">
+    {indices.map((idx) => (
+      <button
+        key={idx}
+        type="button"
+        onClick={() => onChange(idx)}
+        className={`px-3.5 py-1.5 rounded-full font-mono-ui text-[11px] uppercase tracking-[0.1em] whitespace-nowrap border transition-colors duration-300 ${
+          active === idx ? "border-sapphire-light/50 bg-sapphire/10 text-white" : "border-white/10 text-slate-500 hover:text-slate-300"
+        }`}
+        data-testid={`index-tab-${idx}`}
+      >
+        {idx}
+      </button>
+    ))}
+  </div>
+);
+
+const LiveDashboard = ({ module, signals, activeIndex, onChangeIndex }) => (
   <Section no="02" title="Live Dashboard" testId="section-live-dashboard">
-    {module.kind === "vector" && <StraddleCompass signal={signal} />}
+    {module.kind === "vector" && (
+      <>
+        <IndexTabs indices={module.indices} active={activeIndex} onChange={onChangeIndex} />
+        <StraddleCompass signal={signals[activeIndex]} index={activeIndex} />
+      </>
+    )}
     {module.kind === "scanner" && <ScannerDashboard scannerKey={module.scannerKey} />}
     {module.kind === "ewma" && <EwmaCrossoverTool />}
     {module.kind === "sharpe" && <SharpeDashboardTool />}
@@ -156,12 +183,15 @@ const LiveDashboard = ({ module, signal }) => (
 );
 
 /* -------------------------- Historical Performance -------------------------- */
-const HistoricalPerformance = ({ module, trackRecord }) => (
+const HistoricalPerformance = ({ module, trackRecords, activeIndex, onChangeIndex }) => (
   <Section no="03" title="Historical Performance" testId="section-historical-performance" collapsible>
     {module.kind === "vector" ? (
-      <div className={`${SURFACE} p-6 md:p-8`}>
-        <TrackRecordPanel record={trackRecord} />
-      </div>
+      <>
+        <IndexTabs indices={module.indices} active={activeIndex} onChange={onChangeIndex} />
+        <div className={`${SURFACE} p-6 md:p-8`}>
+          <TrackRecordPanel record={trackRecords[activeIndex]} />
+        </div>
+      </>
     ) : (
       <div className={`${SURFACE} border-dashed px-6 py-14 text-center`} data-testid="historical-empty">
         <p className="text-sm font-light text-slate-500 max-w-md mx-auto">
@@ -206,20 +236,33 @@ export default function ModuleDetail() {
   const { slug } = useParams();
   const navigate = useNavigate();
   const module = getModule(slug);
-  const [signal, setSignal] = useState(null);
-  const [trackRecord, setTrackRecord] = useState(null);
+  const [signals, setSignals] = useState({});
+  const [trackRecords, setTrackRecords] = useState({});
+  const [activeIndex, setActiveIndex] = useState(module?.indices?.[0] || "NIFTY");
 
   useEffect(() => {
     window.scrollTo(0, 0);
-    if (!module) return;
-    if (module.kind === "vector") {
-      axios.get(`${API}/terminal/signal`).then((r) => setSignal(r.data)).catch(() => {});
-      axios.get(`${API}/terminal/track-record`).then((r) => setTrackRecord(r.data)).catch(() => {});
-      const id = setInterval(() => {
-        axios.get(`${API}/terminal/signal`).then((r) => setSignal(r.data)).catch(() => {});
-      }, 60000);
-      return () => clearInterval(id);
-    }
+    if (!module || module.kind !== "vector") return;
+
+    const loadSignals = () => {
+      module.indices.forEach((idx) => {
+        axios.get(`${API}/terminal/signal`, { params: { index: idx } })
+          .then((r) => setSignals((s) => ({ ...s, [idx]: r.data })))
+          .catch(() => {});
+      });
+    };
+    const loadTrackRecords = () => {
+      module.indices.forEach((idx) => {
+        axios.get(`${API}/terminal/track-record`, { params: { index: idx } })
+          .then((r) => setTrackRecords((t) => ({ ...t, [idx]: r.data })))
+          .catch(() => {});
+      });
+    };
+
+    loadSignals();
+    loadTrackRecords();
+    const id = setInterval(loadSignals, 60000);
+    return () => clearInterval(id);
   }, [module]);
 
   if (!module) {
@@ -244,8 +287,8 @@ export default function ModuleDetail() {
         <Header module={module} />
         <div className="container-x">
           <Overview overview={module.overview} />
-          <LiveDashboard module={module} signal={signal} />
-          <HistoricalPerformance module={module} trackRecord={trackRecord} />
+          <LiveDashboard module={module} signals={signals} activeIndex={activeIndex} onChangeIndex={setActiveIndex} />
+          <HistoricalPerformance module={module} trackRecords={trackRecords} activeIndex={activeIndex} onChangeIndex={setActiveIndex} />
           <Methodology text={module.methodology} />
           <ResearchNotes notes={module.researchNotes} />
         </div>

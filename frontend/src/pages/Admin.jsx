@@ -20,6 +20,15 @@ const SCANNERS = [
 ];
 const BIAS = ["Bullish", "Bearish", "Neutral"];
 
+// Mirrors backend/definedge_service.py's INDEX_CONFIG chart_mode — NIFTY and
+// SENSEX still list real weekly-cadence contracts (6-leg confluence);
+// BANKNIFTY and BANKEX are monthly-only now, so their manual-override form
+// skips the weekly fields entirely rather than showing inputs for legs that
+// don't exist. Kept in sync manually since this is presentation-only (the
+// backend is the source of truth for how bias actually gets computed/derived).
+const INDEX_OPTS = ["NIFTY", "BANKNIFTY", "SENSEX", "BANKEX"];
+const INDEX_CHART_MODE = { NIFTY: "6", BANKNIFTY: "4", SENSEX: "6", BANKEX: "4" };
+
 const authHeaders = () => ({ headers: { Authorization: `Bearer ${localStorage.getItem(TOKEN_KEY)}` } });
 const tempId = () => `new-${Math.random().toString(36).slice(2)}`;
 
@@ -142,12 +151,14 @@ const DefinedgeConnect = ({ onAuthError, onSignalUpdate }) => {
     }
   };
 
+  const [refreshIndex, setRefreshIndex] = useState("NIFTY");
+
   const refreshNow = async () => {
     setRefreshing(true);
     try {
-      const { data } = await axios.post(`${API}/admin/definedge/refresh`, {}, authHeaders());
+      const { data } = await axios.post(`${API}/admin/definedge/refresh`, {}, { ...authHeaders(), params: { index: refreshIndex } });
       onSignalUpdate(data);
-      toast.success("Sapphire Nifty Vector refreshed from live data.");
+      toast.success(`${refreshIndex} Index Vector refreshed from live data.`);
     } catch (err) {
       if (err?.response?.status === 401) { onAuthError(); return; }
       toast.error(errMsg(err, "Refresh failed."));
@@ -230,6 +241,12 @@ const DefinedgeConnect = ({ onAuthError, onSignalUpdate }) => {
           {verifyingOtp ? <><Loader2 size={16} className="animate-spin" /> Verifying</> : "Verify"}
         </button>
 
+        <div className="w-32">
+          <label className="font-mono-ui text-[10px] uppercase tracking-[0.18em] text-slate-500 block mb-1.5">Index</label>
+          <select value={refreshIndex} onChange={(e) => setRefreshIndex(e.target.value)} style={{ colorScheme: "dark" }} className={fld} data-testid="definedge-refresh-index">
+            {INDEX_OPTS.map((i) => <option key={i} value={i} className="bg-surface">{i}</option>)}
+          </select>
+        </div>
         <button
           onClick={refreshNow}
           disabled={!connected || refreshing}
@@ -271,22 +288,35 @@ const DefinedgeConnect = ({ onAuthError, onSignalUpdate }) => {
 const BIAS_OPTS = ["Neutral", "Bullish", "Bearish"];
 const TREND_OPTS = ["Neutral", "Bullish", "Bearish"];
 
-const SignalPanel = ({ onAuthError, signal }) => {
-  const empty = {
-    bias: "Neutral", spot: "", atm: "", up_strike: "", down_strike: "",
+const SignalPanel = ({ onAuthError }) => {
+  const empty = (index) => ({
+    index, bias: "Neutral", spot: "", atm: "", up_strike: "", down_strike: "",
     weekly_expiry: "", monthly_expiry: "",
     weekly_up_trend: "Neutral", weekly_down_trend: "Neutral",
     monthly_up_trend: "Neutral", monthly_down_trend: "Neutral",
     monthly_atm_ce_trend: "Neutral", monthly_atm_pe_trend: "Neutral",
     note: "", source: "manual",
-  };
-  const [sig, setSig] = useState(empty);
+  });
+  const [index, setIndex] = useState("NIFTY");
+  const [sig, setSig] = useState(empty("NIFTY"));
+  const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const chartMode = INDEX_CHART_MODE[index];
 
   useEffect(() => {
-    if (signal) setSig((s) => ({ ...empty, ...signal }));
+    let cancelled = false;
+    setLoading(true);
+    axios.get(`${API}/admin/terminal/signal`, { ...authHeaders(), params: { index } })
+      .then(({ data }) => { if (!cancelled) setSig({ ...empty(index), ...data }); })
+      .catch((err) => {
+        if (cancelled) return;
+        if (err?.response?.status === 401) { onAuthError(); return; }
+        setSig(empty(index));
+      })
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [signal]);
+  }, [index]);
 
   const set = (k) => (e) => setSig((s) => ({ ...s, [k]: e.target.value }));
 
@@ -295,7 +325,7 @@ const SignalPanel = ({ onAuthError, signal }) => {
     try {
       const { data } = await axios.put(`${API}/terminal/signal`, sig, authHeaders());
       setSig((s) => ({ ...s, ...data }));
-      toast.success("Sapphire Nifty Vector updated. Live on the terminal.");
+      toast.success(`${index} Index Vector updated. Live on the terminal.`);
     } catch (err) {
       if (err?.response?.status === 401) { toast.error("Session expired."); onAuthError(); return; }
       toast.error("Failed to save signal.");
@@ -320,53 +350,80 @@ const SignalPanel = ({ onAuthError, signal }) => {
 
   return (
     <div className="glass rounded-2xl p-6 md:p-8 mb-10" data-testid="admin-signal-panel">
-      <div className="flex items-center gap-3 mb-2">
-        <h2 className="font-display text-xl font-bold text-white">Sapphire Nifty Vector</h2>
-        <span className="font-mono-ui text-[10px] uppercase tracking-[0.2em] text-sapphire-light">6-Chart Confluence</span>
+      <div className="flex flex-wrap items-center justify-between gap-3 mb-2">
+        <div className="flex items-center gap-3">
+          <h2 className="font-display text-xl font-bold text-white">Index Vector</h2>
+          <span className="font-mono-ui text-[10px] uppercase tracking-[0.2em] text-sapphire-light">
+            {chartMode === "6" ? "6-Chart Confluence" : "4-Chart Confluence (monthly-only)"}
+          </span>
+        </div>
+        <div className="w-36">
+          <select value={index} onChange={(e) => setIndex(e.target.value)} style={{ colorScheme: "dark" }} className={sel} data-testid="signal-index-select">
+            {INDEX_OPTS.map((i) => <option key={i} value={i} className="bg-surface">{i}</option>)}
+          </select>
+        </div>
       </div>
       <p className="text-sm text-slate-500 mb-6">
-        Leave Bias on <em>Neutral</em> to auto-derive it from all six legs. Bullish needs +200 falling &amp; −200 rising
-        on BOTH weekly and monthly, AND monthly ATM CE rising &amp; PE falling — mirror image for Bearish. Any single leg
-        out of line stays Neutral.
+        {chartMode === "6" ? (
+          <>Leave Bias on <em>Neutral</em> to auto-derive it from all six legs. Bullish needs +200 falling &amp; −200 rising
+          on BOTH weekly and monthly, AND monthly ATM CE rising &amp; PE falling — mirror image for Bearish. Any single leg
+          out of line stays Neutral.</>
+        ) : (
+          <>{index} has no real weekly-cadence contract (NSE/BSE consolidated it to monthly-only), so this reads only the
+          four monthly legs. Leave Bias on <em>Neutral</em> to auto-derive it: Bullish needs +200 falling &amp; −200 rising,
+          AND monthly ATM CE rising &amp; PE falling — mirror image for Bearish.</>
+        )}
       </p>
 
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-5 mb-6">
-        <Field label="Bias">
-          <select value={sig.bias} onChange={set("bias")} style={{ colorScheme: "dark" }} className={sel} data-testid="signal-bias">
-            {BIAS_OPTS.map((b) => <option key={b} value={b} className="bg-surface">{b === "Neutral" ? "Neutral (auto)" : b}</option>)}
-          </select>
-        </Field>
-        <Field label="Spot"><input value={sig.spot} onChange={set("spot")} className={fld} placeholder="24,000" data-testid="signal-spot" /></Field>
-        <Field label="ATM"><input value={sig.atm} onChange={set("atm")} className={fld} placeholder="24000" data-testid="signal-atm" /></Field>
-        <div className="hidden md:block" />
-        <Field label="ATM +200 strike"><input value={sig.up_strike} onChange={set("up_strike")} className={fld} placeholder="24200" data-testid="signal-up-strike" /></Field>
-        <Field label="ATM −200 strike"><input value={sig.down_strike} onChange={set("down_strike")} className={fld} placeholder="23800" data-testid="signal-down-strike" /></Field>
-        <Field label="Weekly expiry"><input value={sig.weekly_expiry} onChange={set("weekly_expiry")} className={fld} placeholder="2026-07-28" data-testid="signal-weekly-expiry" /></Field>
-        <Field label="Monthly expiry"><input value={sig.monthly_expiry} onChange={set("monthly_expiry")} className={fld} placeholder="2026-08-25" data-testid="signal-monthly-expiry" /></Field>
-      </div>
+      {loading ? (
+        <div className="flex items-center gap-2 text-slate-500 text-sm py-10 justify-center"><Loader2 className="animate-spin" size={16} /> Loading</div>
+      ) : (
+        <>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-5 mb-6">
+            <Field label="Bias">
+              <select value={sig.bias} onChange={set("bias")} style={{ colorScheme: "dark" }} className={sel} data-testid="signal-bias">
+                {BIAS_OPTS.map((b) => <option key={b} value={b} className="bg-surface">{b === "Neutral" ? "Neutral (auto)" : b}</option>)}
+              </select>
+            </Field>
+            <Field label="Spot"><input value={sig.spot} onChange={set("spot")} className={fld} placeholder="24,000" data-testid="signal-spot" /></Field>
+            <Field label="ATM"><input value={sig.atm} onChange={set("atm")} className={fld} placeholder="24000" data-testid="signal-atm" /></Field>
+            <div className="hidden md:block" />
+            <Field label="ATM +200 strike"><input value={sig.up_strike} onChange={set("up_strike")} className={fld} placeholder="24200" data-testid="signal-up-strike" /></Field>
+            <Field label="ATM −200 strike"><input value={sig.down_strike} onChange={set("down_strike")} className={fld} placeholder="23800" data-testid="signal-down-strike" /></Field>
+            {chartMode === "6" && (
+              <Field label="Weekly expiry"><input value={sig.weekly_expiry} onChange={set("weekly_expiry")} className={fld} placeholder="2026-07-28" data-testid="signal-weekly-expiry" /></Field>
+            )}
+            <Field label="Monthly expiry"><input value={sig.monthly_expiry} onChange={set("monthly_expiry")} className={fld} placeholder="2026-08-25" data-testid="signal-monthly-expiry" /></Field>
+          </div>
 
-      <p className="font-mono-ui text-[10px] uppercase tracking-[0.18em] text-sapphire-light mb-2">Weekly Straddle (0.5% × 3)</p>
-      <div className="grid grid-cols-2 gap-5 mb-6">
-        <Field label="+200 trend">{TrendSelect("weekly_up_trend", "signal-weekly-up-trend")}</Field>
-        <Field label="−200 trend">{TrendSelect("weekly_down_trend", "signal-weekly-down-trend")}</Field>
-      </div>
+          {chartMode === "6" && (
+            <>
+              <p className="font-mono-ui text-[10px] uppercase tracking-[0.18em] text-sapphire-light mb-2">Weekly Straddle (0.5% × 3)</p>
+              <div className="grid grid-cols-2 gap-5 mb-6">
+                <Field label="+200 trend">{TrendSelect("weekly_up_trend", "signal-weekly-up-trend")}</Field>
+                <Field label="−200 trend">{TrendSelect("weekly_down_trend", "signal-weekly-down-trend")}</Field>
+              </div>
+            </>
+          )}
 
-      <p className="font-mono-ui text-[10px] uppercase tracking-[0.18em] text-sapphire-light mb-2">Monthly Straddle (0.5% × 3)</p>
-      <div className="grid grid-cols-2 gap-5 mb-6">
-        <Field label="+200 trend">{TrendSelect("monthly_up_trend", "signal-monthly-up-trend")}</Field>
-        <Field label="−200 trend">{TrendSelect("monthly_down_trend", "signal-monthly-down-trend")}</Field>
-      </div>
+          <p className="font-mono-ui text-[10px] uppercase tracking-[0.18em] text-sapphire-light mb-2">Monthly Straddle (0.5% × 3)</p>
+          <div className="grid grid-cols-2 gap-5 mb-6">
+            <Field label="+200 trend">{TrendSelect("monthly_up_trend", "signal-monthly-up-trend")}</Field>
+            <Field label="−200 trend">{TrendSelect("monthly_down_trend", "signal-monthly-down-trend")}</Field>
+          </div>
 
-      <p className="font-mono-ui text-[10px] uppercase tracking-[0.18em] text-sapphire-light mb-2">Monthly ATM CE / PE, individually (3% × 3)</p>
-      <div className="grid grid-cols-2 gap-5 mb-6">
-        <Field label="ATM CE trend">{TrendSelect("monthly_atm_ce_trend", "signal-monthly-ce-trend")}</Field>
-        <Field label="ATM PE trend">{TrendSelect("monthly_atm_pe_trend", "signal-monthly-pe-trend")}</Field>
-      </div>
+          <p className="font-mono-ui text-[10px] uppercase tracking-[0.18em] text-sapphire-light mb-2">Monthly ATM CE / PE, individually (3% × 3)</p>
+          <div className="grid grid-cols-2 gap-5 mb-6">
+            <Field label="ATM CE trend">{TrendSelect("monthly_atm_ce_trend", "signal-monthly-ce-trend")}</Field>
+            <Field label="ATM PE trend">{TrendSelect("monthly_atm_pe_trend", "signal-monthly-pe-trend")}</Field>
+          </div>
 
-      <Field label="Note (optional)"><input value={sig.note} onChange={set("note")} className={fld} placeholder="Context shown under the bias" data-testid="signal-note" /></Field>
-      <button onClick={save} disabled={saving} className="btn-sapphire mt-6 disabled:opacity-70" data-testid="signal-save-btn">
-        {saving ? <><Loader2 size={16} className="animate-spin" /> Saving</> : <><Save size={15} /> Update Compass</>}
-      </button>
+          <Field label="Note (optional)"><input value={sig.note} onChange={set("note")} className={fld} placeholder="Context shown under the bias" data-testid="signal-note" /></Field>
+          <button onClick={save} disabled={saving} className="btn-sapphire mt-6 disabled:opacity-70" data-testid="signal-save-btn">
+            {saving ? <><Loader2 size={16} className="animate-spin" /> Saving</> : <><Save size={15} /> Update Compass</>}
+          </button>
+        </>
+      )}
     </div>
   );
 };
@@ -889,11 +946,6 @@ const Dashboard = ({ onLogout }) => {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [dragIndex, setDragIndex] = useState(null);
-  const [signal, setSignal] = useState(null);
-
-  useEffect(() => {
-    axios.get(`${API}/admin/terminal/signal`, authHeaders()).then((r) => setSignal(r.data)).catch(() => {});
-  }, []);
 
   const load = useCallback(async (sc) => {
     setLoading(true);
@@ -1001,8 +1053,8 @@ const Dashboard = ({ onLogout }) => {
       </div>
 
       <div className="container-x py-10">
-        <DefinedgeConnect onAuthError={onLogout} onSignalUpdate={setSignal} />
-        <SignalPanel onAuthError={onLogout} signal={signal} />
+        <DefinedgeConnect onAuthError={onLogout} onSignalUpdate={() => {}} />
+        <SignalPanel onAuthError={onLogout} />
         <QuantLabPanel onAuthError={onLogout} />
         <IpoPanel onAuthError={onLogout} />
         <BlackBoxPanel onAuthError={onLogout} />

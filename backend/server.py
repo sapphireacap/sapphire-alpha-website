@@ -12,7 +12,7 @@ import httpx
 import bcrypt
 import jwt
 import zxcvbn
-from definedge_service import DefinedgeService, DefinedgeError, derive_bias
+from definedge_service import DefinedgeService, DefinedgeError, derive_bias, derive_bias_4, INDEX_CONFIG
 from journal_routes import create_journal_router
 from journal_analytics import create_analytics_router
 from quant_lab import create_quant_lab_router
@@ -766,17 +766,35 @@ async def replace_scanner_stocks(payload: ScannerReplaceRequest, admin: dict = D
 
 
 # ---------------------------------------------------------------------------
-# Straddle Compass — Nifty directional bias indicator
+# Index Vector — multi-index directional bias indicator (formerly the
+# NIFTY-only "Straddle Compass"; extended 2026-07-27 to also run BANKNIFTY,
+# SENSEX, and BANKEX — see definedge_service.py's INDEX_CONFIG/compute_vector
+# for the actual computation. This section is just the storage/API layer:
+# one doc per index in db.index_signal (id = f"current_{index}"), one
+# append-only db.index_signal_history collection tagged with an `index`
+# field. NIFTY is additionally write-mirrored into the legacy db.nifty_signal
+# / db.nifty_signal_history collections by compute_vector() itself, so
+# journal_routes.py's straddle_regime_at_entry auto-fill (which reads those
+# two collection names directly) needed no changes.
 # ---------------------------------------------------------------------------
+VALID_INDICES = tuple(INDEX_CONFIG.keys())  # ("NIFTY", "BANKNIFTY", "SENSEX", "BANKEX")
+
+
+def _validate_index(index: str):
+    if index not in VALID_INDICES:
+        raise HTTPException(status_code=400, detail=f"Unknown index. Must be one of {VALID_INDICES}.")
+
+
 class SignalUpdate(BaseModel):
+    index: str = "NIFTY"
     bias: str = "Neutral"          # Bullish | Bearish | Neutral
     spot: str = ""                 # e.g. "24,000"
     atm: str = ""                  # e.g. "24000"
     up_strike: str = ""            # ATM + 200
     down_strike: str = ""          # ATM - 200
-    weekly_expiry: str = ""
+    weekly_expiry: str = ""        # chart_mode "4" indices (BANKNIFTY/BANKEX) leave this blank
     monthly_expiry: str = ""
-    weekly_up_trend: str = "Neutral"      # Bullish (rising) | Bearish (falling) | Neutral
+    weekly_up_trend: str = "Neutral"      # Bullish (rising) | Bearish (falling) | Neutral — chart_mode "6" only
     weekly_down_trend: str = "Neutral"
     monthly_up_trend: str = "Neutral"
     monthly_down_trend: str = "Neutral"
@@ -786,37 +804,43 @@ class SignalUpdate(BaseModel):
     source: str = "manual"         # manual | definedge
 
 
-DEFAULT_SIGNAL = {
-    "id": "current",
-    "bias": "Neutral",
-    "spot": "",
-    "atm": "",
-    "up_strike": "",
-    "down_strike": "",
-    "weekly_expiry": "",
-    "monthly_expiry": "",
-    "weekly_up_trend": "Neutral",
-    "weekly_down_trend": "Neutral",
-    "monthly_up_trend": "Neutral",
-    "monthly_down_trend": "Neutral",
-    "monthly_atm_ce_trend": "Neutral",
-    "monthly_atm_pe_trend": "Neutral",
-    "note": "Awaiting live straddle data.",
-    "source": "manual",
-    "box_size": "0.5%",
-    "reversal": "3 box",
-    "atm_leg_box_size": "3%",
-    "atm_leg_reversal": "3 box",
-    "updated_at": datetime.now(timezone.utc).isoformat(),
-    "updated_label": "Today, 09:30 AM IST",
-}
+def _default_signal(index: str) -> dict:
+    return {
+        "id": f"current_{index}",
+        "index": index,
+        "bias": "Neutral",
+        "spot": "",
+        "atm": "",
+        "up_strike": "",
+        "down_strike": "",
+        "weekly_expiry": "",
+        "monthly_expiry": "",
+        "weekly_up_trend": "Neutral",
+        "weekly_down_trend": "Neutral",
+        "monthly_up_trend": "Neutral",
+        "monthly_down_trend": "Neutral",
+        "monthly_atm_ce_trend": "Neutral",
+        "monthly_atm_pe_trend": "Neutral",
+        "note": "Awaiting live data.",
+        "source": "manual",
+        "box_size": "0.5%",
+        "reversal": "3 box",
+        "atm_leg_box_size": "3%",
+        "atm_leg_reversal": "3 box",
+        "updated_at": datetime.now(timezone.utc).isoformat(),
+        "updated_label": "Today, 09:30 AM IST",
+    }
+
+
+# Kept for the startup-seed / legacy-mirror call sites below.
+DEFAULT_SIGNAL = _default_signal("NIFTY")
 
 
 PUBLIC_SIGNAL_FIELDS = ("bias", "spot", "note", "updated_at", "updated_label")
 
 
 def _public_signal(doc: dict) -> dict:
-    """Strips the Nifty Vector doc down to what's safe to show site visitors.
+    """Strips an Index Vector doc down to what's safe to show site visitors.
     The full doc also carries strikes, expiries, per-leg trend/chart data, and
     P&F box parameters -- exactly the proprietary tracking methodology this is
     not supposed to reveal. Only the admin-authenticated endpoint below (and
@@ -825,39 +849,43 @@ def _public_signal(doc: dict) -> dict:
 
 
 @api_router.get("/terminal/signal")
-async def get_signal():
-    doc = await db.nifty_signal.find_one({"id": "current"}, {"_id": 0})
-    return _public_signal(doc or DEFAULT_SIGNAL)
+async def get_signal(index: str = "NIFTY"):
+    _validate_index(index)
+    doc = await db.index_signal.find_one({"id": f"current_{index}"}, {"_id": 0})
+    return _public_signal(doc or _default_signal(index))
 
 
 @api_router.get("/admin/terminal/signal")
-async def get_signal_admin(admin: dict = Depends(get_current_admin)):
-    doc = await db.nifty_signal.find_one({"id": "current"}, {"_id": 0})
-    return doc or DEFAULT_SIGNAL
+async def get_signal_admin(index: str = "NIFTY", admin: dict = Depends(get_current_admin)):
+    _validate_index(index)
+    doc = await db.index_signal.find_one({"id": f"current_{index}"}, {"_id": 0})
+    return doc or _default_signal(index)
 
 
 @api_router.get("/terminal/spot")
-async def get_live_spot():
+async def get_live_spot(index: str = "NIFTY"):
     """Public, fast-pollable ticker value — falls back to a null spot on any
     upstream hiccup (not connected, outside hours, rate limited) rather than
     surfacing an error to site visitors; the frontend just keeps showing the
     last known signal.spot in that case."""
+    _validate_index(index)
     try:
-        return await definedge.spot_quote()
+        return await definedge.spot_quote(index)
     except DefinedgeError:
         return {"spot": None}
 
 
 @api_router.get("/terminal/track-record")
-async def get_track_record():
-    """Accuracy of the Nifty Vector's directional calls, evaluated at 15/30/60
+async def get_track_record(index: str = "NIFTY"):
+    """Accuracy of one index's directional calls, evaluated at 15/30/60
     minute horizons after each Bullish/Bearish reading (Neutral isn't a call).
     Correct = spot moved in the predicted direction by the time the horizon
     elapses. The nearest history doc at/after T+H stands in for "spot at
     T+H" since data is only ~1/minute; if nothing exists near T+H (e.g. the
     horizon runs past market close, or into the next session) that reading
     is skipped, not scored either way."""
-    docs = await db.nifty_signal_history.find({}, {"_id": 0}).sort("updated_at", 1).limit(5000).to_list(length=5000)
+    _validate_index(index)
+    docs = await db.index_signal_history.find({"index": index}, {"_id": 0}).sort("updated_at", 1).limit(5000).to_list(length=5000)
 
     parsed = []
     for d in docs:
@@ -917,17 +945,27 @@ async def get_track_record():
 
 @api_router.put("/terminal/signal")
 async def update_signal(payload: SignalUpdate, admin: dict = Depends(get_current_admin)):
+    _validate_index(payload.index)
     data = payload.model_dump()
-    # If admin leaves bias on Neutral but the six legs imply a direction,
-    # derive it via the same 6-chart confluence rule compute_vector() uses.
+    chart_mode = INDEX_CONFIG[payload.index]["chart_mode"]
+    # If admin leaves bias on Neutral but the legs imply a direction, derive
+    # it via the same confluence rule compute_vector() uses for this index's
+    # chart_mode (6-leg for NIFTY/SENSEX, 4-leg for BANKNIFTY/BANKEX — see
+    # INDEX_CONFIG).
     if data["bias"] == "Neutral":
-        data["bias"] = derive_bias(
-            data["weekly_up_trend"], data["weekly_down_trend"],
-            data["monthly_up_trend"], data["monthly_down_trend"],
-            data["monthly_atm_ce_trend"], data["monthly_atm_pe_trend"],
-        )
+        if chart_mode == "6":
+            data["bias"] = derive_bias(
+                data["weekly_up_trend"], data["weekly_down_trend"],
+                data["monthly_up_trend"], data["monthly_down_trend"],
+                data["monthly_atm_ce_trend"], data["monthly_atm_pe_trend"],
+            )
+        else:
+            data["bias"] = derive_bias_4(
+                data["monthly_up_trend"], data["monthly_down_trend"],
+                data["monthly_atm_ce_trend"], data["monthly_atm_pe_trend"],
+            )
     data.update({
-        "id": "current",
+        "id": f"current_{payload.index}",
         "box_size": "0.5%",
         "reversal": "3 box",
         "atm_leg_box_size": "3%",
@@ -935,7 +973,11 @@ async def update_signal(payload: SignalUpdate, admin: dict = Depends(get_current
         "updated_at": datetime.now(timezone.utc).isoformat(),
         "updated_label": "Today, 09:30 AM IST",
     })
-    await db.nifty_signal.update_one({"id": "current"}, {"$set": data}, upsert=True)
+    await db.index_signal.update_one({"id": data["id"]}, {"$set": data}, upsert=True)
+    if payload.index == "NIFTY":
+        legacy = dict(data)
+        legacy["id"] = "current"
+        await db.nifty_signal.update_one({"id": "current"}, {"$set": legacy}, upsert=True)
     return data
 
 
@@ -977,9 +1019,10 @@ async def definedge_master_sample(admin: dict = Depends(get_current_admin)):
 
 
 @api_router.post("/admin/definedge/refresh")
-async def definedge_refresh(admin: dict = Depends(get_current_admin)):
+async def definedge_refresh(index: str = "NIFTY", admin: dict = Depends(get_current_admin)):
+    _validate_index(index)
     try:
-        return await definedge.compute_vector()
+        return await definedge.compute_vector(index)
     except DefinedgeError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
@@ -988,7 +1031,12 @@ async def definedge_refresh(admin: dict = Depends(get_current_admin)):
 async def definedge_auto_refresh(request: Request):
     """Called by the external (GitHub Actions) cron on a schedule during NSE
     hours. Authenticated with a static shared secret rather than an admin
-    login, since this is a machine caller, not the interactive admin."""
+    login, since this is a machine caller, not the interactive admin. Runs
+    all four Index Vector indices in one call, sequentially (not concurrently
+    — deliberately conservative about hammering Definedge's upstream with a
+    burst of simultaneous minute-bar history requests every single cron
+    tick). One index failing (e.g. a transient history-fetch error) doesn't
+    block the others — each result is reported individually."""
     if not CRON_SECRET or request.headers.get("X-Cron-Key") != CRON_SECRET:
         raise HTTPException(status_code=401, detail="Invalid cron key")
 
@@ -1001,10 +1049,14 @@ async def definedge_auto_refresh(request: Request):
     if not status.get("connected"):
         return {"skipped": "not connected"}
 
-    try:
-        return await definedge.compute_vector()
-    except DefinedgeError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+    results = {}
+    for idx in VALID_INDICES:
+        try:
+            signal = await definedge.compute_vector(idx)
+            results[idx] = {"bias": signal["bias"]}
+        except DefinedgeError as e:
+            results[idx] = {"error": str(e)}
+    return results
 
 
 # ---------------------------------------------------------------------------
@@ -1045,10 +1097,14 @@ async def on_startup():
             await db.terminal_stocks.insert_one(stock.model_dump())
         logger.info("Seeded momentum leaders.")
 
-    # Seed default Nifty signal once
+    # Seed default Index Vector signal once, per index (idempotent)
+    for _idx in VALID_INDICES:
+        if await db.index_signal.find_one({"id": f"current_{_idx}"}) is None:
+            await db.index_signal.insert_one(_default_signal(_idx))
+    # Legacy mirror, only ever read by journal_routes.py's straddle_regime_at_entry
     if await db.nifty_signal.find_one({"id": "current"}) is None:
         await db.nifty_signal.insert_one(dict(DEFAULT_SIGNAL))
-        logger.info("Seeded default nifty signal.")
+        logger.info("Seeded default index signal(s).")
 
     try:
         await db.users.create_index("email", unique=True)
@@ -1068,6 +1124,7 @@ async def on_startup():
         await db.reviews.create_index("period_type")
         await db.playbooks.create_index("user_id")
         await db.nifty_signal_history.create_index([("updated_at", -1)])
+        await db.index_signal_history.create_index([("index", 1), ("updated_at", -1)])
         await db.quant_lab_ewma_cache.create_index(
             [("segment", 1), ("symbol", 1), ("fast_span", 1), ("slow_span", 1)], unique=True
         )

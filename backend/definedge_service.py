@@ -1,13 +1,15 @@
 """
-Definedge Integrate — Sapphire Nifty Vector service.
+Definedge Integrate — Index Vector service.
 
 Flow (per verified playbook):
   1. GET  signin.../login/{api_token}  (header api_secret)     -> otp_token  (OTP sent)
   2. POST signin.../token  {otp_token, otp}                    -> api_session_key
   3. GET  data.../sds/history/{seg}/{token}/minute/{from}/{to} (header Authorization: session)
 
-Strategy (Sapphire Nifty Vector) — 6-chart confluence, confirmed 2026-07-27:
-  - ATM = round(Nifty spot / 100) * 100
+Strategy (Index Vector, formerly "Sapphire Nifty Vector") — 6-chart
+confluence, confirmed 2026-07-27, extended 2026-07-27 to run identically
+across NIFTY, BANKNIFTY, SENSEX, and BANKEX (see INDEX_CONFIG below):
+  - ATM = round(spot / 100) * 100
   - 4 straddle legs = ATM+200 and ATM-200 straddles (CE close + PE close,
     per minute), each run on BOTH the current WEEKLY expiry and the
     current MONTHLY expiry (see _pick_monthly_expiry for the "last week of
@@ -30,6 +32,22 @@ Strategy (Sapphire Nifty Vector) — 6-chart confluence, confirmed 2026-07-27:
       monthly ATM CE falling
       monthly ATM PE rising
   - any other combination => NEUTRAL (no direction)
+
+Same box%/reversal parameters and same 6-leg logic for every index — nothing
+strategy-specific changed per index, only the token/segment plumbing needed
+to reach each one. Two real, verified market-structure differences worth
+knowing (not bugs): (1) NIFTY and SENSEX still list genuine weekly-cadence
+contracts (confirmed live: NIFTY expiries fall on Tuesdays, SENSEX on
+Thursdays, ~1/week); BANKNIFTY and BANKEX no longer do (NSE/BSE consolidated
+both down to monthly-only some time back) — confirmed live: both list only
+~3-6 expiries, all roughly a month apart. The existing _pick_expiry/
+_pick_monthly_expiry collision-avoidance logic still produces two distinct
+non-colliding contracts either way (nearest-available vs next-available),
+it just means "weekly leg" is reading a monthly-cadence contract for those
+two indices — same code, correct behavior, different real market. (2)
+NIFTY/BANKNIFTY option contracts live in the NFO segment (nsefno.zip /
+allmaster.zip); SENSEX/BANKEX live in BFO (allmaster.zip only — SENSEX and
+BANKEX are NOT in nsefno.zip at all, confirmed live) — see INDEX_CONFIG.
 
 Live option data is only meaningful during market hours; the daily OTP must be
 entered manually each morning (session key resets daily).
@@ -54,10 +72,39 @@ DATA_BASE = "https://data.definedgesecurities.com/sds"
 QUOTES_BASE = "https://integrate.definedgesecurities.com/dart/v1"
 MASTER_URL = "https://app.definedgesecurities.com/public/nsefno.zip"
 ALL_MASTER_URL = "https://app.definedgesecurities.com/public/allmaster.zip"  # unified NSE/BSE/NFO/BFO/MCX/CDS master, used by Quant Lab's generic symbol lookup
-NIFTY_SPOT_TOKEN = "26000"   # NIFTY 50 index token (NSE segment)
+NIFTY_SPOT_TOKEN = "26000"   # NIFTY 50 index token (NSE segment) — kept as its own
+                              # constant since vix_quote() and a few legacy call
+                              # sites reference it directly; INDEX_CONFIG below
+                              # duplicates it under "NIFTY" for the generalized path.
 VIX_TOKEN = "26017"          # India VIX token (NSE segment) — lives in the nsecash
                               # master file, not the nsefno one the option legs use;
                               # verified live via the quotes endpoint during Phase 2 design.
+
+# Index Vector coverage — one entry per index the Vector runs on. Every field
+# here was confirmed live against allmaster.zip on 2026-07-27 (not guessed):
+#   option_symbol/option_segment: how each index's OPTIDX contracts are
+#     tagged in the master (SYMBOL + SEG columns) — resolve_leg() filters on
+#     both. NIFTY/BANKNIFTY -> NFO; SENSEX/BANKEX -> BFO (SENSEX/BANKEX do
+#     not exist at all in the NSE-only nsefno.zip, only in allmaster.zip).
+#   spot_segment/spot_token: the index's own quote/history token. NIFTY and
+#     BANKNIFTY are both NSE-segment indices, but BANKNIFTY's master SYMBOL
+#     is "Nifty Bank" (token 26009), NOT "BANKNIFTY" — that's the options
+#     contracts' symbol, not the index quote's. SENSEX (1) and BANKEX (12)
+#     are BSE-segment.
+#   chart_mode: "6" (weekly+monthly straddles + monthly ATM CE/PE) for
+#     indices that still list genuine weekly-cadence contracts (confirmed
+#     live: NIFTY expiries fall ~weekly on Tuesdays, SENSEX ~weekly on
+#     Thursdays); "4" (monthly straddle + monthly ATM CE/PE only, no weekly
+#     leg at all) for BANKNIFTY/BANKEX, which NSE/BSE consolidated down to
+#     monthly-only some time back (confirmed live: only 3-6 expiries listed,
+#     each ~a month apart) — there is no real weekly contract to read for
+#     those two, so chart_mode "4" doesn't fake one.
+INDEX_CONFIG = {
+    "NIFTY": {"label": "Nifty 50", "option_symbol": "NIFTY", "option_segment": "NFO", "spot_segment": "NSE", "spot_token": "26000", "chart_mode": "6"},
+    "BANKNIFTY": {"label": "Bank Nifty", "option_symbol": "BANKNIFTY", "option_segment": "NFO", "spot_segment": "NSE", "spot_token": "26009", "chart_mode": "4"},
+    "SENSEX": {"label": "Sensex", "option_symbol": "SENSEX", "option_segment": "BFO", "spot_segment": "BSE", "spot_token": "1", "chart_mode": "6"},
+    "BANKEX": {"label": "Bankex", "option_symbol": "BANKEX", "option_segment": "BFO", "spot_segment": "BSE", "spot_token": "12", "chart_mode": "4"},
+}
 
 SPOT_CACHE_TTL = 2.0   # seconds — protects against many concurrent visitors each triggering their own upstream call
 
@@ -127,6 +174,21 @@ def derive_bias(weekly_up_trend: str, weekly_down_trend: str, monthly_up_trend: 
     return "Neutral"
 
 
+def derive_bias_4(monthly_up_trend: str, monthly_down_trend: str,
+                   monthly_atm_ce_trend: str, monthly_atm_pe_trend: str) -> str:
+    """4-chart confluence for monthly-only indices (BANKNIFTY/BANKEX,
+    chart_mode "4" — see INDEX_CONFIG) — the same rule as derive_bias() with
+    the weekly leg dropped entirely, since there is no real weekly contract
+    to read for these two. All FOUR legs must still agree."""
+    if monthly_up_trend == "Bearish" and monthly_down_trend == "Bullish" \
+            and monthly_atm_ce_trend == "Bullish" and monthly_atm_pe_trend == "Bearish":
+        return "Bullish"
+    if monthly_up_trend == "Bullish" and monthly_down_trend == "Bearish" \
+            and monthly_atm_ce_trend == "Bearish" and monthly_atm_pe_trend == "Bullish":
+        return "Bearish"
+    return "Neutral"
+
+
 class DefinedgeError(Exception):
     pass
 
@@ -139,8 +201,8 @@ class DefinedgeService:
         self._otp_token = None
         self._master_cache = None       # (date_str, DataFrame)
         self._all_master_cache = None   # (date_str, DataFrame) — allmaster.zip, kept separate from _master_cache
-        self._spot_cache = None         # (monotonic_time, {"spot": "..."})
-        self._prev_close_cache = None   # (date_str, float)
+        self._spot_cache = {}           # index_key -> (monotonic_time, {"spot": "..."})
+        self._prev_close_cache = {}     # index_key -> (date_str, float)
         self._vix_cache = None          # (monotonic_time, float)
 
     # ---- auth ----------------------------------------------------------
@@ -339,17 +401,21 @@ class DefinedgeService:
 
         return monthly
 
-    def _resolve_tokens(self, df: pd.DataFrame, atm: int):
-        """Locate NIFTY index-option tokens for ATM+/-200 at BOTH the current
-        weekly and current monthly expiry (4 legs total). Master schema
-        (nsefno): 0=SEG 1=TOKEN 2=SYMBOL 3=TRADINGSYM 4=INSTRUMENT
-        5=EXPIRY(ddmmyyyy) 8=OPTIONTYPE(CE/PE) 9=STRIKE(x100)."""
+    def _resolve_tokens(self, df: pd.DataFrame, atm: int, index_key: str = "NIFTY"):
+        """Locate an index's option tokens for ATM+/-200 (and, in 6-chart
+        mode, at both weekly and monthly expiry). `df` must be the unified
+        allmaster.zip frame — index_key selects both the option SYMBOL and
+        SEG to filter on (see INDEX_CONFIG). Master schema: 0=SEG 1=TOKEN
+        2=SYMBOL 3=TRADINGSYM 4=INSTRUMENT 5=EXPIRY(ddmmyyyy)
+        8=OPTIONTYPE(CE/PE) 9=STRIKE(x100) — same layout in every segment."""
+        cfg = INDEX_CONFIG[index_key]
         SEG, TOKEN, SYMBOL, INSTR, EXPIRY, OPTTYPE, STRIKE = 0, 1, 2, 4, 5, 8, 9
-        sub = df[(df[SYMBOL].astype(str) == "NIFTY")
+        sub = df[(df[SEG].astype(str) == cfg["option_segment"])
+                 & (df[SYMBOL].astype(str) == cfg["option_symbol"])
                  & (df[INSTR].astype(str) == "OPTIDX")
                  & (df[OPTTYPE].astype(str).isin(["CE", "PE"]))].copy()
         if sub.empty:
-            raise DefinedgeError("No NIFTY index options (OPTIDX) found in master.")
+            raise DefinedgeError(f"No {index_key} index options (OPTIDX) found in master.")
 
         sub["_strike"] = pd.to_numeric(sub[STRIKE], errors="coerce") / 100.0
         sub["_exp"] = pd.to_datetime(sub[EXPIRY].astype(str), format="%d%m%Y", errors="coerce").dt.date
@@ -357,43 +423,50 @@ class DefinedgeService:
 
         today = datetime.now(IST).date()
         all_expiries = sorted(set(sub["_exp"].tolist()))
-        future_expiries = sorted(e for e in all_expiries if e >= today)
-        nearest_expiry = future_expiries[0] if future_expiries else None  # raw, BEFORE _pick_expiry's Mon/Tue roll
-        weekly_expiry = self._pick_expiry(all_expiries, today)
-        if weekly_expiry is None:
-            raise DefinedgeError("No valid NIFTY weekly expiry found in master.")
-        monthly_expiry = self._pick_monthly_expiry(all_expiries, today, avoid=(nearest_expiry, weekly_expiry))
-        if monthly_expiry is None:
-            raise DefinedgeError("No valid NIFTY monthly expiry found in master.")
 
         def resolve_leg(expiry, strike):
             leg = {}
             for opt in ("CE", "PE"):
                 row = sub[(sub["_strike"] == float(strike)) & (sub["_exp"] == expiry) & (sub[OPTTYPE].astype(str) == opt)]
                 if row.empty:
-                    raise DefinedgeError(f"Missing {strike} {opt} for expiry {expiry.isoformat()}.")
+                    raise DefinedgeError(f"Missing {strike} {opt} for {index_key} expiry {expiry.isoformat()}.")
                 leg[opt] = str(row.iloc[0][TOKEN])
             return leg
 
-        return {
-            "up_strike": atm + 200,
-            "down_strike": atm - 200,
-            "weekly": {
+        result = {"up_strike": atm + 200, "down_strike": atm - 200}
+
+        if cfg["chart_mode"] == "6":
+            future_expiries = sorted(e for e in all_expiries if e >= today)
+            nearest_expiry = future_expiries[0] if future_expiries else None  # raw, BEFORE _pick_expiry's Mon/Tue roll
+            weekly_expiry = self._pick_expiry(all_expiries, today)
+            if weekly_expiry is None:
+                raise DefinedgeError(f"No valid {index_key} weekly expiry found in master.")
+            monthly_expiry = self._pick_monthly_expiry(all_expiries, today, avoid=(nearest_expiry, weekly_expiry))
+            if monthly_expiry is None:
+                raise DefinedgeError(f"No valid {index_key} monthly expiry found in master.")
+            result["weekly"] = {
                 "expiry": weekly_expiry.isoformat(),
                 "legs": {"up": resolve_leg(weekly_expiry, atm + 200), "down": resolve_leg(weekly_expiry, atm - 200)},
-            },
-            "monthly": {
-                "expiry": monthly_expiry.isoformat(),
-                "legs": {"up": resolve_leg(monthly_expiry, atm + 200), "down": resolve_leg(monthly_expiry, atm - 200)},
-            },
-            # ATM CE/PE read individually (not summed into a straddle) —
-            # always the monthly expiry, same ATM-selection rule as every
-            # other leg in this Vector.
-            "monthly_atm": {
-                "expiry": monthly_expiry.isoformat(),
-                "leg": resolve_leg(monthly_expiry, atm),
-            },
+            }
+        else:
+            # chart_mode "4" (BANKNIFTY/BANKEX) — monthly-only, no separate
+            # weekly contract exists, so there's nothing to avoid a collision
+            # with; just take the plain monthly pick.
+            monthly_expiry = self._pick_monthly_expiry(all_expiries, today)
+            if monthly_expiry is None:
+                raise DefinedgeError(f"No valid {index_key} monthly expiry found in master.")
+
+        result["monthly"] = {
+            "expiry": monthly_expiry.isoformat(),
+            "legs": {"up": resolve_leg(monthly_expiry, atm + 200), "down": resolve_leg(monthly_expiry, atm - 200)},
         }
+        # ATM CE/PE read individually (not summed into a straddle) — always
+        # the monthly expiry, same ATM-selection rule as every other leg.
+        result["monthly_atm"] = {
+            "expiry": monthly_expiry.isoformat(),
+            "leg": resolve_leg(monthly_expiry, atm),
+        }
+        return result
 
     # ---- historical ----------------------------------------------------
     async def _closes(self, segment: str, token: str, frm: str = None, to: str = None):
@@ -457,46 +530,51 @@ class DefinedgeService:
         bars.sort(key=lambda b: b["date"])
         return bars
 
-    async def _spot(self):
-        closes = await self._closes("NSE", NIFTY_SPOT_TOKEN)
+    async def _spot(self, index_key: str = "NIFTY"):
+        cfg = INDEX_CONFIG[index_key]
+        closes = await self._closes(cfg["spot_segment"], cfg["spot_token"])
         if not closes:
-            raise DefinedgeError("No Nifty spot data returned.")
+            raise DefinedgeError(f"No {index_key} spot data returned.")
         return list(closes.values())[-1]
 
-    async def _prev_close(self):
-        """Nifty's last close before today's session — cached per calendar day.
-        Definedge's quotes endpoint doesn't return a previous-close field, so
-        this pulls a wide history window ending just before today's open and
-        takes the last bar. Naturally skips weekends/holidays since it just
-        reads whatever data actually exists, rather than us guessing the
-        prior trading day ourselves."""
+    async def _prev_close(self, index_key: str = "NIFTY"):
+        """An index's last close before today's session — cached per calendar
+        day, per index. Definedge's quotes endpoint doesn't return a
+        previous-close field, so this pulls a wide history window ending
+        just before today's open and takes the last bar. Naturally skips
+        weekends/holidays since it just reads whatever data actually exists,
+        rather than us guessing the prior trading day ourselves."""
+        cfg = INDEX_CONFIG[index_key]
         today_str = datetime.now(IST).strftime("%Y-%m-%d")
-        if self._prev_close_cache and self._prev_close_cache[0] == today_str:
-            return self._prev_close_cache[1]
+        cached = self._prev_close_cache.get(index_key)
+        if cached and cached[0] == today_str:
+            return cached[1]
 
         now = datetime.now(IST)
         frm = (now - timedelta(days=8)).strftime("%d%m%Y0000")
         to = now.replace(hour=9, minute=14, second=0).strftime("%d%m%Y%H%M")
-        closes = await self._closes("NSE", NIFTY_SPOT_TOKEN, frm=frm, to=to)
+        closes = await self._closes(cfg["spot_segment"], cfg["spot_token"], frm=frm, to=to)
         if not closes:
-            raise DefinedgeError("No previous session close data.")
+            raise DefinedgeError(f"No previous session close data for {index_key}.")
         value = list(closes.values())[-1]
-        self._prev_close_cache = (today_str, value)
+        self._prev_close_cache[index_key] = (today_str, value)
         return value
 
-    async def spot_quote(self):
+    async def spot_quote(self, index_key: str = "NIFTY"):
         """Lightweight, cached LTP lookup for the public fast-polling ticker —
         deliberately separate from _spot() (which pulls a full minute-bar
         history series for the P&F engine). Cached briefly so many concurrent
         site visitors polling at once don't each trigger their own upstream call."""
+        cfg = INDEX_CONFIG[index_key]
         now = time.monotonic()
-        if self._spot_cache and now - self._spot_cache[0] < SPOT_CACHE_TTL:
-            return self._spot_cache[1]
+        cached = self._spot_cache.get(index_key)
+        if cached and now - cached[0] < SPOT_CACHE_TTL:
+            return cached[1]
 
-        prev_close = await self._prev_close()
+        prev_close = await self._prev_close(index_key)
 
         session = await self._session_key()
-        url = f"{QUOTES_BASE}/quotes/NSE/{NIFTY_SPOT_TOKEN}"
+        url = f"{QUOTES_BASE}/quotes/{cfg['spot_segment']}/{cfg['spot_token']}"
         async with httpx.AsyncClient(timeout=10) as c:
             r = await c.get(url, headers={"Authorization": session})
         if r.status_code == 401:
@@ -515,7 +593,7 @@ class DefinedgeService:
             "change": f"{change:+,.2f}",
             "change_pct": f"{pct:+.2f}",
         }
-        self._spot_cache = (now, result)
+        self._spot_cache[index_key] = (now, result)
         return result
 
     async def vix_quote(self) -> Optional[float]:
@@ -542,7 +620,7 @@ class DefinedgeService:
         self._vix_cache = (now, value)
         return value
 
-    async def _straddle_series(self, ce_token: str, pe_token: str):
+    async def _straddle_series(self, ce_token: str, pe_token: str, segment: str = "NFO"):
         """Per-minute straddle premium (CE close + PE close) for today's
         session, aligned on shared timestamps. Returns
         [{"t": "HH:MM", "v": premium}, ...] sorted chronologically — `v`
@@ -550,10 +628,11 @@ class DefinedgeService:
         frontend plot an actual chart instead of just the derived trend
         label (previously this returned a bare value list and the caller
         discarded everything except the derived trend — no chart data ever
-        left this function)."""
+        left this function). `segment` is NFO for NIFTY/BANKNIFTY, BFO for
+        SENSEX/BANKEX (see INDEX_CONFIG)."""
         ce, pe = await asyncio.gather(
-            self._closes("NFO", ce_token),
-            self._closes("NFO", pe_token),
+            self._closes(segment, ce_token),
+            self._closes(segment, pe_token),
         )
         common = sorted(t for t in ce if t in pe)
 
@@ -565,12 +644,12 @@ class DefinedgeService:
 
         return [{"t": label(t), "v": ce[t] + pe[t]} for t in common]
 
-    async def _single_leg_series(self, token: str):
+    async def _single_leg_series(self, token: str, segment: str = "NFO"):
         """Per-minute close price for ONE option leg — not summed into a
         straddle. Used for the monthly ATM CE/PE confirmation legs, which
         are read independently rather than combined. Same point-list shape
         as _straddle_series so both feed pnf_trend()/charts identically."""
-        closes = await self._closes("NFO", token)
+        closes = await self._closes(segment, token)
 
         def label(raw_ts):
             try:
@@ -581,78 +660,121 @@ class DefinedgeService:
         return [{"t": label(t), "v": closes[t]} for t in sorted(closes)]
 
     # ---- orchestration -------------------------------------------------
-    async def compute_vector(self):
-        # Fetch spot and the (possibly cold-cache) master file concurrently —
-        # neither depends on the other, only token resolution below does.
-        spot, df = await asyncio.gather(self._spot(), self._get_master())
-        atm = int(round(spot / 100.0) * 100)
-        tokens = self._resolve_tokens(df, atm)
+    async def compute_vector(self, index_key: str = "NIFTY"):
+        """Runs the Index Vector for one index. chart_mode "6" (NIFTY,
+        SENSEX) reads weekly+monthly straddles plus monthly ATM CE/PE;
+        chart_mode "4" (BANKNIFTY, BANKEX — no real weekly contract exists,
+        see INDEX_CONFIG) reads only the monthly straddle plus monthly ATM
+        CE/PE. Same box%/reversal parameters and same derive_bias-family
+        all-legs-must-agree rule either way."""
+        cfg = INDEX_CONFIG[index_key]
+        segment = cfg["option_segment"]
 
-        weekly_up, weekly_down, monthly_up, monthly_down, monthly_atm_ce, monthly_atm_pe = await asyncio.gather(
-            self._straddle_series(tokens["weekly"]["legs"]["up"]["CE"], tokens["weekly"]["legs"]["up"]["PE"]),
-            self._straddle_series(tokens["weekly"]["legs"]["down"]["CE"], tokens["weekly"]["legs"]["down"]["PE"]),
-            self._straddle_series(tokens["monthly"]["legs"]["up"]["CE"], tokens["monthly"]["legs"]["up"]["PE"]),
-            self._straddle_series(tokens["monthly"]["legs"]["down"]["CE"], tokens["monthly"]["legs"]["down"]["PE"]),
-            self._single_leg_series(tokens["monthly_atm"]["leg"]["CE"]),
-            self._single_leg_series(tokens["monthly_atm"]["leg"]["PE"]),
+        # Fetch spot and the (possibly cold-cache) unified master file
+        # concurrently — neither depends on the other, only token resolution
+        # below does. allmaster.zip (not the NSE-only nsefno.zip) is required
+        # here since SENSEX/BANKEX only exist in the unified file.
+        spot, df = await asyncio.gather(self._spot(index_key), self._get_all_master())
+        atm = int(round(spot / 100.0) * 100)
+        tokens = self._resolve_tokens(df, atm, index_key)
+
+        monthly_up, monthly_down, monthly_atm_ce, monthly_atm_pe = await asyncio.gather(
+            self._straddle_series(tokens["monthly"]["legs"]["up"]["CE"], tokens["monthly"]["legs"]["up"]["PE"], segment),
+            self._straddle_series(tokens["monthly"]["legs"]["down"]["CE"], tokens["monthly"]["legs"]["down"]["PE"], segment),
+            self._single_leg_series(tokens["monthly_atm"]["leg"]["CE"], segment),
+            self._single_leg_series(tokens["monthly_atm"]["leg"]["PE"], segment),
         )
-        weekly_up_trend = pnf_trend([p["v"] for p in weekly_up])
-        weekly_down_trend = pnf_trend([p["v"] for p in weekly_down])
         monthly_up_trend = pnf_trend([p["v"] for p in monthly_up])
         monthly_down_trend = pnf_trend([p["v"] for p in monthly_down])
         monthly_atm_ce_trend = pnf_trend([p["v"] for p in monthly_atm_ce], box_pct=ATM_LEG_BOX_PCT, reversal_boxes=ATM_LEG_REVERSAL_BOXES)
         monthly_atm_pe_trend = pnf_trend([p["v"] for p in monthly_atm_pe], box_pct=ATM_LEG_BOX_PCT, reversal_boxes=ATM_LEG_REVERSAL_BOXES)
-        bias = derive_bias(weekly_up_trend, weekly_down_trend, monthly_up_trend, monthly_down_trend,
-                            monthly_atm_ce_trend, monthly_atm_pe_trend)
 
-        now_ist = datetime.now(IST)
         signal = {
-            "id": "current",
-            "bias": bias,
+            "id": f"current_{index_key}",
+            "index": index_key,
             "spot": f"{spot:,.0f}",
             "atm": str(atm),
             "up_strike": str(tokens["up_strike"]),
             "down_strike": str(tokens["down_strike"]),
-            "weekly_expiry": tokens["weekly"]["expiry"],
             "monthly_expiry": tokens["monthly"]["expiry"],
-            "weekly_up_trend": weekly_up_trend,
-            "weekly_down_trend": weekly_down_trend,
             "monthly_up_trend": monthly_up_trend,
             "monthly_down_trend": monthly_down_trend,
             "monthly_atm_ce_trend": monthly_atm_ce_trend,
             "monthly_atm_pe_trend": monthly_atm_pe_trend,
-            "note": (
-                f"Weekly: +200 {weekly_up_trend.lower()}, -200 {weekly_down_trend.lower()} (exp {tokens['weekly']['expiry']}). "
-                f"Monthly: +200 {monthly_up_trend.lower()}, -200 {monthly_down_trend.lower()}, "
-                f"ATM CE {monthly_atm_ce_trend.lower()}, ATM PE {monthly_atm_pe_trend.lower()} (exp {tokens['monthly']['expiry']})."
-            ),
             "source": "definedge",
             "box_size": "0.5%",
             "reversal": "3 box",
             "atm_leg_box_size": "3%",
             "atm_leg_reversal": "3 box",
             "chart": {
-                "weekly_up": weekly_up,
-                "weekly_down": weekly_down,
                 "monthly_up": monthly_up,
                 "monthly_down": monthly_down,
                 "monthly_atm_ce": monthly_atm_ce,
                 "monthly_atm_pe": monthly_atm_pe,
             },
-            "updated_at": datetime.now(timezone.utc).isoformat(),
-            "updated_label": now_ist.strftime("Today, %I:%M %p IST"),
         }
-        await self.db.nifty_signal.update_one({"id": "current"}, {"$set": signal}, upsert=True)
-        # nifty_signal only ever holds the current value (upserted in place
-        # above) — the journal's straddle_regime_at_entry needs to ask "what
-        # was the bias at time X", so keep an append-only history alongside it.
-        # The per-minute chart payload is dropped from history (it's only
-        # meaningful "live", and inserting it on every cron tick — as often
-        # as once/minute during market hours — would otherwise blow up
-        # nifty_signal_history's size for no benefit, since track-record
-        # scoring only ever reads bias/spot/updated_at).
+
+        if cfg["chart_mode"] == "6":
+            weekly_up, weekly_down = await asyncio.gather(
+                self._straddle_series(tokens["weekly"]["legs"]["up"]["CE"], tokens["weekly"]["legs"]["up"]["PE"], segment),
+                self._straddle_series(tokens["weekly"]["legs"]["down"]["CE"], tokens["weekly"]["legs"]["down"]["PE"], segment),
+            )
+            weekly_up_trend = pnf_trend([p["v"] for p in weekly_up])
+            weekly_down_trend = pnf_trend([p["v"] for p in weekly_down])
+            bias = derive_bias(weekly_up_trend, weekly_down_trend, monthly_up_trend, monthly_down_trend,
+                                monthly_atm_ce_trend, monthly_atm_pe_trend)
+            signal.update({
+                "weekly_expiry": tokens["weekly"]["expiry"],
+                "weekly_up_trend": weekly_up_trend,
+                "weekly_down_trend": weekly_down_trend,
+                "bias": bias,
+                "note": (
+                    f"Weekly: +200 {weekly_up_trend.lower()}, -200 {weekly_down_trend.lower()} (exp {tokens['weekly']['expiry']}). "
+                    f"Monthly: +200 {monthly_up_trend.lower()}, -200 {monthly_down_trend.lower()}, "
+                    f"ATM CE {monthly_atm_ce_trend.lower()}, ATM PE {monthly_atm_pe_trend.lower()} (exp {tokens['monthly']['expiry']})."
+                ),
+            })
+            signal["chart"]["weekly_up"] = weekly_up
+            signal["chart"]["weekly_down"] = weekly_down
+        else:
+            bias = derive_bias_4(monthly_up_trend, monthly_down_trend, monthly_atm_ce_trend, monthly_atm_pe_trend)
+            signal.update({
+                "bias": bias,
+                "note": (
+                    f"Monthly: +200 {monthly_up_trend.lower()}, -200 {monthly_down_trend.lower()}, "
+                    f"ATM CE {monthly_atm_ce_trend.lower()}, ATM PE {monthly_atm_pe_trend.lower()} (exp {tokens['monthly']['expiry']})."
+                ),
+            })
+
+        now_ist = datetime.now(IST)
+        signal["updated_at"] = datetime.now(timezone.utc).isoformat()
+        signal["updated_label"] = now_ist.strftime("Today, %I:%M %p IST")
+
+        await self.db.index_signal.update_one({"id": signal["id"]}, {"$set": signal}, upsert=True)
+        # index_signal only ever holds each index's current value (upserted
+        # in place above) — history needs "what was the bias at time X", so
+        # keep an append-only history alongside it. The per-minute chart
+        # payload is dropped from history (only meaningful "live", and
+        # inserting it on every cron tick — as often as once/minute during
+        # market hours — would otherwise blow up history's size for no
+        # benefit, since track-record scoring only ever reads bias/spot/
+        # updated_at).
         history_doc = dict(signal)
         history_doc.pop("chart", None)
         history_doc["id"] = str(uuid.uuid4())
-        await self.db.nifty_signal_history.insert_one(history_doc)
+        await self.db.index_signal_history.insert_one(history_doc)
+
+        if index_key == "NIFTY":
+            # Legacy mirror: journal_routes.py's straddle_regime_at_entry
+            # auto-fill reads db.nifty_signal / db.nifty_signal_history by
+            # those exact names directly — kept as an unchanged write-through
+            # so that feature (unrelated to this multi-index extension)
+            # never has to know index_signal exists.
+            legacy = dict(signal)
+            legacy["id"] = "current"
+            await self.db.nifty_signal.update_one({"id": "current"}, {"$set": legacy}, upsert=True)
+            legacy_history = dict(history_doc)
+            legacy_history["id"] = str(uuid.uuid4())
+            await self.db.nifty_signal_history.insert_one(legacy_history)
+
         return signal
