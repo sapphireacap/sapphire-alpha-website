@@ -20,6 +20,7 @@ previous day's H/L/C and cached in db.exitline_levels); LTP is fetched
 fresh on every /levels request since this is a user-triggered lookup, not
 a polling dashboard.
 """
+import asyncio
 import logging
 from datetime import datetime, timezone, timedelta
 from typing import Optional
@@ -248,6 +249,60 @@ def resolve_instrument(df: pd.DataFrame, exitline_segment: str, symbol: str,
 
 
 # ---------------------------------------------------------------------------
+# Intraday chart — today's session, 5-minute bars aggregated from real
+# 1-minute OHLC (not just close), for Exitline's candlestick chart with the
+# Camarilla ladder overlaid as reference lines.
+# ---------------------------------------------------------------------------
+def _aggregate_5min(bars: list) -> list:
+    """Group 1-minute bars into 5-minute buckets aligned to market open
+    (09:15) — bucket N covers [09:15 + 5N, 09:15 + 5N + 5) minutes."""
+    buckets = {}
+    for b in bars:
+        try:
+            dt = datetime.strptime(b["ts"], "%d%m%Y%H%M")
+        except ValueError:
+            continue
+        minutes_since_open = (dt.hour * 60 + dt.minute) - (9 * 60 + 15)
+        if minutes_since_open < 0:
+            continue
+        bucket_start = dt.replace(hour=9, minute=15, second=0, microsecond=0) + timedelta(minutes=5 * (minutes_since_open // 5))
+        key = bucket_start.strftime("%d%m%Y%H%M")
+        if key not in buckets:
+            buckets[key] = {"ts": key, "open": b["open"], "high": b["high"], "low": b["low"], "close": b["close"]}
+        else:
+            bucket = buckets[key]
+            bucket["high"] = max(bucket["high"], b["high"])
+            bucket["low"] = min(bucket["low"], b["low"])
+            bucket["close"] = b["close"]  # bars arrive time-sorted, so the latest overwrite is the bucket's real close
+    return [buckets[k] for k in sorted(buckets)]
+
+
+async def intraday_5min_chart(definedge, segment: str, token: str) -> list:
+    """Today's session so far, as 5-minute candles — best-effort: an empty
+    list (pre-market, holiday, or an illiquid contract with zero prints
+    today) is a normal, valid result, not an error, and must never take
+    down the rest of the /levels response (the ladder/SL/TP don't depend
+    on this at all)."""
+    now = datetime.now(IST)
+    if now.hour * 60 + now.minute < 9 * 60 + 15:
+        return []  # before market open — frm(09:15) > to(now) would 400 upstream
+    try:
+        bars = await definedge.minute_ohlc(segment, token)
+    except DefinedgeError as e:
+        logger.warning("Exitline: intraday chart unavailable for %s/%s: %s", segment, token, e)
+        return []
+    agg = _aggregate_5min(bars)
+    out = []
+    for b in agg:
+        try:
+            label = datetime.strptime(b["ts"], "%d%m%Y%H%M").strftime("%H:%M")
+        except ValueError:
+            label = b["ts"]
+        out.append({"t": label, "open": b["open"], "high": b["high"], "low": b["low"], "close": b["close"]})
+    return out
+
+
+# ---------------------------------------------------------------------------
 # Definedge data fetch + orchestration
 # ---------------------------------------------------------------------------
 async def previous_day_ohlc(definedge, segment: str, token: str) -> dict:
@@ -296,7 +351,10 @@ async def build_exitline_response(db, definedge, exitline_segment: str, symbol: 
         raise DefinedgeError("Instrument not found — check the symbol, expiry, strike, and option type.")
 
     levels_doc = await get_or_compute_levels(db, definedge, resolved["segment"], resolved["token"], resolved["tradingsymbol"])
-    ltp = await definedge.equity_quote(resolved["segment"], resolved["token"])
+    ltp, chart = await asyncio.gather(
+        definedge.equity_quote(resolved["segment"], resolved["token"]),
+        intraday_5min_chart(definedge, resolved["segment"], resolved["token"]),
+    )
     zone = classify_and_suggest(levels_doc["levels"], ltp, levels_doc["close"])
 
     return {
@@ -312,5 +370,6 @@ async def build_exitline_response(db, definedge, exitline_segment: str, symbol: 
         "close": levels_doc["close"],
         "levels": levels_doc["levels"],
         "ltp": ltp,
+        "chart": chart,
         **zone,
     }

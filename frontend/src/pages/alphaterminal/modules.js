@@ -11,7 +11,7 @@ import {
 //   "ewma"      -> the standalone EwmaCrossoverTool, embedded
 //   "sharpe"    -> the standalone SharpeDashboardTool, embedded
 //   "exitline"  -> the standalone ExitlineTool, embedded (segment -> scrip
-//                  -> Camarilla ladder + SL/TP)
+//                  -> proprietary level ladder + SL/TP)
 export const MODULES = [
   {
     slug: "index-vector",
@@ -45,13 +45,13 @@ export const MODULES = [
     kind: "exitline",
     icon: Crosshair,
     title: "Exitline",
-    shortDescription: "Camarilla levels with a suggested SL and TP.",
+    shortDescription: "Proprietary intraday levels with a suggested SL and TP.",
     category: "Trade Execution",
     status: "Operational",
     universe: "NSE Cash, Futures & Options",
     coverage: "On demand, any symbol",
     overview: {
-      purpose: "Turns yesterday's high/low/close into a Camarilla pivot ladder against the live price, with a rule-based stop-loss and take-profit.",
+      purpose: "Turns yesterday's high/low/close into a proprietary intraday level ladder against the live price, with a rule-based stop-loss and take-profit.",
       whatItMeasures: "Classifies the current price into a mean-reversion Trading Zone (S3–R3) or a trend-day Breakout Zone (beyond R4/S4), and derives SL/TP from that read.",
       interpret: "Near R3/S3, treat it as a mean-reversion trigger with a fixed target; beyond R4/S4, treat it as a trend day — trail the stop, no fixed target.",
     },

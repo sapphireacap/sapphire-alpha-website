@@ -494,6 +494,41 @@ class DefinedgeService:
                 continue
         return closes
 
+    async def minute_ohlc(self, segment: str, token: str, frm: str = None, to: str = None):
+        """Like _closes() but keeps every OHLC field instead of discarding
+        all but close — used by Exitline's intraday candlestick chart,
+        which needs real per-minute highs/lows, not just closes."""
+        session = await self._session_key()
+        now = datetime.now(IST)
+        if frm is None:
+            frm = now.replace(hour=9, minute=15, second=0).strftime("%d%m%Y%H%M")
+        if to is None:
+            to = now.strftime("%d%m%Y%H%M")
+        url = f"{DATA_BASE}/history/{segment}/{token}/minute/{frm}/{to}"
+        async with httpx.AsyncClient(timeout=45) as c:
+            r = await c.get(url, headers={"Authorization": session})
+        if r.status_code == 401:
+            raise DefinedgeError("Definedge session expired. Please login again (OTP).")
+        if r.status_code != 200:
+            raise DefinedgeError(f"History failed ({r.status_code}) for {token}.")
+        bars = []
+        for line in r.text.strip().splitlines():
+            parts = line.split(",")
+            if len(parts) < 5:
+                continue
+            try:
+                bars.append({
+                    "ts": parts[0],   # ddmmyyyyHHMM
+                    "open": float(parts[1]),
+                    "high": float(parts[2]),
+                    "low": float(parts[3]),
+                    "close": float(parts[4]),
+                })
+            except ValueError:
+                continue
+        bars.sort(key=lambda b: b["ts"])
+        return bars
+
     async def daily_history(self, segment: str, token: str, years: int = 10):
         """Day-interval history for Quant Lab backtests — like _closes() but
         daily bars instead of minute. Requests a full `years`-back window

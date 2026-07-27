@@ -2,7 +2,12 @@ import { useState, useEffect, useRef } from "react";
 import axios from "axios";
 import { toast } from "sonner";
 import { Loader2, Crosshair } from "lucide-react";
+import {
+  ComposedChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine,
+} from "recharts";
 import { field, selectCls, label, LoadingParticles, EmptyState } from "./QuantLab";
+
+const POLL_MS = 30000; // keep the intraday chart/LTP live while results are showing
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 
@@ -32,6 +37,86 @@ const BIAS_TONE = {
   Long: "text-emerald-400",
   Short: "text-red-400",
   Neutral: "text-slate-400",
+};
+
+const LEVEL_COLORS = {
+  R4: "#34D399", R3: "#34D399", R2: "#6EE7B7", R1: "#A7F3D0",
+  S1: "#FECACA", S2: "#FCA5A5", S3: "#F87171", S4: "#F87171",
+};
+
+const Candle = (props) => {
+  const { x, y, width, height, payload } = props;
+  const { open, close, high, low } = payload;
+  if (high === low || height <= 0) return null;
+  const isUp = close >= open;
+  const color = isUp ? "#34D399" : "#F87171";
+  const scale = height / (high - low);
+  const bodyTop = y + (high - Math.max(open, close)) * scale;
+  const bodyHeight = Math.max(1, Math.abs(open - close) * scale);
+  return (
+    <g>
+      <line x1={x + width / 2} y1={y} x2={x + width / 2} y2={y + height} stroke={color} strokeWidth={1} />
+      <rect x={x + width * 0.2} y={bodyTop} width={width * 0.6} height={bodyHeight} fill={color} />
+    </g>
+  );
+};
+
+const ChartTooltip = ({ active, payload, label: t }) => {
+  if (!active || !payload || !payload.length) return null;
+  const p = payload[0].payload;
+  return (
+    <div className="glass rounded-md border border-white/10 px-3 py-2 text-xs">
+      <p className="text-slate-500 mb-1 font-mono-ui">{t}</p>
+      <p className="text-slate-200 font-mono-ui">O {fmtNum(p.open)} · H {fmtNum(p.high)} · L {fmtNum(p.low)} · C {fmtNum(p.close)}</p>
+    </div>
+  );
+};
+
+const ExitlineChart = ({ chart, levels, ltp }) => {
+  if (!chart || chart.length === 0) {
+    return (
+      <div className="glass rounded-2xl border border-white/10 p-6 mb-6 text-center" data-testid="exitline-chart-empty">
+        <p className="text-xs text-slate-500">No intraday bars yet for this session.</p>
+      </div>
+    );
+  }
+  const allValues = [...chart.flatMap((b) => [b.high, b.low]), ...Object.values(levels), ltp];
+  const domain = [Math.min(...allValues) * 0.998, Math.max(...allValues) * 1.002];
+
+  return (
+    <div className="glass rounded-2xl border border-white/10 p-4 md:p-6 mb-6" data-testid="exitline-chart">
+      <p className="font-mono-ui text-[10px] uppercase tracking-[0.18em] text-slate-500 mb-3">Today's Session — 5 Min · Live</p>
+      <div className="h-96">
+        <ResponsiveContainer width="100%" height="100%">
+          <ComposedChart data={chart} margin={{ top: 5, right: 44, left: 0, bottom: 0 }}>
+            <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" vertical={false} />
+            <XAxis dataKey="t" tick={{ fill: "#64748B", fontSize: 10 }} axisLine={{ stroke: "rgba(255,255,255,0.1)" }} tickLine={false} minTickGap={40} />
+            <YAxis
+              domain={domain}
+              tick={{ fill: "#64748B", fontSize: 11 }}
+              axisLine={false}
+              tickLine={false}
+              width={64}
+              orientation="right"
+              tickFormatter={(v) => Number(v).toFixed(2)}
+            />
+            <Tooltip content={<ChartTooltip />} />
+            <Bar dataKey={(d) => [d.low, d.high]} shape={<Candle />} isAnimationActive={false} />
+            {Object.entries(levels).map(([k, v]) => (
+              <ReferenceLine
+                key={k} y={v} stroke={LEVEL_COLORS[k] || "#64748B"} strokeDasharray="3 3" strokeOpacity={0.65}
+                label={{ value: k, position: "right", fill: LEVEL_COLORS[k] || "#64748B", fontSize: 10 }}
+              />
+            ))}
+            <ReferenceLine
+              y={ltp} stroke="#437EEB" strokeWidth={1.5}
+              label={{ value: "LTP", position: "right", fill: "#437EEB", fontSize: 10, fontWeight: 700 }}
+            />
+          </ComposedChart>
+        </ResponsiveContainer>
+      </div>
+    </div>
+  );
 };
 
 const Ladder = ({ levels, ltp }) => {
@@ -74,6 +159,8 @@ const ExitlineResults = ({ result }) => (
       </span>
     </div>
 
+    <ExitlineChart chart={result.chart} levels={result.levels} ltp={result.ltp} />
+
     <div className="grid md:grid-cols-[1fr,1.2fr] gap-4 mb-6">
       <Ladder levels={result.levels} ltp={result.ltp} />
 
@@ -108,7 +195,7 @@ const ExitlineResults = ({ result }) => (
     </div>
 
     <p className="text-[11px] font-light text-slate-600 max-w-2xl">
-      Camarilla levels are fixed for the trading day, computed from the previous session's H/L/C. SL/TP are rule-based suggestions, not guaranteed outcomes — always size and manage risk independently. Not investment advice.
+      These levels are fixed for the trading day, computed from the previous session's H/L/C. SL/TP are rule-based suggestions, not guaranteed outcomes — always size and manage risk independently. Not investment advice.
     </p>
   </div>
 );
@@ -185,15 +272,44 @@ const ExitlineTool = () => {
   const [optionType, setOptionType] = useState("CE");
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState(null);
+  const paramsRef = useRef(null); // last-submitted query params, kept alive for the background poll
+
+  const fetchLevels = async (params, { silent } = {}) => {
+    if (!silent) { setLoading(true); setResult(null); }
+    try {
+      const { data } = await axios.get(`${API}/exitline/levels`, { params });
+      setResult(data);
+    } catch (err) {
+      if (!silent) {
+        toast.error(err?.response?.data?.detail || "Could not fetch levels. Please try again.");
+        setResult({ found: false, reason: err?.response?.data?.detail || "Could not fetch levels for this instrument." });
+      }
+      // a silent background refresh failing (e.g. a transient Definedge hiccup) just keeps showing the last good result
+    } finally {
+      if (!silent) setLoading(false);
+    }
+  };
+
+  // Keeps the chart/LTP live while a result is on screen — matches the
+  // "live chart of that trading session" ask, without turning this into a
+  // constantly-polling dashboard when nothing has been submitted yet.
+  useEffect(() => {
+    const interval = setInterval(() => {
+      if (paramsRef.current) fetchLevels(paramsRef.current, { silent: true });
+    }, POLL_MS);
+    return () => clearInterval(interval);
+  }, []);
 
   const changeSegment = (e) => {
     setSegment(e.target.value);
     setSymbol(""); setExpiry(""); setStrike(""); setExpiryOptions([]); setStrikeOptions([]); setResult(null);
+    paramsRef.current = null;
   };
 
   const selectSymbol = async (s) => {
     setSymbol(s);
     setExpiry(""); setStrike(""); setExpiryOptions([]); setStrikeOptions([]); setResult(null);
+    paramsRef.current = null;
     if (!s || segment === "NSE") return;
     try {
       const { data } = await axios.get(`${API}/exitline/instruments`, { params: { segment, symbol: s } });
@@ -207,6 +323,7 @@ const ExitlineTool = () => {
     const exp = e.target.value;
     setExpiry(exp);
     setStrike(""); setStrikeOptions([]); setResult(null);
+    paramsRef.current = null;
     if (!exp || segment !== "OPT") return;
     try {
       const { data } = await axios.get(`${API}/exitline/instruments`, { params: { segment, symbol, expiry: exp } });
@@ -223,31 +340,21 @@ const ExitlineTool = () => {
   const submit = async (e) => {
     e.preventDefault();
     if (!canSubmit) return;
-    setLoading(true);
-    setResult(null);
-    try {
-      const { data } = await axios.get(`${API}/exitline/levels`, {
-        params: {
-          segment,
-          symbol: symbol.trim(),
-          ...(segment !== "NSE" ? { expiry } : {}),
-          ...(segment === "OPT" ? { strike, option_type: optionType } : {}),
-        },
-      });
-      setResult(data);
-    } catch (err) {
-      toast.error(err?.response?.data?.detail || "Could not fetch levels. Please try again.");
-      setResult({ found: false, reason: err?.response?.data?.detail || "Could not fetch levels for this instrument." });
-    } finally {
-      setLoading(false);
-    }
+    const params = {
+      segment,
+      symbol: symbol.trim(),
+      ...(segment !== "NSE" ? { expiry } : {}),
+      ...(segment === "OPT" ? { strike, option_type: optionType } : {}),
+    };
+    paramsRef.current = params;
+    await fetchLevels(params);
   };
 
   return (
     <div data-testid="exitline-tool">
       <form onSubmit={submit} className="glass rounded-2xl border border-white/10 p-5 md:p-6 mb-6">
         <p className="font-mono-ui text-[10px] uppercase tracking-[0.24em] text-sapphire-light mb-4 pb-4 border-b border-white/10 flex items-center gap-2">
-          <Crosshair size={13} /> Camarilla Levels + SL/TP
+          <Crosshair size={13} /> Exitline Levels + SL/TP
         </p>
         <div className="grid grid-cols-2 md:grid-cols-5 gap-4 items-end">
           <div>
@@ -273,14 +380,14 @@ const ExitlineTool = () => {
             <>
               <div>
                 <label className={label}>Strike</label>
-                <select value={strike} onChange={(e) => { setStrike(e.target.value); setResult(null); }} style={{ colorScheme: "dark" }} className={selectCls} data-testid="exitline-strike" disabled={!expiry}>
+                <select value={strike} onChange={(e) => { setStrike(e.target.value); setResult(null); paramsRef.current = null; }} style={{ colorScheme: "dark" }} className={selectCls} data-testid="exitline-strike" disabled={!expiry}>
                   <option value="" className="bg-surface">Select…</option>
                   {strikeOptions.map((s) => <option key={s} value={s} className="bg-surface">{s}</option>)}
                 </select>
               </div>
               <div>
                 <label className={label}>Type</label>
-                <select value={optionType} onChange={(e) => { setOptionType(e.target.value); setResult(null); }} style={{ colorScheme: "dark" }} className={selectCls} data-testid="exitline-option-type">
+                <select value={optionType} onChange={(e) => { setOptionType(e.target.value); setResult(null); paramsRef.current = null; }} style={{ colorScheme: "dark" }} className={selectCls} data-testid="exitline-option-type">
                   <option value="CE" className="bg-surface">CE</option>
                   <option value="PE" className="bg-surface">PE</option>
                 </select>
@@ -294,7 +401,7 @@ const ExitlineTool = () => {
         </div>
       </form>
 
-      {loading && <LoadingParticles title="Computing Levels" subtitle="Fetching prior session H/L/C · Live LTP · Camarilla ladder" />}
+      {loading && <LoadingParticles title="Computing Levels" subtitle="Fetching prior session H/L/C · Live LTP · Level ladder" />}
       {!loading && result && result.found === false && <EmptyState reason={result.reason} />}
       {!loading && result && result.found !== false && <ExitlineResults result={result} />}
     </div>
