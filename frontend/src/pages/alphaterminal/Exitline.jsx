@@ -48,7 +48,7 @@ const INTERVALS = [
 // tradingview.com widget — that only supports custom price-line overlays
 // via the paid Charting Library). Renders our real Definedge candles with
 // native price lines for the levels, fully under our control.
-const TVChart = ({ chart, levels, ltp, interval, onIntervalChange }) => {
+const TVChart = ({ chart, levels, ltp, interval, onIntervalChange, fetchGen }) => {
   const containerRef = useRef(null);
   const chartRef = useRef(null);
   const seriesRef = useRef(null);
@@ -75,7 +75,17 @@ const TVChart = ({ chart, levels, ltp, interval, onIntervalChange }) => {
     });
     chartRef.current = tvChart;
     seriesRef.current = series;
+
+    // The library's own wheel handling (zoom/pan) fires fine, but the
+    // browser's default page-scroll ALSO fires unless explicitly blocked —
+    // React's onWheel is passive by default so preventDefault() there is a
+    // no-op; a native, non-passive listener is the only thing that works.
+    const el = containerRef.current;
+    const blockPageScroll = (e) => e.preventDefault();
+    el.addEventListener("wheel", blockPageScroll, { passive: false });
+
     return () => {
+      el.removeEventListener("wheel", blockPageScroll);
       tvChart.remove();
       chartRef.current = null;
       seriesRef.current = null;
@@ -132,15 +142,35 @@ const TVChart = ({ chart, levels, ltp, interval, onIntervalChange }) => {
       }));
     }
 
-    // Only reset the view (time+price scale) when the symbol or timeframe
-    // actually changes — a background live-poll refresh (same key) must
-    // never yank a user's manual scroll/zoom back to "fit all".
-    const fitKey = `${chart[0]?.time}-${interval}`;
-    if (fitKeyRef.current !== fitKey) {
-      fitKeyRef.current = fitKey;
-      tvChart.timeScale().fitContent();
+    // Only reset the view (time+price scale) when this data actually
+    // belongs to a real user-initiated fetch (submit / interval change) —
+    // a background live-poll refresh must never yank a user's manual
+    // scroll/zoom back to "fit all". fetchGen (tagged onto `result` by the
+    // parent, only on a real fetch) is the only reliable signal for that:
+    // chart[0]'s own timestamp can't be used, since every interval's first
+    // bucket aligns to the same 09:15 market open regardless of interval
+    // width, so it can't tell "new interval's data" apart from "old
+    // interval's data" by timestamp alone.
+    if (fetchGen != null && fitKeyRef.current !== fetchGen) {
+      fitKeyRef.current = fetchGen;
+      series.priceScale().applyOptions({ autoScale: true });
+      // fitContent() alone leaves very few bars (e.g. a wide interval early
+      // in the session) clumped in a corner at default bar width instead of
+      // spread across the chart. Explicitly show the whole session window
+      // (market open -> now) instead — consistent regardless of how many
+      // bars the current interval happens to have produced so far, and
+      // matches how a real intraday chart reads (blank space after "now"
+      // until close is normal, not a bug).
+      const sessionStart = chart[0]?.time;
+      const lastBar = chart[chart.length - 1]?.time;
+      if (sessionStart != null && lastBar != null) {
+        const nowTs = Math.floor(Date.now() / 1000);
+        tvChart.timeScale().setVisibleRange({ from: sessionStart, to: Math.max(lastBar + interval * 60, nowTs) });
+      } else {
+        tvChart.timeScale().fitContent();
+      }
     }
-  }, [chart, levels, ltp, interval]);
+  }, [chart, levels, ltp, interval, fetchGen]);
 
   const isEmpty = !chart || chart.length === 0;
 
@@ -170,7 +200,7 @@ const TVChart = ({ chart, levels, ltp, interval, onIntervalChange }) => {
             <p className="text-xs text-slate-500">No intraday bars yet for this session.</p>
           </div>
         )}
-        <div ref={containerRef} className="h-96" data-testid="exitline-tv-chart" />
+        <div ref={containerRef} className="h-96" style={{ touchAction: "none" }} data-testid="exitline-tv-chart" />
       </div>
     </div>
   );
@@ -184,20 +214,42 @@ const Ladder = ({ levels, ltp }) => {
 
   return (
     <div className="glass rounded-2xl border border-white/10 overflow-hidden" data-testid="exitline-ladder">
-      {rows.map((r) => (
-        <div
-          key={r.key}
-          data-testid={r.isLtp ? "exitline-ltp-row" : `exitline-level-${r.key}`}
-          className={`flex items-center justify-between px-5 py-3 border-b border-white/[0.05] last:border-0 ${
-            r.isLtp ? "bg-sapphire-light/15 border-y border-sapphire-light/40" : ""
-          }`}
-        >
-          <span className={`font-mono-ui text-xs uppercase tracking-[0.14em] ${r.isLtp ? "text-sapphire-light font-bold" : r.key.startsWith("H") ? "text-emerald-400/80" : r.key.startsWith("L") ? "text-red-400/80" : "text-white"}`}>
-            {r.isLtp ? "◆ LTP (Current)" : r.key}
-          </span>
-          <span className={`font-mono-ui text-sm ${r.isLtp ? "text-white font-bold" : "text-slate-300"}`}>₹{fmtNum(r.value)}</span>
-        </div>
-      ))}
+      <div className="overflow-x-auto">
+        <table className="w-full min-w-[520px]" style={{ fontVariantNumeric: "tabular-nums" }}>
+          <thead>
+            <tr className="border-b border-white/10">
+              {[["Level", "left"], ["Price", "right"], ["Distance from LTP", "right"], ["% Away", "right"]].map(([h, align]) => (
+                <th key={h} className={`px-5 py-3 font-mono-ui text-[10px] uppercase tracking-[0.18em] text-slate-500 font-semibold whitespace-nowrap text-${align}`}>{h}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((r) => {
+              const distance = r.isLtp ? null : r.value - ltp;
+              const distPct = r.isLtp ? null : (distance / ltp) * 100;
+              const distTone = distance == null ? "text-slate-600" : distance > 0 ? "text-emerald-400" : "text-red-400";
+              return (
+                <tr
+                  key={r.key}
+                  data-testid={r.isLtp ? "exitline-ltp-row" : `exitline-level-${r.key}`}
+                  className={`border-b border-white/[0.05] last:border-0 ${r.isLtp ? "bg-sapphire-light/15" : ""}`}
+                >
+                  <td className={`px-5 py-3 font-mono-ui text-xs uppercase tracking-[0.14em] whitespace-nowrap ${r.isLtp ? "text-sapphire-light font-bold" : r.key.startsWith("H") ? "text-emerald-400/80" : r.key.startsWith("L") ? "text-red-400/80" : "text-white"}`}>
+                    {r.isLtp ? "◆ LTP (Current)" : r.key}
+                  </td>
+                  <td className={`px-5 py-3 text-right font-mono-ui text-sm whitespace-nowrap ${r.isLtp ? "text-white font-bold" : "text-slate-300"}`}>₹{fmtNum(r.value)}</td>
+                  <td className={`px-5 py-3 text-right font-mono-ui text-sm whitespace-nowrap ${distTone}`}>
+                    {distance == null ? "—" : `${distance >= 0 ? "+" : "−"}₹${fmtNum(Math.abs(distance))}`}
+                  </td>
+                  <td className={`px-5 py-3 text-right font-mono-ui text-sm whitespace-nowrap ${distTone}`}>
+                    {distPct == null ? "—" : `${distPct >= 0 ? "+" : "−"}${Math.abs(distPct).toFixed(2)}%`}
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 };
@@ -211,9 +263,9 @@ const ExitlineResults = ({ result, interval, onIntervalChange }) => (
       </p>
     </div>
 
-    <TVChart chart={result.chart} levels={result.levels} ltp={result.ltp} interval={interval} onIntervalChange={onIntervalChange} />
+    <TVChart chart={result.chart} levels={result.levels} ltp={result.ltp} interval={interval} onIntervalChange={onIntervalChange} fetchGen={result.__fetchGen} />
 
-    <div className="max-w-md mb-6">
+    <div className="mb-6">
       <Ladder levels={result.levels} ltp={result.ltp} />
     </div>
 
@@ -296,17 +348,25 @@ const ExitlineTool = () => {
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState(null);
   const [chartInterval, setChartInterval] = useState(5);
+  const genRef = useRef(0); // bumped on a real user-initiated fetch (submit/interval change), never on a silent poll — see TVChart's fitKey
   const paramsRef = useRef(null); // last-submitted query params, kept alive for the background poll
 
-  const fetchLevels = async (params, { silent } = {}) => {
+  // `gen` is only passed for a real user-initiated fetch (submit / interval
+  // change) — a plain background poll omits it, so the tag on `result`
+  // carries forward from whatever it already was rather than getting
+  // clobbered. This is what lets TVChart tell "genuinely new view" apart
+  // from "same view, fresher candles" reliably: chart[0]'s own timestamp
+  // can't be used for that (every interval's first bucket aligns to the
+  // same 09:15 market open, so it's identical across interval switches).
+  const fetchLevels = async (params, { silent, gen } = {}) => {
     if (!silent) { setLoading(true); setResult(null); }
     try {
       const { data } = await axios.get(`${API}/exitline/levels`, { params });
-      setResult(data);
+      setResult((prev) => ({ ...data, __fetchGen: gen !== undefined ? gen : prev?.__fetchGen }));
     } catch (err) {
       if (!silent) {
         toast.error(err?.response?.data?.detail || "Could not fetch levels. Please try again.");
-        setResult({ found: false, reason: err?.response?.data?.detail || "Could not fetch levels for this instrument." });
+        setResult({ found: false, reason: err?.response?.data?.detail || "Could not fetch levels for this instrument.", __fetchGen: gen });
       }
       // a silent background refresh failing (e.g. a transient Definedge hiccup) just keeps showing the last good result
     } finally {
@@ -372,7 +432,8 @@ const ExitlineTool = () => {
       interval: chartInterval,
     };
     paramsRef.current = params;
-    await fetchLevels(params);
+    genRef.current += 1;
+    await fetchLevels(params, { gen: genRef.current });
   };
 
   const changeInterval = (iv) => {
@@ -380,7 +441,8 @@ const ExitlineTool = () => {
     if (!paramsRef.current) return;
     const params = { ...paramsRef.current, interval: iv };
     paramsRef.current = params;
-    fetchLevels(params, { silent: true }); // swap the chart in place, no full-page loading flash
+    genRef.current += 1;
+    fetchLevels(params, { silent: true, gen: genRef.current }); // swap the chart in place, no full-page loading flash
   };
 
   return (
