@@ -78,21 +78,25 @@ const TVChart = ({ chart, levels, ltp, interval, onIntervalChange, fetchGen }) =
 
     // The library's own wheel handling (zoom/pan) fires fine, but the
     // browser's default page-scroll ALSO fires unless explicitly blocked.
-    // A bubble-phase listener on this container isn't enough: the real
-    // wheel target is the library's own canvas (a child), and its own
-    // bubble-phase listener very likely calls stopPropagation() once it's
-    // handled the interaction, which stops the event before it ever
-    // reaches a listener out here. Capture phase runs top-down BEFORE any
-    // descendant's bubble-phase handler gets a chance to do that, so
-    // preventDefault() here is guaranteed to land — it only cancels the
-    // browser's default scroll action, it doesn't stop propagation, so the
-    // library's own zoom/pan handling downstream still runs normally.
+    // A capture-phase listener on THIS container wasn't enough in
+    // practice — lightweight-charts may attach its own handling on
+    // `document` (common for chart libraries, so drag/zoom keeps working
+    // if the pointer briefly leaves the chart bounds), and capture phase
+    // runs outermost-first: a `document`-level listener fires before any
+    // listener on a descendant, no matter that descendant's own phase.
+    // Attaching on `document` itself, in capture phase, is the only place
+    // nothing in the DOM tree can possibly run before it — preventDefault()
+    // here cancels the browser's default scroll action only, it doesn't
+    // stop propagation, so the library's own zoom/pan handling downstream
+    // still runs normally.
     const el = containerRef.current;
-    const blockPageScroll = (e) => e.preventDefault();
-    el.addEventListener("wheel", blockPageScroll, { passive: false, capture: true });
+    const blockPageScroll = (e) => {
+      if (el.contains(e.target)) e.preventDefault();
+    };
+    document.addEventListener("wheel", blockPageScroll, { passive: false, capture: true });
 
     return () => {
-      el.removeEventListener("wheel", blockPageScroll, { capture: true });
+      document.removeEventListener("wheel", blockPageScroll, { capture: true });
       tvChart.remove();
       chartRef.current = null;
       seriesRef.current = null;
