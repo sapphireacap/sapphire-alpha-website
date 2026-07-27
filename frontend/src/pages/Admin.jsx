@@ -4,8 +4,10 @@ import { toast } from "sonner";
 import { Link } from "react-router-dom";
 import {
   Loader2, LogOut, Plus, Trash2, GripVertical, Save, X, ArrowLeft, ShieldCheck,
-  Wifi, WifiOff, RefreshCw, ChevronDown,
+  Wifi, WifiOff, RefreshCw, ChevronDown, FileText,
 } from "lucide-react";
+import { STRATEGIES } from "./blackbox/strategies";
+import AdminStrategyReport from "./blackbox/AdminStrategyReport";
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 const TOKEN_KEY = "sac_admin_token";
@@ -439,6 +441,34 @@ const QuantLabPanel = ({ onAuthError }) => {
 };
 
 /* ------------------------------ Black Box — Prism Alpha ------------------------------ */
+const StrategyReportAccordion = ({ strategy, onAuthError }) => {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="rounded-2xl border border-white/10 bg-[#0A0D18]" data-testid={`admin-report-accordion-${strategy.slug}`}>
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        className="w-full flex items-center justify-between gap-4 p-5 text-left"
+        data-testid={`admin-report-toggle-${strategy.slug}`}
+      >
+        <span className="flex items-center gap-3">
+          <FileText size={16} className="text-sapphire-light shrink-0" />
+          <span>
+            <span className="block font-display text-base font-bold text-white">{strategy.title}</span>
+            <span className="block text-xs text-slate-500">{strategy.internalStatus} · Full internal report</span>
+          </span>
+        </span>
+        <ChevronDown size={16} className={`text-slate-500 transition-transform duration-300 ${open ? "rotate-180" : ""}`} />
+      </button>
+      {open && (
+        <div className="px-5 pb-5 border-t border-white/10">
+          <AdminStrategyReport strategy={strategy} authConfig={authHeaders()} onAuthError={onAuthError} />
+        </div>
+      )}
+    </div>
+  );
+};
+
 const BlackBoxPanel = ({ onAuthError }) => {
   const [running, setRunning] = useState(false);
   const [lastResult, setLastResult] = useState(null);
@@ -573,6 +603,17 @@ const BlackBoxPanel = ({ onAuthError }) => {
           <div>{lastLumenBacktest.signals_logged} signals, {lastLumenBacktest.portfolio_snapshots} daily snapshots.</div>
         </div>
       )}
+
+      <div className="mt-8 pt-6 border-t border-white/10">
+        <h2 className="font-display text-xl font-bold text-white mb-1">Internal Strategy Reports</h2>
+        <p className="text-sm text-slate-500 mb-4">
+          Full performance data — live/backtested trades, equity curves, drawdowns, risk analytics — for each strategy. Not visible anywhere
+          on the public site; these routes require this admin session's token.
+        </p>
+        <div className="space-y-3" data-testid="admin-strategy-reports">
+          {STRATEGIES.map((s) => <StrategyReportAccordion key={s.slug} strategy={s} onAuthError={onAuthError} />)}
+        </div>
+      </div>
     </div>
   );
 };

@@ -20,13 +20,17 @@ const fmtDays = (d) => (d == null ? "—" : d < 1 ? `${Math.round(d * 24)}h` : `
 const kpi = (key, label, value, tone = "neutral", note) => ({ key, label, value, tone, note });
 
 /* ------------------------------- Prism ------------------------------- */
-async function fetchPrism(apiPath) {
+// Every /blackbox/* read route is admin-gated (trading performance is
+// internal-only) — `config` must carry an Authorization header, supplied by
+// the caller (the admin dashboard). There is no public caller of this module
+// anymore.
+async function fetchPrism(apiPath, config) {
   const [status, liveStats, liveTrades, backtestSummary, backtestTrades] = await Promise.all([
-    axios.get(`${API}/blackbox/${apiPath}/status`).then((r) => r.data),
-    axios.get(`${API}/blackbox/${apiPath}/stats`).then((r) => r.data),
-    axios.get(`${API}/blackbox/${apiPath}/trades`).then((r) => r.data),
-    axios.get(`${API}/blackbox/${apiPath}/backtest/summary`).then((r) => r.data),
-    axios.get(`${API}/blackbox/${apiPath}/backtest/trades`).then((r) => r.data),
+    axios.get(`${API}/blackbox/${apiPath}/status`, config).then((r) => r.data),
+    axios.get(`${API}/blackbox/${apiPath}/stats`, config).then((r) => r.data),
+    axios.get(`${API}/blackbox/${apiPath}/trades`, config).then((r) => r.data),
+    axios.get(`${API}/blackbox/${apiPath}/backtest/summary`, config).then((r) => r.data),
+    axios.get(`${API}/blackbox/${apiPath}/backtest/trades`, config).then((r) => r.data),
   ]);
   return { status, liveStats, liveTrades, backtestSummary, backtestTrades };
 }
@@ -120,12 +124,12 @@ function buildPrismView(strategy, raw) {
 }
 
 /* ------------------------------- Lumen SIP ------------------------------- */
-async function fetchLumen() {
+async function fetchLumen(config) {
   const [status, portfolio, signals, metrics] = await Promise.all([
-    axios.get(`${API}/blackbox/lumen-sip/status`).then((r) => r.data),
-    axios.get(`${API}/blackbox/lumen-sip/backtest/portfolio`).then((r) => r.data),
-    axios.get(`${API}/blackbox/lumen-sip/backtest/signals`).then((r) => r.data),
-    axios.get(`${API}/blackbox/lumen-sip/backtest/metrics`).then((r) => r.data),
+    axios.get(`${API}/blackbox/lumen-sip/status`, config).then((r) => r.data),
+    axios.get(`${API}/blackbox/lumen-sip/backtest/portfolio`, config).then((r) => r.data),
+    axios.get(`${API}/blackbox/lumen-sip/backtest/signals`, config).then((r) => r.data),
+    axios.get(`${API}/blackbox/lumen-sip/backtest/metrics`, config).then((r) => r.data),
   ]);
   return { status, portfolio, signals, metrics };
 }
@@ -231,11 +235,11 @@ function buildLumenView(strategy, raw) {
   };
 }
 
-export async function fetchStrategyView(strategy) {
+export async function fetchStrategyView(strategy, config) {
   if (strategy.kind === "lumen") {
-    const raw = await fetchLumen();
+    const raw = await fetchLumen(config);
     return buildLumenView(strategy, raw);
   }
-  const raw = await fetchPrism(strategy.apiPath);
+  const raw = await fetchPrism(strategy.apiPath, config);
   return buildPrismView(strategy, raw);
 }

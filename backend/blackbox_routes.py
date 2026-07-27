@@ -2,13 +2,15 @@
 Black Box tab routes — Prism Alpha (RSI + XO Zone gated) and Prism Alpha 2
 (identical pattern logic, no indicator gate — a parallel comparison track).
 
-Public routes intentionally return performance/trade-log data only — never
-conditions_met (pattern names, indicator values) or stop_shift_history's
-pattern field, per the "stays a black box" requirement. Those fields exist
-in Mongo for audit but are stripped before leaving this router.
+Every read route in this router is admin-only (Depends(get_current_admin)).
+Trading performance (positions, trades, P&L, equity curves, allocation) is
+internal-only per an explicit instruction not to expose any of it publicly —
+neither through the frontend nor through the API directly. The only routes
+that don't require the admin JWT are the two cron entry points, which are
+instead gated by the shared X-Cron-Key secret.
 
 Same factory pattern as quant_lab.py's create_quant_lab_router — takes the
-existing shared `definedge` instance, no new auth.
+existing shared `definedge` instance, no new auth mechanism invented.
 """
 import logging
 from datetime import datetime, timezone, timedelta
@@ -49,7 +51,9 @@ def _compute_stats(trades: list) -> dict:
 
 
 def _public_trade(t: dict, chart_url: str = None) -> dict:
-    """Entry/exit/P&L/duration only — no conditions_met, no pattern names."""
+    """Entry/exit/P&L/duration only — no conditions_met, no pattern names.
+    ("Public" here is a legacy name for the field-stripping this does, not a
+    claim about the route's auth — every route serving this is admin-gated.)"""
     out = {
         "id": t["id"],
         "date": t["date"],
@@ -116,27 +120,27 @@ def create_blackbox_router(db, definedge, get_current_admin, cron_secret: str) -
             raise HTTPException(status_code=502, detail=f"Prism Alpha evaluation failed: {e}")
 
     @router.get("/prism-alpha/status")
-    async def prism_alpha_status():
+    async def prism_alpha_status(admin: dict = Depends(get_current_admin)):
         return await _status(VARIANT_CONFIG["prism_alpha"]["collection"])
 
     @router.get("/prism-alpha/stats")
-    async def prism_alpha_stats():
+    async def prism_alpha_stats(admin: dict = Depends(get_current_admin)):
         return await _stats(VARIANT_CONFIG["prism_alpha"]["collection"])
 
     @router.get("/prism-alpha/trades")
-    async def prism_alpha_trades():
+    async def prism_alpha_trades(admin: dict = Depends(get_current_admin)):
         return await _trades(VARIANT_CONFIG["prism_alpha"]["collection"])
 
     @router.get("/prism-alpha-2/status")
-    async def prism_alpha2_status():
+    async def prism_alpha2_status(admin: dict = Depends(get_current_admin)):
         return await _status(VARIANT_CONFIG["prism_alpha_2"]["collection"])
 
     @router.get("/prism-alpha-2/stats")
-    async def prism_alpha2_stats():
+    async def prism_alpha2_stats(admin: dict = Depends(get_current_admin)):
         return await _stats(VARIANT_CONFIG["prism_alpha_2"]["collection"])
 
     @router.get("/prism-alpha-2/trades")
-    async def prism_alpha2_trades():
+    async def prism_alpha2_trades(admin: dict = Depends(get_current_admin)):
         return await _trades(VARIANT_CONFIG["prism_alpha_2"]["collection"])
 
     # ---- Backtest (intraday, real 1-minute Definedge data — see
@@ -180,34 +184,30 @@ def create_blackbox_router(db, definedge, get_current_admin, cron_secret: str) -
             raise HTTPException(status_code=502, detail=f"Backtest run failed: {e}")
 
     @router.get("/prism-alpha/backtest/summary")
-    async def prism_alpha_backtest_summary():
+    async def prism_alpha_backtest_summary(admin: dict = Depends(get_current_admin)):
         return await _backtest_summary("prism_alpha", "prism-alpha")
 
     @router.get("/prism-alpha/backtest/trades")
-    async def prism_alpha_backtest_trades():
+    async def prism_alpha_backtest_trades(admin: dict = Depends(get_current_admin)):
         return await _backtest_trades("prism_alpha", "prism-alpha")
 
     @router.get("/prism-alpha/backtest/chart/{trade_id}")
-    async def prism_alpha_backtest_chart(trade_id: str):
+    async def prism_alpha_backtest_chart(trade_id: str, admin: dict = Depends(get_current_admin)):
         return await _backtest_chart("prism_alpha", trade_id)
 
     @router.get("/prism-alpha-2/backtest/summary")
-    async def prism_alpha2_backtest_summary():
+    async def prism_alpha2_backtest_summary(admin: dict = Depends(get_current_admin)):
         return await _backtest_summary("prism_alpha_2", "prism-alpha-2")
 
     @router.get("/prism-alpha-2/backtest/trades")
-    async def prism_alpha2_backtest_trades():
+    async def prism_alpha2_backtest_trades(admin: dict = Depends(get_current_admin)):
         return await _backtest_trades("prism_alpha_2", "prism-alpha-2")
 
     @router.get("/prism-alpha-2/backtest/chart/{trade_id}")
-    async def prism_alpha2_backtest_chart(trade_id: str):
+    async def prism_alpha2_backtest_chart(trade_id: str, admin: dict = Depends(get_current_admin)):
         return await _backtest_chart("prism_alpha_2", trade_id)
 
     # ---- Lumen SIP (Renko + MAST-cloud long-term ETF SIP allocation) -----
-    # Phase is intentionally NOT concealed here — the underlying mechanics
-    # come from a public Definedge education source, not a proprietary
-    # pattern engine, so no field-stripping like Prism Alpha's _public_trade.
-    #
     # LIVE (blackbox_lumen_sip_*) is a real, forward-only portfolio that
     # resumes from its last state. BACKTEST (blackbox_lumen_sip_backtest_*)
     # is an illustrative "since inception" replay, always rebuilt from zero
@@ -266,31 +266,31 @@ def create_blackbox_router(db, definedge, get_current_admin, cron_secret: str) -
             raise HTTPException(status_code=502, detail=f"Lumen SIP backtest run failed: {e}")
 
     @router.get("/lumen-sip/status")
-    async def lumen_sip_status():
+    async def lumen_sip_status(admin: dict = Depends(get_current_admin)):
         return await _lumen_sip_status("blackbox_lumen_sip_portfolio")
 
     @router.get("/lumen-sip/portfolio")
-    async def lumen_sip_portfolio():
+    async def lumen_sip_portfolio(admin: dict = Depends(get_current_admin)):
         return await db.blackbox_lumen_sip_portfolio.find({}, {"_id": 0}).sort("date", 1).to_list(5000)
 
     @router.get("/lumen-sip/signals")
-    async def lumen_sip_signals():
+    async def lumen_sip_signals(admin: dict = Depends(get_current_admin)):
         return await db.blackbox_lumen_sip_signals.find({}, {"_id": 0}).sort("date", -1).to_list(2000)
 
     @router.get("/lumen-sip/backtest/status")
-    async def lumen_sip_backtest_status():
+    async def lumen_sip_backtest_status(admin: dict = Depends(get_current_admin)):
         return await _lumen_sip_status("blackbox_lumen_sip_backtest_portfolio")
 
     @router.get("/lumen-sip/backtest/portfolio")
-    async def lumen_sip_backtest_portfolio():
+    async def lumen_sip_backtest_portfolio(admin: dict = Depends(get_current_admin)):
         return await db.blackbox_lumen_sip_backtest_portfolio.find({}, {"_id": 0}).sort("date", 1).to_list(5000)
 
     @router.get("/lumen-sip/backtest/signals")
-    async def lumen_sip_backtest_signals():
+    async def lumen_sip_backtest_signals(admin: dict = Depends(get_current_admin)):
         return await db.blackbox_lumen_sip_backtest_signals.find({}, {"_id": 0}).sort("date", -1).to_list(2000)
 
     @router.get("/lumen-sip/backtest/metrics")
-    async def lumen_sip_backtest_metrics():
+    async def lumen_sip_backtest_metrics(admin: dict = Depends(get_current_admin)):
         """Institutional-grade metrics (XIRR, max drawdown, round-trip trade
         stats, vanilla-SIP benchmark) — precomputed once per backtest run
         (see run_lumen_sip_backtest), not recalculated on every page view."""
