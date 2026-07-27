@@ -1,0 +1,30 @@
+name: IPO GMP — refresh every 30 minutes during market hours
+
+# Nothing was calling POST /admin/ipos/gmp-refresh on any schedule (same gap
+# as momentum-track-evaluate before it) - GMP data was found 56+ hours stale
+# against the site's own 6-hour staleness threshold. IPO Watch + InvestorGain
+# don't move fast enough intraday to justify more than every 30 min (see the
+# endpoint's own docstring in backend/ipo_routes.py). 03:45-10:00 UTC =
+# 09:15-15:30 IST, NSE's own trading hours, weekdays only.
+on:
+  schedule:
+    - cron: "15,45 3-9 * * 1-5"
+    - cron: "0 10 * * 1-5"
+  workflow_dispatch: {}
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Call gmp-refresh
+        run: |
+          status=$(curl -s -o response.json -w "%{http_code}" -X POST \
+            "https://sapphire-alpha-backend.onrender.com/api/admin/ipos/gmp-refresh" \
+            -H "X-Cron-Key: ${{ secrets.CRON_SECRET }}")
+          echo "HTTP status: $status"
+          cat response.json
+          echo
+          if [ "$status" != "200" ]; then
+            echo "::error::gmp-refresh failed with status $status"
+            exit 1
+          fi
