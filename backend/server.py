@@ -19,6 +19,7 @@ from quant_lab import create_quant_lab_router
 from ipo_routes import create_ipo_router
 from blackbox_routes import create_blackbox_router
 from exitline_routes import create_exitline_router
+from swing_picks_lcp import update_swing_picks_lcp
 from momentum_track_record import (
     capture_entries as capture_track_record_entries,
     evaluate_pending as evaluate_track_record,
@@ -827,6 +828,31 @@ async def momentum_track_evaluate_admin(admin: dict = Depends(get_current_admin)
 async def scanner_track_record(scanner: str = "momentum"):
     _validate_scanner(scanner)
     return await get_track_record_summary(db, scanner)
+
+
+# ---------------------------------------------------------------------------
+# Swing Picks LCP refresh — once/day after 15:30 IST close, updates every
+# swing_picks row's `lcp` from Definedge's real EOD close. Same cron+
+# admin-manual split as momentum-track-evaluate above; see
+# swing_picks_lcp.py for the actual logic. The pick list itself (ticker/
+# company/buy_at) is refreshed separately, every 10 days, by the external
+# swing_picks_sync.py script — this only ever touches `lcp`.
+# ---------------------------------------------------------------------------
+@api_router.post("/admin/terminal/swing-picks-update-lcp")
+async def swing_picks_update_lcp_cron(request: Request):
+    """External-cron entry point — recommend once/day shortly after 15:30
+    IST market close. X-Cron-Key gated like every other scheduled job here,
+    not an admin login (machine caller)."""
+    if not CRON_SECRET or request.headers.get("X-Cron-Key") != CRON_SECRET:
+        raise HTTPException(status_code=401, detail="Invalid cron key")
+    return await update_swing_picks_lcp(db, definedge)
+
+
+@api_router.post("/admin/terminal/swing-picks-update-lcp-now")
+async def swing_picks_update_lcp_admin(admin: dict = Depends(get_current_admin)):
+    """Same LCP refresh, for manual testing from the admin panel or a
+    locally-triggered script authenticated via admin login."""
+    return await update_swing_picks_lcp(db, definedge)
 
 
 # ---------------------------------------------------------------------------
