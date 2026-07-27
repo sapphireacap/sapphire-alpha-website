@@ -263,11 +263,13 @@ const ScannerTrackRecord = ({ scannerKey }) => {
       <p className="text-xs text-slate-500 mb-4">
         Tracking since <span className="text-slate-300">{since}</span> — {overall.count} call{overall.count === 1 ? "" : "s"} scored.
       </p>
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
+      <div className="grid grid-cols-2 md:grid-cols-3 gap-3 mb-6">
         <ScannerStat label="Overall Win Rate" value={winRatePct(overall)} tone={overall.win_rate > 0.5 ? "text-emerald-400" : "text-white"} />
+        <ScannerStat label={`Bullish (${bullish.count}) Win Rate`} value={winRatePct(bullish)} tone="text-emerald-400" />
+        <ScannerStat label={`Bearish (${bearish.count}) Win Rate`} value={winRatePct(bearish)} tone="text-red-400" />
         <ScannerStat label="Overall Avg. Performance" value={fmtPctSigned(overall.avg_performance_pct)} tone={overall.avg_performance_pct > 0 ? "text-emerald-400" : overall.avg_performance_pct < 0 ? "text-red-400" : "text-white"} />
-        <ScannerStat label={`Bullish (${bullish.count})`} value={winRatePct(bullish)} tone="text-emerald-400" />
-        <ScannerStat label={`Bearish (${bearish.count})`} value={winRatePct(bearish)} tone="text-red-400" />
+        <ScannerStat label="Bullish Avg. Performance" value={fmtPctSigned(bullish.avg_performance_pct)} tone={bullish.avg_performance_pct > 0 ? "text-emerald-400" : bullish.avg_performance_pct < 0 ? "text-red-400" : "text-white"} />
+        <ScannerStat label="Bearish Avg. Performance" value={fmtPctSigned(bearish.avg_performance_pct)} tone={bearish.avg_performance_pct > 0 ? "text-emerald-400" : bearish.avg_performance_pct < 0 ? "text-red-400" : "text-white"} />
       </div>
 
       {recent.length > 0 && (
@@ -298,7 +300,7 @@ const ScannerTrackRecord = ({ scannerKey }) => {
                   {[
                     ["Date", "left"], ["Ticker", "left"], ["Bias", "left"],
                     ["Alert Price (9:40)", "right"], ["Day High", "right"], ["Day Low", "right"], ["Close", "right"],
-                    ["Close Return", "right"], ["Max Upside", "right"], ["Max Drawdown", "right"], ["Verdict", "left"],
+                    ["Close Return", "right"], ["Max Upside", "right"], ["Max Drawdown", "right"],
                   ].map(([h, align]) => (
                     <th key={h} className={`px-4 py-3 font-mono-ui text-[10px] uppercase tracking-[0.14em] text-slate-500 font-semibold whitespace-nowrap text-${align}`}>{h}</th>
                   ))}
@@ -321,9 +323,6 @@ const ScannerTrackRecord = ({ scannerKey }) => {
                     <td className={`px-4 py-2.5 font-mono-ui text-sm text-right whitespace-nowrap ${r.performance_pct > 0 ? "text-emerald-400" : "text-red-400"}`}>{fmtPctSigned(r.performance_pct)}</td>
                     <td className="px-4 py-2.5 font-mono-ui text-sm text-right text-emerald-400/90 whitespace-nowrap">{fmtPctSigned(r.best_case_pct)}</td>
                     <td className="px-4 py-2.5 font-mono-ui text-sm text-right text-red-400/90 whitespace-nowrap">{fmtPctSigned(r.worst_case_pct)}</td>
-                    <td className="px-4 py-2.5 text-sm whitespace-nowrap">
-                      {r.correct ? <span className="text-emerald-400">✅ Correct</span> : <span className="text-red-400">❌ Incorrect</span>}
-                    </td>
                   </tr>
                 ))}
               </tbody>
