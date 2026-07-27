@@ -269,9 +269,6 @@ const ExitlineResults = ({ result, interval, onIntervalChange }) => (
   <div data-testid="exitline-results">
     <div className="mb-4">
       <p className="font-display text-xl font-bold text-white">{result.tradingsymbol}</p>
-      <p className="font-mono-ui text-[10px] uppercase tracking-[0.18em] text-slate-500 mt-1">
-        Prev session ({fmtDate(result.prev_date)}) — H ₹{fmtNum(result.high)} · L ₹{fmtNum(result.low)} · C ₹{fmtNum(result.close)}
-      </p>
     </div>
 
     <TVChart chart={result.chart} levels={result.levels} ltp={result.ltp} interval={interval} onIntervalChange={onIntervalChange} fetchGen={result.__fetchGen} />
@@ -460,7 +457,7 @@ const ExitlineTool = () => {
     <div data-testid="exitline-tool">
       <form onSubmit={submit} className="glass rounded-2xl border border-white/10 p-5 md:p-6 mb-6">
         <p className="font-mono-ui text-[10px] uppercase tracking-[0.24em] text-sapphire-light mb-4 pb-4 border-b border-white/10 flex items-center gap-2">
-          <Crosshair size={13} /> Exitline Levels + SL/TP
+          <Crosshair size={13} /> Exitline Levels
         </p>
         <div className="grid grid-cols-2 md:grid-cols-5 gap-4 items-end">
           <div>

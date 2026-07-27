@@ -300,17 +300,25 @@ def _aggregate_bars(bars: list, minutes: int) -> list:
     return [buckets[k] for k in sorted(buckets)]
 
 
-async def intraday_chart(definedge, segment: str, token: str, interval_minutes: int = 5) -> list:
-    """Today's session so far, as `interval_minutes`-wide candles — best-
-    effort: an empty list (pre-market, holiday, or an illiquid contract
-    with zero prints today) is a normal, valid result, not an error, and
-    must never take down the rest of the /levels response (the ladder
-    doesn't depend on this at all)."""
+async def intraday_chart(definedge, segment: str, token: str, interval_minutes: int = 5, target_date=None) -> list:
+    """`target_date`'s session as `interval_minutes`-wide candles (defaults
+    to today) — best-effort: an empty list (holiday, or an illiquid
+    contract with zero prints that day) is a normal, valid result, not an
+    error, and must never take down the rest of the /levels response (the
+    ladder doesn't depend on this at all).
+
+    Caller picks `target_date` — build_exitline_response() passes the last
+    COMPLETED session's date pre-market, so the chart keeps showing that
+    session (never goes blank) right up until the next one actually opens,
+    rather than resetting to an empty chart the instant the calendar date
+    rolls over at midnight."""
     now = datetime.now(IST)
-    if now.hour * 60 + now.minute < 9 * 60 + 15:
-        return []  # before market open — frm(09:15) > to(now) would 400 upstream
+    target_date = target_date or now.date()
+    date_str = target_date.strftime("%d%m%Y")
+    frm = f"{date_str}0915"
+    to = now.strftime("%d%m%Y%H%M") if target_date == now.date() else f"{date_str}1530"
     try:
-        bars = await definedge.minute_ohlc(segment, token)
+        bars = await definedge.minute_ohlc(segment, token, frm=frm, to=to)
     except DefinedgeError as e:
         logger.warning("Exitline: intraday chart unavailable for %s/%s: %s", segment, token, e)
         return []
@@ -377,9 +385,17 @@ async def build_exitline_response(db, definedge, exitline_segment: str, symbol: 
         raise DefinedgeError("Instrument not found — check the symbol, expiry, strike, and option type.")
 
     levels_doc = await get_or_compute_levels(db, definedge, resolved["segment"], resolved["token"], resolved["tradingsymbol"])
+
+    # Pre-market, the chart should keep showing the last COMPLETED session
+    # (never go blank) right up until the next one actually opens — same
+    # "most recent real session" date the ladder's own H/L/C already uses.
+    now = datetime.now(IST)
+    is_premarket = now.hour * 60 + now.minute < 9 * 60 + 15
+    chart_date = datetime.strptime(levels_doc["prev_date"], "%Y-%m-%d").date() if is_premarket else now.date()
+
     ltp, chart = await asyncio.gather(
         definedge.equity_quote(resolved["segment"], resolved["token"]),
-        intraday_chart(definedge, resolved["segment"], resolved["token"], interval_minutes),
+        intraday_chart(definedge, resolved["segment"], resolved["token"], interval_minutes, chart_date),
     )
     zone = classify_and_suggest(levels_doc["levels"], ltp, levels_doc["close"])
 
