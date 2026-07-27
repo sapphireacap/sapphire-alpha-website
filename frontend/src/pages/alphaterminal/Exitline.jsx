@@ -205,13 +205,16 @@ const TVChart = ({ chart, levels, ltp, interval, onIntervalChange, fetchGen }) =
           ))}
         </div>
       </div>
-      <div className="relative h-96">
-        {isEmpty && (
-          <div className="absolute inset-0 flex items-center justify-center z-10" data-testid="exitline-chart-empty">
-            <p className="text-xs text-slate-500">No intraday bars yet for this session.</p>
-          </div>
-        )}
-        <div ref={containerRef} className="h-96" style={{ touchAction: "none" }} data-testid="exitline-tv-chart" />
+      {/* 1px-overflow scroll trap + overscroll-behavior: contain — browser-level scroll containment, independent of JS preventDefault (which alone hasn't stopped page-scroll on real desktop wheel input). */}
+      <div className="relative h-96" style={{ overflowY: "auto", overscrollBehavior: "contain" }}>
+        <div style={{ height: "calc(100% + 1px)" }}>
+          {isEmpty && (
+            <div className="absolute inset-0 flex items-center justify-center z-10" data-testid="exitline-chart-empty">
+              <p className="text-xs text-slate-500">No intraday bars yet for this session.</p>
+            </div>
+          )}
+          <div ref={containerRef} className="h-96" style={{ touchAction: "none" }} data-testid="exitline-tv-chart" />
+        </div>
       </div>
     </div>
   );
