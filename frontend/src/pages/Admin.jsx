@@ -8,6 +8,7 @@ import {
 } from "lucide-react";
 import { STRATEGIES } from "./blackbox/strategies";
 import AdminStrategyReport from "./blackbox/AdminStrategyReport";
+import { IndexTabs, TrackRecordPanel } from "./AlphaTerminal";
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 const TOKEN_KEY = "sac_admin_token";
@@ -424,6 +425,35 @@ const SignalPanel = ({ onAuthError }) => {
           </button>
         </>
       )}
+    </div>
+  );
+};
+
+// Admin-only display of Index Vector's directional-call accuracy (was public
+// on the module page's Historical Performance section; GET
+// /admin/terminal/track-record is admin-gated now, 2026-07-28, same pattern
+// as the Black Box redesign - public site shows zero Index Vector
+// performance data until satisfied enough to make it public again).
+// Reuses IndexTabs/TrackRecordPanel from AlphaTerminal.jsx unchanged.
+const IndexTrackRecordPanel = ({ onAuthError }) => {
+  const [activeIndex, setActiveIndex] = useState("NIFTY");
+  const [records, setRecords] = useState({});
+
+  useEffect(() => {
+    axios.get(`${API}/admin/terminal/track-record`, { ...authHeaders(), params: { index: activeIndex } })
+      .then((r) => setRecords((s) => ({ ...s, [activeIndex]: r.data })))
+      .catch((err) => {
+        if (err?.response?.status === 401) onAuthError();
+      });
+  }, [activeIndex, onAuthError]);
+
+  return (
+    <div className="glass rounded-2xl p-6 md:p-8 mb-10" data-testid="admin-index-track-record-panel">
+      <h2 className="font-display text-xl font-bold text-white mb-4">Index Vector — Historical Performance</h2>
+      <IndexTabs indices={INDEX_OPTS} active={activeIndex} onChange={setActiveIndex} />
+      <div className="rounded-2xl border border-white/10 bg-[#0A0D18] p-6 md:p-8">
+        <TrackRecordPanel record={records[activeIndex]} />
+      </div>
     </div>
   );
 };
@@ -1098,6 +1128,7 @@ const Dashboard = ({ onLogout }) => {
       <div className="container-x py-10">
         <DefinedgeConnect onAuthError={onLogout} onSignalUpdate={() => {}} />
         <SignalPanel onAuthError={onLogout} />
+        <IndexTrackRecordPanel onAuthError={onLogout} />
         <QuantLabPanel onAuthError={onLogout} />
         <IpoPanel onAuthError={onLogout} />
         <BlackBoxPanel onAuthError={onLogout} />

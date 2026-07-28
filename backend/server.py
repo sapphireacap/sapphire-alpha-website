@@ -998,15 +998,20 @@ async def get_live_spot(index: str = "NIFTY"):
         return {"spot": None}
 
 
-@api_router.get("/terminal/track-record")
-async def get_track_record(index: str = "NIFTY"):
+@api_router.get("/admin/terminal/track-record")
+async def get_track_record(index: str = "NIFTY", admin: dict = Depends(get_current_admin)):
     """Accuracy of one index's directional calls, evaluated at 15/30/60
     minute horizons after each Bullish/Bearish reading (Neutral isn't a call).
     Correct = spot moved in the predicted direction by the time the horizon
     elapses. The nearest history doc at/after T+H stands in for "spot at
     T+H" since data is only ~1/minute; if nothing exists near T+H (e.g. the
     horizon runs past market close, or into the next session) that reading
-    is skipped, not scored either way."""
+    is skipped, not scored either way.
+
+    Admin-only for now (2026-07-28) — public site shows zero Index Vector
+    historical performance until the user is satisfied enough to make it
+    public again, same pattern as the Black Box redesign. No public route
+    for this exists at all anymore, not just hidden in the frontend."""
     _validate_index(index)
     docs = await db.index_signal_history.find({"index": index}, {"_id": 0}).sort("updated_at", 1).limit(5000).to_list(length=5000)
 

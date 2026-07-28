@@ -311,6 +311,28 @@ const fmtSince = (iso) => {
   return `${d} ${MONTHS[Number(m) - 1]} ${y}`;
 };
 
+// One small pill row selecting which of a vector module's covered indices
+// to show a track record for - moved here from ModuleDetail.jsx (2026-07-28)
+// since the public Historical Performance section no longer shows this
+// (admin-only now); Admin.jsx's IndexTrackRecordPanel imports it from here.
+export const IndexTabs = ({ indices, active, onChange }) => (
+  <div className="flex items-center gap-2 mb-5" data-testid="index-tabs">
+    {indices.map((idx) => (
+      <button
+        key={idx}
+        type="button"
+        onClick={() => onChange(idx)}
+        className={`px-3.5 py-1.5 rounded-full font-mono-ui text-[11px] uppercase tracking-[0.1em] whitespace-nowrap border transition-colors duration-300 ${
+          active === idx ? "border-sapphire-light/50 bg-sapphire/10 text-white" : "border-white/10 text-slate-500 hover:text-slate-300"
+        }`}
+        data-testid={`index-tab-${idx}`}
+      >
+        {idx}
+      </button>
+    ))}
+  </div>
+);
+
 export const TrackRecordPanel = ({ record }) => (
   <div data-testid="track-record-panel">
     {!record ? (

@@ -6,7 +6,7 @@ import { ArrowLeft, ChevronDown, ChevronRight, Loader2 } from "lucide-react";
 import Navbar from "../../components/site/Navbar";
 import Footer from "../../components/site/Footer";
 import {
-  MomentumTable, StraddleCompass, TrackRecordPanel, getMarketUpdatedLabel,
+  MomentumTable, StraddleCompass, getMarketUpdatedLabel,
 } from "../AlphaTerminal";
 import { getModule } from "./modules";
 import EwmaCrossoverTool from "./EwmaCrossover";
@@ -168,32 +168,12 @@ const ScannerDashboard = ({ scannerKey }) => {
   );
 };
 
-// Shared by Live Dashboard and Historical Performance for a "vector" kind
-// module — one small pill row selects which of the covered indices both
-// sections show, so switching updates them together rather than needing two
-// independent selectors.
-const IndexTabs = ({ indices, active, onChange }) => (
-  <div className="flex items-center gap-2 mb-5" data-testid="index-tabs">
-    {indices.map((idx) => (
-      <button
-        key={idx}
-        type="button"
-        onClick={() => onChange(idx)}
-        className={`px-3.5 py-1.5 rounded-full font-mono-ui text-[11px] uppercase tracking-[0.1em] whitespace-nowrap border transition-colors duration-300 ${
-          active === idx ? "border-sapphire-light/50 bg-sapphire/10 text-white" : "border-white/10 text-slate-500 hover:text-slate-300"
-        }`}
-        data-testid={`index-tab-${idx}`}
-      >
-        {idx}
-      </button>
-    ))}
-  </div>
-);
-
-// Live Dashboard shows all 4 covered indices at once as cards (no selector
-// needed — this is the "what's happening right now" view). Historical
-// Performance below is the one that still uses IndexTabs, since a track
-// record is denser and reads better one index at a time.
+// IndexTabs used to live here (shared by Live Dashboard's design and the
+// public Historical Performance section) - moved to AlphaTerminal.jsx's
+// exports since Historical Performance's real display is admin-only now
+// (Admin.jsx's IndexTrackRecordPanel) and this file no longer needs it.
+// Live Dashboard shows all 4 covered indices at once as cards instead (no
+// selector needed - this is the "what's happening right now" view).
 const LiveDashboard = ({ module, signals }) => (
   <Section no="01" title="Live Dashboard" testId="section-live-dashboard">
     {module.kind === "vector" && (
@@ -396,16 +376,16 @@ const ScannerTrackRecord = ({ scannerKey }) => {
 };
 
 /* -------------------------- Historical Performance -------------------------- */
-const HistoricalPerformance = ({ module, trackRecords, activeIndex, onChangeIndex }) => (
+// module.kind === "vector" (Index Vector) used to show a real IndexTabs +
+// TrackRecordPanel here, fetched from GET /terminal/track-record. That route
+// is admin-only now (2026-07-28, public site shows zero Index Vector
+// historical performance for now) - see Admin.jsx's IndexTrackRecordPanel
+// for the admin-only version, which reuses IndexTabs/TrackRecordPanel from
+// AlphaTerminal.jsx. Vector-kind modules now fall through to the same
+// generic placeholder every other not-yet-public module shows.
+const HistoricalPerformance = ({ module }) => (
   <Section no="02" title="Historical Performance" testId="section-historical-performance" collapsible>
-    {module.kind === "vector" ? (
-      <>
-        <IndexTabs indices={module.indices} active={activeIndex} onChange={onChangeIndex} />
-        <div className={`${SURFACE} p-6 md:p-8`}>
-          <TrackRecordPanel record={trackRecords[activeIndex]} />
-        </div>
-      </>
-    ) : module.scannerKey === "momentum" ? (
+    {module.scannerKey === "momentum" ? (
       <ScannerTrackRecord scannerKey={module.scannerKey} />
     ) : (
       <div className={`${SURFACE} border-dashed px-6 py-14 text-center`} data-testid="historical-empty">
@@ -423,8 +403,6 @@ export default function ModuleDetail() {
   const navigate = useNavigate();
   const module = getModule(slug);
   const [signals, setSignals] = useState({});
-  const [trackRecords, setTrackRecords] = useState({});
-  const [activeIndex, setActiveIndex] = useState(module?.indices?.[0] || "NIFTY");
 
   useEffect(() => {
     window.scrollTo(0, 0);
@@ -437,16 +415,12 @@ export default function ModuleDetail() {
           .catch(() => {});
       });
     };
-    const loadTrackRecords = () => {
-      module.indices.forEach((idx) => {
-        axios.get(`${API}/terminal/track-record`, { params: { index: idx } })
-          .then((r) => setTrackRecords((t) => ({ ...t, [idx]: r.data })))
-          .catch(() => {});
-      });
-    };
 
+    // Historical Performance (track-record accuracy) is admin-only for now
+    // (2026-07-28) - GET /admin/terminal/track-record is admin-gated, so the
+    // public page no longer fetches it at all. See Admin.jsx's
+    // IndexTrackRecordPanel for the admin-only display.
     loadSignals();
-    loadTrackRecords();
     const id = setInterval(loadSignals, 60000);
     return () => clearInterval(id);
   }, [module]);
@@ -474,7 +448,7 @@ export default function ModuleDetail() {
         <div className="container-x">
           <LiveDashboard module={module} signals={signals} />
           {module.kind !== "exitline" && (
-            <HistoricalPerformance module={module} trackRecords={trackRecords} activeIndex={activeIndex} onChangeIndex={setActiveIndex} />
+            <HistoricalPerformance module={module} />
           )}
         </div>
       </main>
