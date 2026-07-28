@@ -98,7 +98,7 @@ const MOMENTUM_TREND = {
 // matches directly.
 const TICKER_ALIASES = {};
 
-const openTradingViewChart = (ticker) => {
+export const openTradingViewChart = (ticker) => {
   const symbol = (TICKER_ALIASES[ticker] || ticker || "").toUpperCase().replace(/\s+/g, "");
   if (!symbol) return;
   window.open(`https://www.tradingview.com/chart/?symbol=NSE:${symbol}`, "_blank", "noopener,noreferrer");

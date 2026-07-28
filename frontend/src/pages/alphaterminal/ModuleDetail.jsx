@@ -2,11 +2,11 @@ import { useEffect, useState } from "react";
 import axios from "axios";
 import { Link, useParams, useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
-import { ArrowLeft, ChevronDown, ChevronRight, Loader2 } from "lucide-react";
+import { ArrowLeft, ChevronDown, ChevronRight, ExternalLink, Loader2 } from "lucide-react";
 import Navbar from "../../components/site/Navbar";
 import Footer from "../../components/site/Footer";
 import {
-  MomentumTable, StraddleCompass, getMarketUpdatedLabel,
+  MomentumTable, StraddleCompass, getMarketUpdatedLabel, openTradingViewChart,
 } from "../AlphaTerminal";
 import { getModule } from "./modules";
 import EwmaCrossoverTool from "./EwmaCrossover";
@@ -117,26 +117,43 @@ const SwingPicksTable = ({ rows }) => (
       <table className="w-full" style={{ fontVariantNumeric: "tabular-nums" }}>
         <thead>
           <tr className="border-b border-white/10">
-            {[["Scrip", "left"], ["Company", "left"], ["LCP", "right"], ["Buy At", "right"]].map(([h, align]) => (
+            {[["Scrip", "left"], ["Company", "left"], ["LCP", "right"], ["Breakout Level", "right"], ["% from Breakout", "right"]].map(([h, align]) => (
               <th key={h} className={`px-6 py-5 font-mono-ui text-[11px] uppercase tracking-[0.18em] text-slate-500 font-semibold whitespace-nowrap text-${align}`}>{h}</th>
             ))}
+            <th className="px-6 py-5 w-10"><span className="sr-only">Chart</span></th>
           </tr>
         </thead>
         <tbody>
-          {rows.map((r, i) => (
-            <tr key={r.id} className="border-b border-white/[0.05] last:border-0" data-testid={`swing-picks-row-${i}`}>
-              <td className="px-6 py-5 font-display text-lg font-extrabold text-white whitespace-nowrap">{r.ticker}</td>
-              <td className="px-6 py-5 text-sm text-slate-300 whitespace-nowrap">{r.company || "—"}</td>
-              <td className="px-6 py-5 font-mono-ui text-sm text-right text-slate-300 whitespace-nowrap">{r.lcp ? `₹${fmtNum(r.lcp)}` : "—"}</td>
-              <td className="px-6 py-5 font-mono-ui text-sm text-right text-sapphire-light whitespace-nowrap">{r.buy_at ? `₹${fmtNum(r.buy_at)}` : "—"}</td>
-            </tr>
-          ))}
+          {rows.map((r, i) => {
+            const pctFromBreakout = r.lcp && r.buy_at ? ((r.lcp - r.buy_at) / r.buy_at) * 100 : null;
+            return (
+              <tr
+                key={r.id}
+                onClick={() => openTradingViewChart(r.ticker)}
+                className="group border-b border-white/[0.05] last:border-0 transition-colors duration-300 hover:bg-sapphire/[0.06] cursor-pointer"
+                data-testid={`swing-picks-row-${i}`}
+              >
+                <td className="px-6 py-5 font-display text-lg font-extrabold text-white whitespace-nowrap">
+                  <span className="group-hover:underline">{r.ticker}</span>
+                </td>
+                <td className="px-6 py-5 text-sm text-slate-300 whitespace-nowrap">{r.company || "—"}</td>
+                <td className="px-6 py-5 font-mono-ui text-sm text-right text-slate-300 whitespace-nowrap">{r.lcp ? `₹${fmtNum(r.lcp)}` : "—"}</td>
+                <td className="px-6 py-5 font-mono-ui text-sm text-right text-sapphire-light whitespace-nowrap">{r.buy_at ? `₹${fmtNum(r.buy_at)}` : "—"}</td>
+                <td className={`px-6 py-5 font-mono-ui text-sm text-right whitespace-nowrap ${pctFromBreakout == null ? "text-slate-500" : pctFromBreakout >= 0 ? "text-emerald-400" : "text-red-400"}`}>
+                  {fmtPctSigned(pctFromBreakout)}
+                </td>
+                <td className="px-6 py-5">
+                  <ExternalLink size={14} className="text-slate-500 opacity-40 group-hover:opacity-100 transition-opacity" data-testid={`swing-picks-chart-link-${i}`} />
+                </td>
+              </tr>
+            );
+          })}
         </tbody>
       </table>
     </div>
     <div className="px-5 md:px-6 py-5 border-t border-white/10">
       <p className="text-xs font-light text-slate-500 leading-relaxed max-w-4xl" data-testid="swing-picks-disclaimer">
-        Buy At is a reference entry level, not a live trigger — these are multi-day setups meant to be held and reviewed over days to weeks. Not investment advice.
+        Breakout Level is a reference entry level, not a live trigger — these are multi-day setups meant to be held and reviewed over days to weeks. Not investment advice.
       </p>
     </div>
   </div>
