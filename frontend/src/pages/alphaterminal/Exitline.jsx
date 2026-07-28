@@ -48,6 +48,12 @@ const LEVEL_COLORS = {
   L3: "#34D399", L4: "#34D399",
 };
 
+// "Sapphire Levels" branding — internal keys (H5/H4/H3/Pivot/L3/L4/LTP) stay
+// as-is everywhere else (backend field names, color/row-style lookups); only
+// the DISPLAYED label changes, so a generic H/L/Pivot naming convention
+// isn't shown to users.
+const DISPLAY_LABELS = { H5: "S5", H4: "S4", H3: "S3", Pivot: "PZ", L3: "V3", L4: "V4" };
+
 const INTERVALS = [
   { key: 1, label: "1m" },
   { key: 5, label: "5m" },
@@ -88,6 +94,11 @@ const TVChart = ({ chart, levels, ltp, interval, onIntervalChange, fetchGen }) =
     const series = tvChart.addSeries(CandlestickSeries, {
       upColor: "#34D399", downColor: "#F87171", borderVisible: false,
       wickUpColor: "#34D399", wickDownColor: "#F87171",
+      priceLineVisible: false, // the library's own default dashed last-value line --
+                                // redundant with the explicit solid "PX" price line below
+      lastValueVisible: false, // ...and its floating axis-label box, same reason --
+                                // was showing as a second, untitled price box sitting
+                                // right next to the explicit "PX" one
     });
     chartRef.current = tvChart;
     seriesRef.current = series;
@@ -139,13 +150,13 @@ const TVChart = ({ chart, levels, ltp, interval, onIntervalChange, fetchGen }) =
       if (v == null) return;
       priceLinesRef.current.push(series.createPriceLine({
         price: v, color: LEVEL_COLORS[k] || "#64748B", lineWidth: 2,
-        lineStyle: LineStyle.Solid, axisLabelVisible: true, title: k,
+        lineStyle: LineStyle.Solid, axisLabelVisible: true, title: DISPLAY_LABELS[k] || k,
       }));
     });
     if (ltp != null) {
       priceLinesRef.current.push(series.createPriceLine({
         price: ltp, color: "#437EEB", lineWidth: 2,
-        lineStyle: LineStyle.Solid, axisLabelVisible: true, title: "LTP",
+        lineStyle: LineStyle.Solid, axisLabelVisible: true, title: "PX",
       }));
     }
 
@@ -226,7 +237,7 @@ const Ladder = ({ levels, ltp }) => {
         <table className="w-full min-w-[520px]" style={{ fontVariantNumeric: "tabular-nums" }}>
           <thead>
             <tr className="border-b border-white/10">
-              {[["Level", "left"], ["Price", "right"], ["Distance from LTP", "right"], ["% Away", "right"]].map(([h, align]) => (
+              {[["Level", "left"], ["Price", "right"], ["Distance from PX", "right"], ["% Away", "right"]].map(([h, align]) => (
                 <th key={h} className={`px-5 py-3 font-mono-ui text-[10px] uppercase tracking-[0.18em] text-slate-500 font-semibold whitespace-nowrap text-${align}`}>{h}</th>
               ))}
             </tr>
@@ -243,7 +254,7 @@ const Ladder = ({ levels, ltp }) => {
                   className={`border-b border-white/[0.05] last:border-0 ${r.isLtp ? "bg-sapphire-light/15" : ""}`}
                 >
                   <td className={`px-5 py-3 font-mono-ui text-xs uppercase tracking-[0.14em] whitespace-nowrap ${r.isLtp ? "text-sapphire-light font-bold" : r.key.startsWith("H") ? "text-emerald-400/80" : r.key.startsWith("L") ? "text-red-400/80" : "text-white"}`}>
-                    {r.isLtp ? "◆ LTP (Current)" : r.key}
+                    {r.isLtp ? "◆ PX (Live)" : (DISPLAY_LABELS[r.key] || r.key)}
                   </td>
                   <td className={`px-5 py-3 text-right font-mono-ui text-sm whitespace-nowrap ${r.isLtp ? "text-white font-bold" : "text-slate-300"}`}>₹{fmtNum(r.value)}</td>
                   <td className={`px-5 py-3 text-right font-mono-ui text-sm whitespace-nowrap ${distTone}`}>
@@ -497,7 +508,7 @@ const ExitlineTool = () => {
         </div>
       </form>
 
-      {loading && <LoadingParticles title="Computing Levels" subtitle="Fetching prior session H/L/C · Live LTP · Level ladder" />}
+      {loading && <LoadingParticles title="Computing Levels" subtitle="Fetching prior session H/L/C · Live PX · Level ladder" />}
       {!loading && result && result.found === false && <EmptyState reason={result.reason} />}
       {!loading && result && result.found !== false && (
         <ExitlineResults result={result} interval={chartInterval} onIntervalChange={changeInterval} />
