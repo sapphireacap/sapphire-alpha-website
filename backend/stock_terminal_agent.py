@@ -1,13 +1,28 @@
 """
 Lumen Agent -- the Stock Research Terminal's AI analyst (Phase 2). A
-tool-use loop over the Anthropic Messages API: every tool is either a pure
-Mongo read (already-ingested data, no guessing) or a Tavily search for
-sector news. The system prompt's citation constraint is the hard guard
-against hallucination, matching the original spec verbatim: only reference
-values returned by tools, cite the source, say "data unavailable" rather
-than estimate.
+tool-use loop over Groq's chat completions API (OpenAI-compatible tool-
+calling shape): every tool is either a pure Mongo read (already-ingested
+data, no guessing) or a Tavily search for sector news. The system prompt's
+citation constraint is the hard guard against hallucination, matching the
+original spec verbatim: only reference values returned by tools, cite the
+source, say "data unavailable" rather than estimate.
 
-Graceful degradation, not a hard failure, when ANTHROPIC_API_KEY (or
+**Provider note**: the original spec (and this module's first version) was
+built against the Anthropic Messages API. Switched to Groq per explicit
+instruction once a real GROQ_API_KEY was provided but no real
+ANTHROPIC_API_KEY was -- verified live against Groq's real API before
+rewriting (tool_calls come back as `message.tool_calls[].function.{name,
+arguments}` with `arguments` as a JSON *string*, not the dict Anthropic's
+`tool_use` blocks give directly; `finish_reason == "tool_calls"` signals a
+tool round instead of Anthropic's `stop_reason == "tool_use"`; the system
+prompt is a normal first message in the `messages` list, not a separate
+top-level `system` param; tool results go back as individual
+`{"role": "tool", "tool_call_id", "content"}` messages, not one combined
+`tool_result` content block). If a real Anthropic key is ever added
+instead, this file would need converting back -- the pure tool functions
+below (`_tool_get_*`) are provider-agnostic and wouldn't need to change.
+
+Graceful degradation, not a hard failure, when GROQ_API_KEY (or
 TAVILY_API_KEY for the one news tool) isn't set -- this repo's established
 convention for optional-feature env vars (see module docstring precedent:
 GEMINI_API_KEY in ipo_routes.py).
@@ -22,14 +37,27 @@ import logging
 import os
 from datetime import datetime, timedelta, timezone
 
-import anthropic
+import groq
 import httpx
+from groq import AsyncGroq
 
 logger = logging.getLogger(__name__)
 
-ANTHROPIC_MODEL = os.environ.get("ANTHROPIC_MODEL", "claude-sonnet-5")
+GROQ_MODEL = os.environ.get("GROQ_MODEL", "openai/gpt-oss-120b")
 CACHE_TTL_HOURS = 6
 MAX_TOOL_ROUNDS = 8  # hard cap so a stuck loop can't run away
+MALFORMED_TOOL_CALL_RETRIES = 2  # belt-and-suspenders retry on a malformed
+                                   # tool-call generation. Directly measured
+                                   # live with our real system prompt + full
+                                   # 5-tool manifest: llama-3.3-70b-versatile
+                                   # (the original default) only succeeded
+                                   # 1/5 attempts here, consistently emitting
+                                   # malformed <function=...> pseudo-XML or
+                                   # jamming arguments into the tool name;
+                                   # openai/gpt-oss-120b (also Groq-hosted)
+                                   # was 5/5 in the same test, hence the
+                                   # model switch above. This retry stays as
+                                   # a safety net, not the primary fix.
 
 TAVILY_SEARCH_URL = "https://api.tavily.com/search"
 TAVILY_DOMAINS = ["economictimes.com", "moneycontrol.com", "livemint.com", "cnbctv18.com", "reuters.com"]
@@ -45,43 +73,61 @@ SYSTEM_PROMPT = (
     "This is research and education content only, not investment advice."
 )
 
+# Groq/OpenAI-shaped tool manifest: {"type": "function", "function": {name,
+# description, parameters}} -- "parameters" here is exactly what Anthropic
+# calls "input_schema", same JSON Schema content either way.
 TOOLS = [
     {
-        "name": "get_price_history",
-        "description": "Historical price data, moving averages, ATH/ATL, and period returns for the stock being analyzed.",
-        "input_schema": {
-            "type": "object",
-            "properties": {"period": {"type": "string", "enum": ["1M", "6M", "1Y", "3Y", "5Y"]}},
-            "required": ["period"],
+        "type": "function",
+        "function": {
+            "name": "get_price_history",
+            "description": "Historical price data, moving averages, ATH/ATL, and period returns for the stock being analyzed.",
+            "parameters": {
+                "type": "object",
+                "properties": {"period": {"type": "string", "enum": ["1M", "6M", "1Y", "3Y", "5Y"]}},
+                "required": ["period"],
+            },
         },
     },
     {
-        "name": "get_fundamentals",
-        "description": "Valuation ratios, margins, growth rates, and balance-sheet health metrics for the stock being analyzed.",
-        "input_schema": {"type": "object", "properties": {}},
-    },
-    {
-        "name": "get_shareholding",
-        "description": "Promoter/FII/DII/public shareholding percentages over recent quarters, including promoter pledge if disclosed.",
-        "input_schema": {
-            "type": "object",
-            "properties": {"quarters": {"type": "integer", "description": "How many recent quarters to return, default 8."}},
+        "type": "function",
+        "function": {
+            "name": "get_fundamentals",
+            "description": "Valuation ratios, margins, growth rates, and balance-sheet health metrics for the stock being analyzed.",
+            "parameters": {"type": "object", "properties": {}},
         },
     },
     {
-        "name": "resolve_peers",
-        "description": "Same-industry peer companies for comparison.",
-        "input_schema": {
-            "type": "object",
-            "properties": {"top_n": {"type": "integer", "description": "How many peers to return, default 3."}},
+        "type": "function",
+        "function": {
+            "name": "get_shareholding",
+            "description": "Promoter/FII/DII/public shareholding percentages over recent quarters, including promoter pledge if disclosed.",
+            "parameters": {
+                "type": "object",
+                "properties": {"quarters": {"type": "integer", "description": "How many recent quarters to return, default 8."}},
+            },
         },
     },
     {
-        "name": "get_sector_news",
-        "description": "Recent news headlines for the stock's industry/sector from major Indian financial media.",
-        "input_schema": {
-            "type": "object",
-            "properties": {"days": {"type": "integer", "description": "How many days back to search, default 30."}},
+        "type": "function",
+        "function": {
+            "name": "resolve_peers",
+            "description": "Same-industry peer companies for comparison.",
+            "parameters": {
+                "type": "object",
+                "properties": {"top_n": {"type": "integer", "description": "How many peers to return, default 3."}},
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_sector_news",
+            "description": "Recent news headlines for the stock's industry/sector from major Indian financial media.",
+            "parameters": {
+                "type": "object",
+                "properties": {"days": {"type": "integer", "description": "How many days back to search, default 30."}},
+            },
         },
     },
 ]
@@ -93,6 +139,16 @@ async def _tool_get_price_history(db, symbol: str, period: str = "1Y") -> dict:
     window = trading_day_windows.get(period, 252)
     windowed = bars[-window:] if len(bars) > window else bars
     metrics = await db.stock_computed_metrics.find_one({"symbol": symbol}, {"_id": 0}) or {}
+
+    def _pct_str(v):
+        # Stored values ARE already percent (e.g. -0.23 means -0.23%, not
+        # -23%). Formatting as an explicit "+x.xx%" string instead of a raw
+        # float removes any unit ambiguity for the model -- confirmed live
+        # that a raw float here got misread as a fraction needing x100
+        # (the debate transcript reported a real -0.23% weekly move as a
+        # fabricated-sounding "-22.7% decline", repeated across rounds).
+        return f"{v:+.2f}%" if v is not None else None
+
     return {
         "period": period,
         "bars_available": len(windowed),
@@ -102,8 +158,8 @@ async def _tool_get_price_history(db, symbol: str, period: str = "1Y") -> dict:
         "dma_50": metrics.get("dma_50"), "dma_200": metrics.get("dma_200"),
         "ath": metrics.get("ath"), "ath_date": metrics.get("ath_date"),
         "atl": metrics.get("atl"), "atl_date": metrics.get("atl_date"),
-        "pct_from_ath": metrics.get("pct_from_ath"),
-        "returns": {k: metrics.get(k) for k in
+        "pct_from_ath": _pct_str(metrics.get("pct_from_ath")),
+        "returns": {k: _pct_str(metrics.get(k)) for k in
                     ("return_1d", "return_1w", "return_1m", "return_3m", "return_6m", "return_1y", "return_5y")},
     }
 
@@ -157,6 +213,22 @@ async def _tool_get_sector_news(db, symbol: str, days: int = 30) -> dict:
     ]}
 
 
+async def _create_completion(client: AsyncGroq, **kwargs):
+    """client.chat.completions.create() with a short retry on a malformed
+    tool-call generation (see MALFORMED_TOOL_CALL_RETRIES docstring) --
+    confirmed live to be a transient per-request issue, not a permanent
+    failure, so a plain retry is the right fix rather than giving up."""
+    last_error = None
+    for attempt in range(MALFORMED_TOOL_CALL_RETRIES + 1):
+        try:
+            return await client.chat.completions.create(**kwargs)
+        except groq.BadRequestError as e:
+            last_error = e
+            logger.warning("Groq call failed (attempt %d/%d), likely a malformed tool-call generation: %s",
+                            attempt + 1, MALFORMED_TOOL_CALL_RETRIES + 1, e)
+    raise last_error
+
+
 async def _dispatch_tool(db, symbol: str, name: str, tool_input: dict) -> dict:
     handlers = {
         "get_price_history": lambda: _tool_get_price_history(db, symbol, **tool_input),
@@ -176,36 +248,37 @@ async def _dispatch_tool(db, symbol: str, name: str, tool_input: dict) -> dict:
 
 
 async def run_agent_analysis(db, symbol: str, force: bool = False) -> dict:
-    """{"configured": False, "reason": ...} if ANTHROPIC_API_KEY is unset --
+    """{"configured": False, "reason": ...} if GROQ_API_KEY is unset --
     never raises for that case, the caller renders a clear "not configured"
     state instead of a crash. Otherwise returns {"configured": True,
     "cached": bool, "analysis": str, "tool_calls": [...], "generated_at":
     ...} -- tool_calls is the log the Agent Console panel renders
     progressively."""
-    api_key = os.environ.get("ANTHROPIC_API_KEY")
+    api_key = os.environ.get("GROQ_API_KEY")
     if not api_key:
-        return {"configured": False, "reason": "ANTHROPIC_API_KEY is not set."}
+        return {"configured": False, "reason": "GROQ_API_KEY is not set."}
 
     if not force:
         cached = await db.stock_agent_cache.find_one({"symbol": symbol}, {"_id": 0})
         if cached and cached.get("analysis_json"):
             return {**json.loads(cached["analysis_json"]), "cached": True}
 
-    client = anthropic.AsyncAnthropic(api_key=api_key)
+    client = AsyncGroq(api_key=api_key)
 
-    messages = [{"role": "user", "content": f"Analyze {symbol}, an NSE-listed stock. Use your tools to gather real data before writing any conclusions."}]
+    messages = [
+        {"role": "system", "content": SYSTEM_PROMPT},
+        {"role": "user", "content": f"Analyze {symbol}, an NSE-listed stock. Use your tools to gather real data before writing any conclusions."},
+    ]
     tool_calls_log = []
 
     for _ in range(MAX_TOOL_ROUNDS):
-        response = await client.messages.create(
-            model=ANTHROPIC_MODEL, max_tokens=2000, system=SYSTEM_PROMPT, tools=TOOLS, messages=messages,
-        )
-        messages.append({"role": "assistant", "content": response.content})
+        response = await _create_completion(client, model=GROQ_MODEL, max_tokens=2000, messages=messages, tools=TOOLS)
+        choice = response.choices[0]
+        msg = choice.message
 
-        if response.stop_reason != "tool_use":
-            final_text = "".join(b.text for b in response.content if b.type == "text")
+        if choice.finish_reason != "tool_calls" or not msg.tool_calls:
             result = {
-                "configured": True, "cached": False, "analysis": final_text,
+                "configured": True, "cached": False, "analysis": msg.content or "",
                 "tool_calls": tool_calls_log, "generated_at": datetime.now(timezone.utc).isoformat(),
             }
             expires_at = datetime.now(timezone.utc) + timedelta(hours=CACHE_TTL_HOURS)
@@ -217,14 +290,15 @@ async def run_agent_analysis(db, symbol: str, force: bool = False) -> dict:
             )
             return result
 
-        tool_results = []
-        for block in response.content:
-            if block.type != "tool_use":
-                continue
-            output = await _dispatch_tool(db, symbol, block.name, block.input)
-            tool_calls_log.append({"tool": block.name, "input": block.input, "output": output})
-            tool_results.append({"type": "tool_result", "tool_use_id": block.id, "content": json.dumps(output)})
-        messages.append({"role": "user", "content": tool_results})
+        messages.append({"role": "assistant", "content": msg.content, "tool_calls": [tc.model_dump() for tc in msg.tool_calls]})
+        for tc in msg.tool_calls:
+            try:
+                tool_input = json.loads(tc.function.arguments) if tc.function.arguments else {}
+            except json.JSONDecodeError:
+                tool_input = {}
+            output = await _dispatch_tool(db, symbol, tc.function.name, tool_input)
+            tool_calls_log.append({"tool": tc.function.name, "input": tool_input, "output": output})
+            messages.append({"role": "tool", "tool_call_id": tc.id, "content": json.dumps(output)})
 
     return {
         "configured": True, "cached": False,
@@ -248,7 +322,15 @@ async def run_agent_analysis(db, symbol: str, force: bool = False) -> dict:
 # recomputed here.
 # ---------------------------------------------------------------------------
 DEBATE_ROUNDS = 3
-DEBATE_MAX_TOKENS = 350
+# openai/gpt-oss-120b is a reasoning model -- its `message.reasoning` field
+# (chain-of-thought, NOT the answer) is billed out of the same max_tokens
+# budget as `message.content`. Confirmed live: a bare-minimum unrelated
+# prompt already used 70-100 reasoning tokens before answering; with this
+# debate's much larger system prompt (persona instructions + the full real
+# data-blob context), 350 wasn't enough -- BULL turns came back completely
+# empty (all budget spent mid-reasoning) and BEAR turns were cut off
+# mid-sentence. 1200 leaves real headroom for both.
+DEBATE_MAX_TOKENS = 1200
 
 PERSONA_SUFFIX = {
     "BULL": (
@@ -276,17 +358,17 @@ async def _gather_debate_data(db, symbol: str) -> dict:
 
 
 async def run_debate(db, symbol: str) -> dict:
-    """{"configured": False, "reason": ...} if ANTHROPIC_API_KEY is unset,
-    same graceful-degradation contract as run_agent_analysis. Otherwise
+    """{"configured": False, "reason": ...} if GROQ_API_KEY is unset, same
+    graceful-degradation contract as run_agent_analysis. Otherwise
     {"configured": True, "transcript": [{"round", "persona", "text"}, ...],
     "generated_at": ...} -- 6 entries (3 rounds x BULL/BEAR)."""
-    api_key = os.environ.get("ANTHROPIC_API_KEY")
+    api_key = os.environ.get("GROQ_API_KEY")
     if not api_key:
-        return {"configured": False, "reason": "ANTHROPIC_API_KEY is not set."}
+        return {"configured": False, "reason": "GROQ_API_KEY is not set."}
 
     data = await _gather_debate_data(db, symbol)
     data_blob = json.dumps(data, default=str)
-    client = anthropic.AsyncAnthropic(api_key=api_key)
+    client = AsyncGroq(api_key=api_key)
 
     transcript = []
     history_text = "(debate has not started yet)"
@@ -297,11 +379,11 @@ async def run_debate(db, symbol: str) -> dict:
                 f"Real data for {symbol} (JSON):\n{data_blob}"
             )
             user_content = f"Round {round_no} of {DEBATE_ROUNDS}. Debate so far:\n{history_text}\n\nGive your {persona} argument for this round."
-            response = await client.messages.create(
-                model=ANTHROPIC_MODEL, max_tokens=DEBATE_MAX_TOKENS, system=system,
-                messages=[{"role": "user", "content": user_content}],
+            response = await _create_completion(
+                client, model=GROQ_MODEL, max_tokens=DEBATE_MAX_TOKENS,
+                messages=[{"role": "system", "content": system}, {"role": "user", "content": user_content}],
             )
-            text = "".join(b.text for b in response.content if b.type == "text")
+            text = response.choices[0].message.content or ""
             transcript.append({"round": round_no, "persona": persona, "text": text})
             history_text += f"\n\n{persona} (Round {round_no}): {text}"
 
