@@ -1,0 +1,36 @@
+name: Prism Alpha — live evaluation
+
+# Turns on real live tracking for Prism Alpha + Prism Alpha 2 (one call
+# evaluates both, see evaluate_prism_alpha) -- the /admin/prism-alpha-evaluate
+# route already existed (docstring recommends every 1 minute) but had
+# nothing scheduling it, same gap momentum/GMP/Lumen SIP had before this
+# session. GitHub Actions cron only reliably supports 5-minute granularity,
+# not literal 1-minute -- true 1-minute cadence would need an always-on
+# in-process loop (needs the Render plan confirmed first, deferred). This is
+# the practical interim mechanism: checks every 5 minutes during market
+# hours, still real signal-driven entries/exits, just a coarser polling
+# cadence than the ideal spec.
+# 03:45-10:00 UTC = 09:15-15:30 IST, weekdays only.
+on:
+  schedule:
+    - cron: "45,50,55 3 * * 1-5"
+    - cron: "*/5 4-9 * * 1-5"
+    - cron: "0 10 * * 1-5"
+  workflow_dispatch: {}
+
+jobs:
+  evaluate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Call prism-alpha-evaluate
+        run: |
+          status=$(curl -s -o response.json -w "%{http_code}" -X POST \
+            "https://sapphire-alpha-backend.onrender.com/api/blackbox/admin/prism-alpha-evaluate" \
+            -H "X-Cron-Key: ${{ secrets.CRON_SECRET }}")
+          echo "HTTP status: $status"
+          cat response.json
+          echo
+          if [ "$status" != "200" ]; then
+            echo "::error::prism-alpha-evaluate failed with status $status"
+            exit 1
+          fi

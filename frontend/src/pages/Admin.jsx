@@ -6,6 +6,7 @@ import {
   Loader2, LogOut, Plus, Trash2, GripVertical, Save, X, ArrowLeft, ShieldCheck,
   Wifi, WifiOff, RefreshCw, ChevronDown, FileText,
 } from "lucide-react";
+import { ResponsiveContainer, LineChart, Line, CartesianGrid, XAxis, YAxis, Tooltip } from "recharts";
 import { STRATEGIES } from "./blackbox/strategies";
 import AdminStrategyReport from "./blackbox/AdminStrategyReport";
 import { IndexTabs, TrackRecordPanel } from "./AlphaTerminal";
@@ -556,6 +557,141 @@ const StrategyReportAccordion = ({ strategy, onAuthError }) => {
   );
 };
 
+// Lumen SIP's admin report (StrategyReportAccordion below) always reports
+// off the validated 10-year BACKTEST -- per explicit instruction, live
+// tracking (just turned on) gets its own separate, honest panel instead of
+// replacing that report, since a few days of real history can't yet support
+// annualized ratios (Sharpe/Sortino/CAGR) the way the backtest's full window
+// can. Reuses whichever of those figures ARE meaningful this early (net
+// return since inception, current allocation/phase, a growing equity curve,
+// a signal log) -- the same spirit as Prism Alpha's Key Metrics, scaled to
+// what a just-started track record can honestly support.
+const fmtLumenINR = (v) => (v == null ? "—" : `₹${Math.round(v).toLocaleString("en-IN")}`);
+
+const LumenLiveTrackingPanel = ({ onAuthError }) => {
+  const [status, setStatus] = useState(null);
+  const [portfolio, setPortfolio] = useState([]);
+  const [signals, setSignals] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [showLogs, setShowLogs] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    Promise.all([
+      axios.get(`${API}/blackbox/lumen-sip/status`, authHeaders()).then((r) => r.data),
+      axios.get(`${API}/blackbox/lumen-sip/portfolio`, authHeaders()).then((r) => r.data),
+      axios.get(`${API}/blackbox/lumen-sip/signals`, authHeaders()).then((r) => r.data),
+    ])
+      .then(([s, p, sig]) => { if (!cancelled) { setStatus(s); setPortfolio(p); setSignals(sig); } })
+      .catch((err) => { if (!cancelled && err?.response?.status === 401) onAuthError(); })
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
+  }, [onAuthError]);
+
+  if (loading) {
+    return <div className="text-sm text-slate-500 py-4 flex items-center gap-2"><Loader2 className="animate-spin" size={14} /> Loading live tracking…</div>;
+  }
+  if (!status?.has_data) {
+    return (
+      <div className="rounded-2xl border border-white/10 bg-[#0A0D18] p-6 text-sm text-slate-500" data-testid="lumen-sip-live-panel-empty">
+        Live tracking hasn't recorded a snapshot yet — the daily cron runs after market close; check back after the next trading day.
+      </div>
+    );
+  }
+
+  const returnPct = status.absolute_return_pct;
+  const curve = portfolio.map((p) => ({ date: p.date, value: p.total_value }));
+
+  return (
+    <div className="rounded-2xl border border-white/10 bg-[#0A0D18] p-6" data-testid="lumen-sip-live-panel">
+      <div className="flex items-baseline justify-between flex-wrap gap-2 mb-4">
+        <h3 className="font-display text-base font-bold text-white">Live Tracking</h3>
+        <span className="font-mono-ui text-xs text-slate-500">as of {status.as_of} · {status.days_tracked} day(s) tracked</span>
+      </div>
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-5">
+        {[
+          { label: "Total Invested", value: fmtLumenINR(status.total_invested) },
+          { label: "Current Value", value: fmtLumenINR(status.total_value) },
+          { label: "Net Return", value: returnPct == null ? "—" : `${returnPct > 0 ? "+" : ""}${returnPct.toFixed(2)}%`, tone: returnPct >= 0 ? "text-emerald-400" : "text-red-400" },
+          { label: "Signals Logged", value: signals.length },
+        ].map((k) => (
+          <div key={k.label} className="rounded-xl border border-white/10 bg-white/[0.02] p-3">
+            <p className="font-mono-ui text-[9px] uppercase tracking-[0.14em] text-slate-500 mb-1.5">{k.label}</p>
+            <p className={`font-mono-ui text-lg font-bold ${k.tone || "text-white"}`}>{k.value}</p>
+          </div>
+        ))}
+      </div>
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-5">
+        {["niftybees", "goldbees"].map((key) => {
+          const inst = status.instruments[key];
+          return (
+            <div key={key} className="rounded-xl border border-white/10 bg-white/[0.02] p-4">
+              <div className="flex items-center justify-between mb-2">
+                <span className="font-mono-ui text-xs text-slate-400 uppercase tracking-wider">{key}</span>
+                <span className={`px-2 py-0.5 rounded-full text-[10px] font-mono-ui uppercase tracking-wider ${inst.phase === "buy" ? "bg-emerald-500/15 text-emerald-400" : "bg-slate-500/15 text-slate-400"}`}>
+                  {inst.phase === "buy" ? "Invested" : "Cash"}
+                </span>
+              </div>
+              <p className="font-mono-ui text-sm text-white">{fmtLumenINR(inst.value)} <span className="text-slate-500">({(inst.allocation_pct * 100).toFixed(0)}%)</span></p>
+            </div>
+          );
+        })}
+      </div>
+      {curve.length > 1 && (
+        <div className="h-40 mb-5" data-testid="lumen-sip-live-equity-curve">
+          <ResponsiveContainer width="100%" height="100%">
+            <LineChart data={curve} margin={{ top: 4, right: 8, left: 0, bottom: 0 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" vertical={false} />
+              <XAxis dataKey="date" tick={{ fill: "#64748B", fontSize: 9 }} axisLine={false} tickLine={false} minTickGap={40} />
+              <YAxis tick={{ fill: "#64748B", fontSize: 10 }} axisLine={false} tickLine={false} width={56} tickFormatter={(v) => `₹${(v / 1000).toFixed(0)}k`} />
+              <Tooltip content={({ active, payload, label }) => (active && payload?.length ? (
+                <div className="rounded-lg border border-white/10 bg-[#050710] px-3 py-2 text-xs font-mono-ui">
+                  <p className="text-slate-500">{label}</p>
+                  <p className="text-white">{fmtLumenINR(payload[0].value)}</p>
+                </div>
+              ) : null)} />
+              <Line type="monotone" dataKey="value" stroke="#437EEB" strokeWidth={2} dot={false} isAnimationActive animationDuration={600} />
+            </LineChart>
+          </ResponsiveContainer>
+        </div>
+      )}
+      <button
+        type="button"
+        onClick={() => setShowLogs((s) => !s)}
+        className="text-xs text-slate-400 hover:text-white transition-colors"
+        data-testid="lumen-sip-live-logs-toggle"
+      >
+        {showLogs ? "Hide" : "Show"} Signal Log ({signals.length})
+      </button>
+      {showLogs && (
+        <div className="mt-3 rounded-xl border border-white/10 overflow-hidden">
+          <div className="overflow-x-auto">
+            <table className="w-full text-left min-w-[420px]">
+              <thead>
+                <tr className="border-b border-white/10">
+                  {["Date", "Instrument", "Signal", "Price"].map((h) => (
+                    <th key={h} className="px-4 py-2 font-mono-ui text-[10px] uppercase tracking-[0.14em] text-slate-500 font-semibold whitespace-nowrap">{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {signals.slice(0, 100).map((s, i) => (
+                  <tr key={i} className="border-b border-white/[0.05] last:border-0">
+                    <td className="px-4 py-2 text-xs text-slate-300 font-mono-ui whitespace-nowrap">{s.date}</td>
+                    <td className="px-4 py-2 text-xs text-slate-300">{s.instrument}</td>
+                    <td className={`px-4 py-2 text-xs font-mono-ui uppercase tracking-wider ${s.signal_type === "buy" ? "text-emerald-400" : "text-red-400"}`}>{s.signal_type}</td>
+                    <td className="px-4 py-2 text-xs text-slate-300 font-mono-ui">₹{s.price?.toFixed(2)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
 const BlackBoxPanel = ({ onAuthError }) => {
   const [running, setRunning] = useState(false);
   const [lastResult, setLastResult] = useState(null);
@@ -690,6 +826,10 @@ const BlackBoxPanel = ({ onAuthError }) => {
           <div>{lastLumenBacktest.signals_logged} signals, {lastLumenBacktest.portfolio_snapshots} daily snapshots.</div>
         </div>
       )}
+
+      <div className="mt-6">
+        <LumenLiveTrackingPanel onAuthError={onAuthError} />
+      </div>
 
       <div className="mt-8 pt-6 border-t border-white/10">
         <h2 className="font-display text-xl font-bold text-white mb-1">Internal Strategy Reports</h2>

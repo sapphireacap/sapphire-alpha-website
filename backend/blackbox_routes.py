@@ -19,7 +19,10 @@ from fastapi import APIRouter, HTTPException, Request, Response, Depends
 
 from blackbox_prism_alpha import evaluate_prism_alpha, VARIANT_CONFIG
 from blackbox_backtest import run_backtest, BACKTEST_COLLECTIONS
-from blackbox_lumen_sip import evaluate_lumen_sip_live, run_lumen_sip_backtest, INSTRUMENTS as LUMEN_SIP_INSTRUMENTS
+from blackbox_lumen_sip import (
+    evaluate_lumen_sip_live, run_lumen_sip_backtest,
+    INSTRUMENTS as LUMEN_SIP_INSTRUMENTS, MONTHLY_SIP_TOTAL,
+)
 
 logger = logging.getLogger(__name__)
 IST = timezone(timedelta(hours=5, minutes=30))
@@ -153,7 +156,7 @@ def create_blackbox_router(db, definedge, get_current_admin, cron_secret: str) -
         collection_name = BACKTEST_COLLECTIONS[variant]
         trades = await db[collection_name].find(
             {"backtest_run_id": latest_run["backtest_run_id"]}, {"_id": 0, "chart_png": 0}
-        ).to_list(5000)
+        ).to_list(20000)
         return {"run": latest_run, "stats": _compute_stats(trades)}
 
     async def _backtest_trades(variant: str, api_path: str):
@@ -161,9 +164,15 @@ def create_blackbox_router(db, definedge, get_current_admin, cron_secret: str) -
         if not latest_run:
             return []
         collection_name = BACKTEST_COLLECTIONS[variant]
+        # 20000, not the old 500 -- a multi-year CSV backtest run (see
+        # blackbox_csv_backtest.py) can produce well over 500 closed trades,
+        # and adapters.js's buildPrismView computes every KPI/equity-curve
+        # figure from this exact response, not from _backtest_summary's
+        # stats -- a low cap here would silently truncate the "Key Metrics"
+        # report to only the most recent trades instead of the full window.
         trades = await db[collection_name].find(
             {"backtest_run_id": latest_run["backtest_run_id"]}, {"_id": 0, "chart_png": 0}
-        ).sort("entry_time", -1).to_list(500)
+        ).sort("entry_time", -1).to_list(20000)
         return [_public_trade(t, chart_url=f"/blackbox/{api_path}/backtest/chart/{t['id']}") for t in trades]
 
     async def _backtest_chart(variant: str, trade_id: str):
@@ -218,10 +227,20 @@ def create_blackbox_router(db, definedge, get_current_admin, cron_secret: str) -
         if not latest:
             return {"has_data": False}
         total = latest["total_value"] or 1.0  # guard div-by-zero on an all-cash, zero-value start
+        # Same derivation as the backtest's own total_invested (see
+        # run_lumen_sip_backtest's metrics computation) -- one monthly
+        # contribution per distinct calendar month the collection has a
+        # snapshot in, not a separately-tracked running total.
+        dates = await db[collection_name].distinct("date")
+        months_elapsed = len(set(d[:7] for d in dates))
+        total_invested = months_elapsed * MONTHLY_SIP_TOTAL
         return {
             "has_data": True,
             "as_of": latest["date"],
+            "days_tracked": len(dates),
             "total_value": latest["total_value"],
+            "total_invested": total_invested,
+            "absolute_return_pct": (latest["total_value"] / total_invested - 1) * 100 if total_invested else None,
             "instruments": {
                 symbol.lower(): {
                     "phase": latest[f"{symbol.lower()}_phase"],

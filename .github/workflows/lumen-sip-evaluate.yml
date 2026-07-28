@@ -1,0 +1,29 @@
+name: Lumen SIP — daily live evaluation
+
+# Runs the daily-bar Renko + MAST evaluation for Lumen SIP (NIFTYBEES/
+# GOLDBEES), advancing the LIVE portfolio/signals collections one trading
+# day. The /admin/lumen-sip-evaluate route already existed (resumes from the
+# last recorded snapshot, safe to run even if a day was missed) but had
+# nothing scheduling it — same gap momentum/GMP had before this session.
+# 10:30 UTC = 16:00 IST, after NSE close (15:30 IST), weekdays only.
+on:
+  schedule:
+    - cron: "30 10 * * 1-5"
+  workflow_dispatch: {}
+
+jobs:
+  evaluate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Call lumen-sip-evaluate
+        run: |
+          status=$(curl -s -o response.json -w "%{http_code}" -X POST \
+            "https://sapphire-alpha-backend.onrender.com/api/blackbox/admin/lumen-sip-evaluate" \
+            -H "X-Cron-Key: ${{ secrets.CRON_SECRET }}")
+          echo "HTTP status: $status"
+          cat response.json
+          echo
+          if [ "$status" != "200" ]; then
+            echo "::error::lumen-sip-evaluate failed with status $status"
+            exit 1
+          fi
