@@ -1,12 +1,20 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, lazy, Suspense } from "react";
 import axios from "axios";
 import { useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
-import { Search, Loader2, TrendingUp, TrendingDown } from "lucide-react";
+import { Search, Loader2, TrendingUp, TrendingDown, Volume2, VolumeX } from "lucide-react";
 import Navbar from "../../components/site/Navbar";
 import Footer from "../../components/site/Footer";
 import ParticleField from "../../components/site/ParticleField";
 import Disclaimer from "./Disclaimer";
+import { startAmbientDrone, stopAmbientDrone } from "../../components/research/ambientAudio";
+
+// three.js is a large dependency (~130kB gzipped) used only by this one
+// component -- lazy-loaded so it's a separate chunk that only downloads
+// when a visitor actually lands on Aurora, not part of every page's
+// initial bundle (this app doesn't route-split otherwise, so isolating
+// just the heavy import here is the contained fix).
+const MarketCore = lazy(() => import("../../components/research/MarketCore"));
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 const EASE = [0.16, 1, 0.3, 1];
@@ -87,6 +95,24 @@ const BreadthGauge = ({ pct, counted }) => {
   );
 };
 
+const AmbientToggle = () => {
+  const [on, setOn] = useState(false);
+  const toggle = () => {
+    if (on) stopAmbientDrone(); else startAmbientDrone();
+    setOn((o) => !o);
+  };
+  return (
+    <button
+      type="button"
+      onClick={toggle}
+      className="inline-flex items-center gap-2 rounded-full border border-white/15 px-4 py-2 text-xs font-medium text-slate-300 hover:text-white hover:border-white/30 transition-colors"
+      data-testid="aurora-ambient-toggle"
+    >
+      {on ? <Volume2 size={13} /> : <VolumeX size={13} />} Ambient {on ? "On" : "Off"}
+    </button>
+  );
+};
+
 export default function Aurora() {
   useEffect(() => { window.scrollTo(0, 0); }, []);
   const [data, setData] = useState(null);
@@ -99,6 +125,8 @@ export default function Aurora() {
       .finally(() => setLoading(false));
   }, []);
 
+  useEffect(() => () => stopAmbientDrone(), []); // stop the drone if the user navigates away with it on
+
   return (
     <>
       <Navbar />
@@ -107,19 +135,29 @@ export default function Aurora() {
           <ParticleField density={0.00006} />
           <div className="absolute inset-0 radial-glow" />
           <div className="absolute inset-0 bg-gradient-to-b from-void/0 to-void pointer-events-none" />
-          <div className="container-x relative z-10">
-            <motion.h1
-              initial={{ opacity: 0, y: 24 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.9, ease: EASE }}
-              className="font-display text-4xl md:text-6xl font-bold text-white tracking-tight mb-4"
-            >
-              Aurora
-            </motion.h1>
-            <p className="text-slate-400 max-w-xl mb-10">
-              A live pulse on the market — breadth, movers, and a way into Facet View, our systematic per-stock research page.
-            </p>
-            <SymbolSearch />
+          <div className="container-x relative z-10 grid grid-cols-1 lg:grid-cols-2 gap-10 items-center">
+            <div>
+              <motion.h1
+                initial={{ opacity: 0, y: 24 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.9, ease: EASE }}
+                className="font-display text-4xl md:text-6xl font-bold text-white tracking-tight mb-4"
+              >
+                Aurora
+              </motion.h1>
+              <p className="text-slate-400 max-w-xl mb-6">
+                A live pulse on the market — breadth, movers, and a way into Facet View, our systematic per-stock research page.
+              </p>
+              <div className="flex items-center gap-3 flex-wrap mb-6">
+                <SymbolSearch />
+                <AmbientToggle />
+              </div>
+            </div>
+            <div className="h-72 md:h-96" data-testid="aurora-geode-wrap">
+              <Suspense fallback={null}>
+                <MarketCore breadthPct={data?.breadth_pct} className="w-full h-full" />
+              </Suspense>
+            </div>
           </div>
         </section>
 
