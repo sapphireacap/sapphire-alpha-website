@@ -54,7 +54,6 @@ entered manually each morning (session key resets daily).
 """
 import asyncio
 import io
-import math
 import time
 import uuid
 import zipfile
@@ -66,6 +65,7 @@ import httpx
 import pandas as pd
 
 from index_vector_flip import compute_leg_flip, index_flip_summary
+import pnf_engine
 
 logger = logging.getLogger(__name__)
 
@@ -120,7 +120,11 @@ ATM_LEG_REVERSAL_BOXES = 3   # 3 boxes ~= 9% — confirmed against a real Define
 
 
 # ---------------------------------------------------------------------------
-# Point & Figure engine (pure, unit-testable) — percentage boxes via log grid
+# Point & Figure engine — thin wrapper over pnf_engine.py, which implements
+# Definedge's own documented construction rules (see that module's docstring
+# for sourcing) rather than a from-scratch/textbook implementation. Kept as
+# a wrapper here (not calling pnf_engine directly from compute_vector) so
+# every existing caller's signature/return shape is unchanged.
 # ---------------------------------------------------------------------------
 def pnf_column_state(prices, box_pct: float = BOX_PCT, reversal_boxes: int = REVERSAL_BOXES) -> dict:
     """The actual state machine — direction of the currently-open column
@@ -131,17 +135,13 @@ def pnf_column_state(prices, box_pct: float = BOX_PCT, reversal_boxes: int = REV
     this directly instead — keeping exactly one copy of the state machine
     avoids the two ever silently diverging.
 
-    Symmetric reversal — the standard P&F rule, `reversal_boxes` required
-    off the open column's extreme in either direction to flip. An earlier
-    version of this function used an asymmetric rule (1 box to flip
-    bullish, full `reversal_boxes` to flip bearish), believed at the time
-    to match real Definedge behavior; a direct 6-leg cross-check against
-    live NIFTY P&F charts on 2026-07-27 showed that rule wrong on 3 of 6
-    legs (all cases where a leg had fallen hard, then ticked up slightly —
-    the asymmetric rule flipped those bullish early; the real charts
-    hadn't). The plain symmetric rule matched all 6. It also matches
-    blackbox_prism_alpha.py's independent P&F engine, which was symmetric
-    all along.
+    Delegates to pnf_engine.build_columns()/current_state() — validated
+    against Definedge's own fully worked construction exercise (see
+    tests/test_pnf_engine.py), not assumed. Two behaviors this fixed vs.
+    the version before it (both confirmed by that worked exercise, not
+    guessed): the box level for a falling column is a ceiling, not the
+    same floor used for a rising column; and the very first column only
+    needs 1 box off the starting reference, not the full reversal amount.
 
     Returns {"direction": "up"|"down"|None, "extreme_price": float|None} —
     extreme_price is the real price (not log-level) the open column's
@@ -150,34 +150,8 @@ def pnf_column_state(prices, box_pct: float = BOX_PCT, reversal_boxes: int = REV
     vals = [float(p) for p in prices if p is not None and float(p) > 0]
     if len(vals) < 5:
         return {"direction": None, "extreme_price": None}
-
-    scale = math.log(1.0 + box_pct)
-    level = lambda p: math.floor(math.log(p) / scale)
-
-    direction = None          # 'up' | 'down'
-    extreme = level(vals[0])
-
-    for p in vals[1:]:
-        lv = level(p)
-        if direction is None:
-            if lv >= extreme + reversal_boxes:
-                direction, extreme = "up", lv
-            elif lv <= extreme - reversal_boxes:
-                direction, extreme = "down", lv
-        elif direction == "up":
-            if lv > extreme:
-                extreme = lv
-            elif lv <= extreme - reversal_boxes:
-                direction, extreme = "down", lv
-        else:  # down
-            if lv < extreme:
-                extreme = lv
-            elif lv >= extreme + reversal_boxes:
-                direction, extreme = "up", lv
-
-    if direction is None:
-        return {"direction": None, "extreme_price": None}
-    return {"direction": direction, "extreme_price": math.exp(extreme * scale)}
+    settings = pnf_engine.BoxSettings(reversal_boxes=reversal_boxes, box_pct=box_pct)
+    return pnf_engine.current_state(pnf_engine.build_columns(vals, settings), settings)
 
 
 def _trend_label(state: dict) -> str:
