@@ -22,15 +22,18 @@ does, but the exact Period-7/dual-EMA settings are still best-effort. If
 RSI still can't be reconciled with real platform behavior, remove it from
 entry logic rather than ship a guess permanently.
 
-P&F construction: percentage-box log grid, box 1%, reversal 3 boxes — same
-box-math approach as the existing pnf_trend() in definedge_service.py, but
-unlike that function (which collapses to a single Bullish/Bearish/Neutral
-label), this engine retains the full column history, since every pattern
-here (Low/High Pole, Anchor Column, AFT, Turtle Breakout, Triple Top/Bottom,
+P&F construction: percentage-box log grid, box 1%, reversal 3 boxes. Box-
+level math (the direction-dependent floor-up/ceiling-down rule, chart-
+relative anchoring, symmetric reversal — see pnf_engine.py for every sourced
+rule) is shared with pnf_column_state() in definedge_service.py via
+pnf_engine.BoxSettings — not a second independent implementation. Unlike
+that function (which collapses to a single Bullish/Bearish/Neutral label),
+this module's own column-tracking loop retains the full column history with
+ts/box_count/high_price/low_price per column, since every pattern here
+(Low/High Pole, Anchor Column, AFT, Turtle Breakout, Triple Top/Bottom,
 Double Top/Bottom) needs to inspect actual column structure.
 """
 import logging
-import math
 import uuid
 from datetime import datetime, timezone, timedelta
 from datetime import time as dt_time
@@ -39,6 +42,7 @@ import httpx
 import pandas as pd
 
 from definedge_service import DefinedgeService, DefinedgeError, DATA_BASE
+from pnf_engine import BoxSettings
 
 logger = logging.getLogger(__name__)
 
@@ -102,23 +106,29 @@ POLE_SEARCH_WINDOW = 60         # backward pole/follow-through search only looks
 
 
 # ---------------------------------------------------------------------------
-# Point & Figure engine — retains full column history (pure, unit-testable)
+# Point & Figure engine — retains full column history (pure, unit-testable).
+# Box-level math itself delegates to pnf_engine.BoxSettings (shared with
+# Index Vector's definedge_service.py) rather than a third independent
+# reimplementation — see pnf_engine.py's module docstring for every sourced
+# construction rule, verified against Definedge's own book and Shelf docs,
+# not assumed. Two things specific to this module's OWN history predate and
+# independently corroborate two of pnf_engine's rules:
+#   - Anchoring to the chart's own starting price (not an absolute grid at
+#     price=1) was verified live here first ("a chart starting at 100
+#     flipped to the next box at ~100.5, not 101" under absolute anchoring)
+#     — this is exactly pnf_engine's rule 8, added after this finding.
+#   - This module's own column-tracking loop already only needed 1 box to
+#     establish the very first column (not reversal_boxes) — matching
+#     pnf_engine's rule 4 independently, since this loop was never changed
+#     to require reversal_boxes there in the first place.
+# The one real gap this module had that pnf_engine's rule 5 fixes: box level
+# must be direction-dependent (floor going up, ceiling going down), not one
+# floor applied to both — see pnf_engine.py for the book's own worked-example
+# evidence. This module keeps its own column-tracking loop (ts/box_count/
+# high_price/low_price bookkeeping every pattern detector below needs,
+# which pnf_engine's lighter Column dataclass doesn't carry) but now sources
+# the box-LEVEL calculation itself from pnf_engine.BoxSettings.
 # ---------------------------------------------------------------------------
-def _box_level(price: float, anchor: float, box_pct: float = BOX_PCT) -> int:
-    """Box level RELATIVE to `anchor` (the chart's own starting price), not an
-    absolute grid anchored at price=1. Anchoring at 1 (the earlier version's
-    bug — same one still present in pnf_trend()'s independent implementation)
-    puts box boundaries at essentially arbitrary offsets that only coincide
-    with clean round-number moves by luck: verified live that a chart
-    starting at 100 flipped to the next box at ~100.5, not 101. Anchoring to
-    the chart's own start makes each box exactly box_pct away from the LAST
-    LOCKED price, compounding forward (100 -> 101 -> 102.01 -> 103.03 -> ...)
-    — confirmed against the user's own description of how the real chart
-    locks boxes. The `+ 1e-9` guards against float error landing a price
-    that's exactly on a boundary just under its true integer level."""
-    return math.floor(math.log(price / anchor) / math.log(1.0 + box_pct) + 1e-9)
-
-
 def build_pnf_columns(bars: list, box_pct: float = BOX_PCT, reversal_boxes: int = REVERSAL_BOXES) -> list:
     """bars: chronological [{ts, open, high, low, close}, ...] (1-minute bars
     for the live engine, daily bars for the backtest). Samples ONLY each
@@ -138,12 +148,13 @@ def build_pnf_columns(bars: list, box_pct: float = BOX_PCT, reversal_boxes: int 
     if len(bars) < 2:
         return []
 
+    settings = BoxSettings(reversal_boxes=reversal_boxes, box_pct=box_pct)
     samples = [(b["ts"], b["close"]) for b in bars]
 
     columns = []
     direction = None
     base_price = float(samples[0][1])
-    base_level = 0  # by construction: _box_level(base_price, anchor=base_price) == 0
+    base_level = 0  # by construction: level_up(base_price, anchor=base_price) == 0
     base_ts = samples[0][0]
 
     cur_high_level = cur_low_level = base_level
@@ -165,45 +176,52 @@ def build_pnf_columns(bars: list, box_pct: float = BOX_PCT, reversal_boxes: int 
 
     for ts, raw_p in samples[1:]:
         p = float(raw_p)
-        lv = _box_level(p, base_price, box_pct)
 
         if direction is None:
-            if lv >= base_level + 1:
+            up_lv = settings.level_up(p, base_price)
+            down_lv = settings.level_down(p, base_price)
+            if up_lv >= base_level + 1:
                 direction = "X"
-                cur_low_level, cur_high_level = base_level, lv
+                cur_low_level, cur_high_level = base_level, up_lv
                 cur_low_price, cur_high_price = base_price, p
                 cur_start_ts = ts
-            elif lv <= base_level - 1:
+            elif down_lv <= base_level - 1:
                 direction = "O"
-                cur_high_level, cur_low_level = base_level, lv
+                cur_high_level, cur_low_level = base_level, down_lv
                 cur_high_price, cur_low_price = base_price, p
                 cur_start_ts = ts
             cur_end_ts = ts
             continue
 
         if direction == "X":
-            if lv > cur_high_level:
-                cur_high_level, cur_high_price = lv, p
+            up_lv = settings.level_up(p, base_price)
+            if up_lv > cur_high_level:
+                cur_high_level, cur_high_price = up_lv, p
                 cur_end_ts = ts
-            elif lv <= cur_high_level - reversal_boxes:
+                continue
+            down_lv = settings.level_down(p, base_price)
+            if down_lv <= cur_high_level - reversal_boxes:
                 close_column(ts)
                 # new O column shares its top boundary with the old X column's high
                 old_high_level, old_high_price = cur_high_level, cur_high_price
                 direction = "O"
                 cur_high_level, cur_high_price = old_high_level, old_high_price
-                cur_low_level, cur_low_price = lv, p
+                cur_low_level, cur_low_price = down_lv, p
                 cur_start_ts = ts
                 cur_end_ts = ts
         else:  # O
-            if lv < cur_low_level:
-                cur_low_level, cur_low_price = lv, p
+            down_lv = settings.level_down(p, base_price)
+            if down_lv < cur_low_level:
+                cur_low_level, cur_low_price = down_lv, p
                 cur_end_ts = ts
-            elif lv >= cur_low_level + reversal_boxes:
+                continue
+            up_lv = settings.level_up(p, base_price)
+            if up_lv >= cur_low_level + reversal_boxes:
                 close_column(ts)
                 old_low_level, old_low_price = cur_low_level, cur_low_price
                 direction = "X"
                 cur_low_level, cur_low_price = old_low_level, old_low_price
-                cur_high_level, cur_high_price = lv, p
+                cur_high_level, cur_high_price = up_lv, p
                 cur_start_ts = ts
                 cur_end_ts = ts
 

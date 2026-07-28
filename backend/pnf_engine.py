@@ -13,7 +13,7 @@ regression test; this module should never be changed without that
 test passing every single step, not just the final state.
 
 Sources:
-- "Trading The Markets The Point & Figure Way" (Vivek Patil / Definedge)
+- "Trading The Markets The Point & Figure Way" (Prashant Shah, 2018)
   — the book's own worked exercise, Ch. 1.1.
 - shelf.definedgesecurities.com/point-figure-chart/... — Definedge's
   public Shelf documentation (some pages login-gated; the ones quoted
@@ -62,20 +62,32 @@ Verified rules:
    ever processes one value per input bar - High-Low/HLC modes exist
    on Definedge's platform but are deliberately not implemented here.
 
-ASSUMPTION (ties rule 5 to percentage/log box-value charts specifically
--- not directly re-verified against a percentage-chart worked example,
-only the book's absolute-box-value exercise): the same floor-up/
-ceiling-down asymmetry is applied on the log scale for percentage box
-charts (floor(ln(price)/ln(1+box_pct)) rising, ceil(...) falling). This
-is the natural generalization of rule 5 to log space, but has not been
-independently confirmed against a real percentage-value Definedge
-chart's exact printed box prices.
+8. Percentage/log box-value charts anchor their box grid to the
+   CHART'S OWN starting price, not to some absolute grid fixed at
+   price=1. This was flagged as an open assumption in an earlier
+   version of this module; resolved 2026-07-28 by a live-verified
+   finding already on record elsewhere in this codebase
+   (blackbox_prism_alpha.py, pre-existing comment): "a chart starting
+   at 100 flipped to the next box at ~100.5, not 101" under absolute-
+   grid-at-1 anchoring - i.e. an absolute grid puts box boundaries at
+   essentially arbitrary offsets from wherever a series happens to
+   start, which only coincide with a genuine box_pct move by luck.
+   Anchoring to the chart's own first price makes every box exactly
+   box_pct away from that starting reference, compounding forward
+   (100 -> 101 -> 102.01 -> ...), matching how a real chart's first
+   column is described printing (see rule 4) and matching the verified
+   finding above. `price_at()`/`level_up()`/`level_down()` all take an
+   explicit `anchor` for this reason - callers on the percentage-box
+   path MUST pass the series' own first price as the anchor, not rely
+   on a default.
 """
 from __future__ import annotations
 
 import math
 from dataclasses import dataclass
 from typing import Optional
+
+_EPS = 1e-9  # float-error guard for level_up/level_down - see their docstrings
 
 
 @dataclass(frozen=True)
@@ -92,25 +104,37 @@ class BoxSettings:
         if (self.box_pct is None) == (self.box_value is None):
             raise ValueError("BoxSettings needs exactly one of box_pct or box_value")
 
-    def _raw(self, price: float) -> float:
+    def _raw(self, price: float, anchor: float = 1.0) -> float:
         if self.box_pct is not None:
-            return math.log(price) / math.log(1.0 + self.box_pct)
+            # anchor matters here (see module docstring rule 8) - box_value
+            # mode is anchor-independent (a linear grid from 0), so anchor
+            # is silently ignored on that path, not an error.
+            return math.log(price / anchor) / math.log(1.0 + self.box_pct)
         return price / self.box_value
 
-    def level_up(self, price: float) -> int:
+    def level_up(self, price: float, anchor: float = 1.0) -> int:
         """The highest box-price level reached going UP (floor) - see
-        module docstring rule 5."""
-        return math.floor(self._raw(price))
+        module docstring rule 5. `anchor` must be the series' own first
+        price for box_pct mode (rule 8) - box_value mode ignores it.
+        The `+ _EPS` guards against a price that's mathematically exactly
+        on a boundary landing just under its true integer level due to
+        float error - confirmed to actually occur (e.g. log(102.01/100)/
+        log(1.01) computes to 1.999999999999999, not exactly 2.0, for a
+        price that's precisely 2 boxes above a 1% anchor)."""
+        return math.floor(self._raw(price, anchor) + _EPS)
 
-    def level_down(self, price: float) -> int:
-        """The lowest box-price level reached going DOWN (ceiling) -
-        see module docstring rule 5."""
-        return math.ceil(self._raw(price))
+    def level_down(self, price: float, anchor: float = 1.0) -> int:
+        """The lowest box-price level reached going DOWN (ceiling) - see
+        module docstring rule 5. Same `anchor` requirement and float-error
+        guard as level_up, mirrored (subtract instead of add, since this
+        rounds up instead of down)."""
+        return math.ceil(self._raw(price, anchor) - _EPS)
 
-    def price_at(self, level: int) -> float:
-        """The real box-price for a level - inverse of level_up/down."""
+    def price_at(self, level: int, anchor: float = 1.0) -> float:
+        """The real box-price for a level - inverse of level_up/down.
+        Same `anchor` requirement as level_up/level_down."""
         if self.box_pct is not None:
-            return math.exp(level * math.log(1.0 + self.box_pct))
+            return anchor * math.exp(level * math.log(1.0 + self.box_pct))
         return level * self.box_value
 
 
@@ -119,6 +143,9 @@ class Column:
     direction: str  # "up" | "down"
     start_level: int
     end_level: int
+    anchor: float = 1.0  # the series' own first price (box_pct mode) - pass
+                         # this back into settings.price_at(level, anchor)
+                         # to recover a real price; unused for box_value mode.
 
     @property
     def box_count(self) -> int:
@@ -129,61 +156,70 @@ def build_columns(prices: list, settings: BoxSettings) -> list[Column]:
     """Walks the full close-only price series and returns every column
     printed, in order - not just the final state, so a caller can
     validate column-by-column (count, direction, box range) against a
-    real chart, not just the current direction."""
+    real chart, not just the current direction.
+
+    For box_pct (percentage) charts, the series' own first price is
+    used as the anchor throughout (rule 8) - box_value (absolute)
+    charts are anchor-independent, so this doesn't affect them. Each
+    returned Column carries that anchor (see Column.anchor) so a caller
+    can convert levels back to real prices without tracking it
+    separately."""
     vals = [float(p) for p in prices if p is not None and float(p) > 0]
     if not vals:
         return []
 
+    anchor = vals[0]
     columns: list[Column] = []
     direction: Optional[str] = None
     # Reference point for the very first column - not itself a
-    # printed box, just the starting anchor (rule 4).
-    ref_level = settings.level_up(vals[0])
+    # printed box, just the starting anchor (rule 4). By construction
+    # level_up(anchor, anchor) == 0 always (log(anchor/anchor) == 0).
+    ref_level = settings.level_up(vals[0], anchor)
     extreme_level = ref_level
 
     for p in vals[1:]:
         if direction is None:
-            up_lv = settings.level_up(p)
-            down_lv = settings.level_down(p)
+            up_lv = settings.level_up(p, anchor)
+            down_lv = settings.level_down(p, anchor)
             if up_lv >= ref_level + 1:
                 direction = "up"
                 extreme_level = up_lv
-                columns.append(Column("up", ref_level + 1, extreme_level))
+                columns.append(Column("up", ref_level + 1, extreme_level, anchor))
             elif down_lv <= ref_level - 1:
                 direction = "down"
                 extreme_level = down_lv
-                columns.append(Column("down", ref_level - 1, extreme_level))
+                columns.append(Column("down", ref_level - 1, extreme_level, anchor))
             continue
 
         if direction == "up":
-            up_lv = settings.level_up(p)
+            up_lv = settings.level_up(p, anchor)
             if up_lv > extreme_level:
                 extreme_level = up_lv
                 columns[-1].end_level = extreme_level
                 continue
-            down_lv = settings.level_down(p)
+            down_lv = settings.level_down(p, anchor)
             if down_lv <= extreme_level - settings.reversal_boxes:
                 direction = "down"
                 new_start = extreme_level - 1
                 extreme_level = down_lv
-                columns.append(Column("down", new_start, extreme_level))
+                columns.append(Column("down", new_start, extreme_level, anchor))
         else:  # down
-            down_lv = settings.level_down(p)
+            down_lv = settings.level_down(p, anchor)
             if down_lv < extreme_level:
                 extreme_level = down_lv
                 columns[-1].end_level = extreme_level
                 continue
-            up_lv = settings.level_up(p)
+            up_lv = settings.level_up(p, anchor)
             if up_lv >= extreme_level + settings.reversal_boxes:
                 direction = "up"
                 new_start = extreme_level + 1
                 extreme_level = up_lv
-                columns.append(Column("up", new_start, extreme_level))
+                columns.append(Column("up", new_start, extreme_level, anchor))
 
     return columns
 
 
-def current_state(columns: list[Column], settings: BoxSettings) -> dict:
+def current_state(columns: list, settings: BoxSettings) -> dict:
     """{"direction": "up"|"down"|None, "extreme_price": float|None} -
     drop-in-compatible shape with the old pnf_column_state()'s return
     value, for callers that only need the current signal, not the full
@@ -191,7 +227,7 @@ def current_state(columns: list[Column], settings: BoxSettings) -> dict:
     if not columns:
         return {"direction": None, "extreme_price": None}
     last = columns[-1]
-    return {"direction": last.direction, "extreme_price": settings.price_at(last.end_level)}
+    return {"direction": last.direction, "extreme_price": settings.price_at(last.end_level, last.anchor)}
 
 
 def pnf_state(prices: list, box_pct: float = None, box_value: float = None, reversal_boxes: int = 3) -> dict:

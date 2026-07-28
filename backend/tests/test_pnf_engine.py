@@ -1,8 +1,8 @@
 """
 Regression test for pnf_engine.py, encoding Definedge's own fully
 worked construction exercise verbatim: "Trading The Markets The Point
-& Figure Way" (Vivek Patil), Ch. 1.1 - Bajaj Auto, Sept 2014-Jan 2015,
-10 x 3 absolute box-value chart.
+& Figure Way" (Prashant Shah, 2018), Ch. 1.1 - Bajaj Auto, Sept
+2014-Jan 2015, 10 x 3 absolute box-value chart.
 
 This is a primary-source ground truth, not a self-check: every single
 step below (price -> resulting column state) is transcribed directly
@@ -120,3 +120,45 @@ def test_reversal_is_symmetric():
     # where 2302.65 -- past the 2320 threshold -- does reverse).
     reversed_col = build_columns([2300, 2339.65, 2359.30, 2319.99], settings)[-1]
     assert reversed_col.direction == "down"
+
+
+def test_percentage_box_anchors_to_the_series_own_first_price():
+    """Percentage/log box-value charts must anchor to the series' own
+    first price, not to an absolute grid fixed at price=1. Confirmed by
+    a live-verified finding already on record elsewhere in this
+    codebase (blackbox_prism_alpha.py's pre-existing _box_level
+    comment): "a chart starting at 100 flipped to the next box at
+    ~100.5, not 101" under absolute-grid-at-1 anchoring - i.e. an
+    absolute grid puts box boundaries at arbitrary offsets from
+    wherever a series happens to start.
+
+    With box_pct=1% and a series starting at 100, a genuine 1% move
+    lands exactly at 101 - anything short of that (e.g. 100.5, roughly
+    where an absolute grid might happen to place its nearest boundary)
+    must NOT establish a column yet."""
+    settings = BoxSettings(reversal_boxes=3, box_pct=0.01)
+
+    # 100.5 is less than a full 1% move from 100 - no column yet.
+    no_column_yet = build_columns([100, 100.5], settings)
+    assert no_column_yet == []
+
+    # 101 is exactly a full 1% move from 100 - establishes the first
+    # (up) column, anchored to 100, not to wherever an absolute grid's
+    # nearest boundary happens to fall.
+    first_column = build_columns([100, 101], settings)
+    assert len(first_column) == 1
+    assert first_column[0].direction == "up"
+    assert first_column[0].anchor == 100
+
+
+def test_float_error_at_an_exact_boundary_does_not_lose_a_box():
+    """A price that's mathematically exactly N boxes from the anchor can
+    still land a hair under N due to float rounding
+    (log(102.01/100)/log(1.01) computes to 1.999999999999999, not 2.0) -
+    caught while wiring this engine into blackbox_prism_alpha.py, which
+    had its own epsilon guard for exactly this before being switched
+    over to share this engine. 102.01 is precisely 100 * 1.01^2 - two
+    full boxes above the 100 anchor - and must register as level 2, not
+    1."""
+    settings = BoxSettings(reversal_boxes=3, box_pct=0.01)
+    assert settings.level_up(102.01, anchor=100) == 2
