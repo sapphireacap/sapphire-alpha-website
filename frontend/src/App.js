@@ -23,6 +23,7 @@ import StrategyDetail from "@/pages/blackbox/StrategyDetail";
 import ModuleDetail from "@/pages/alphaterminal/ModuleDetail";
 import Ipos from "@/pages/Ipos";
 import IpoDetail from "@/pages/IpoDetail";
+import Aurora from "@/pages/research/Aurora";
 import Admin from "@/pages/Admin";
 import { SignupPage, LoginPage, ForgotPasswordPage, ResetPasswordPage, VerifyEmailPage } from "@/pages/Auth";
 import { installAuthInterceptor } from "@/lib/auth";
@@ -67,6 +68,7 @@ const AppShell = () => {
             <Route path="/alpha-terminal/:slug" element={<ModuleDetail />} />
             <Route path="/ipos" element={<Ipos />} />
             <Route path="/ipos/:id" element={<IpoDetail />} />
+            <Route path="/research" element={<Aurora />} />
             <Route path="/admin33" element={<Admin />} />
             <Route path="/signup" element={<SignupPage />} />
             <Route path="/login" element={<LoginPage />} />

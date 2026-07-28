@@ -9,7 +9,7 @@ const LOGO = "https://customer-assets-agu9un31.emergentagent.net/job_systematic-
 
 const links = [
   { label: "About", id: "about" },
-  { label: "Research", id: "research" },
+  { label: "Research", to: "/research" },
   { label: "Alpha Terminal", to: "/alpha-terminal" },
   { label: "IPOs", to: "/ipos" },
   { label: "Journal", to: "/journal" },

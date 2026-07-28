@@ -19,6 +19,7 @@ from quant_lab import create_quant_lab_router
 from ipo_routes import create_ipo_router
 from blackbox_routes import create_blackbox_router
 from exitline_routes import create_exitline_router
+from stock_terminal_routes import create_stock_terminal_router
 from swing_picks_lcp import update_swing_picks_lcp
 from momentum_track_record import (
     capture_entries as capture_track_record_entries,
@@ -1292,6 +1293,14 @@ async def on_startup():
         await db.blackbox_lumen_sip_backtest_portfolio.create_index("date", unique=True)
         await db.blackbox_lumen_sip_backtest_metrics.create_index("id", unique=True)
         await db.exitline_levels.create_index([("date", 1), ("segment", 1), ("token", 1)], unique=True)
+        await db.stock_symbol_master.create_index("symbol", unique=True)
+        await db.stock_symbol_master.create_index("company_name")
+        await db.stock_prices_daily.create_index([("symbol", 1), ("date", 1)], unique=True)
+        await db.stock_fundamentals.create_index("symbol", unique=True)
+        await db.stock_shareholding.create_index([("symbol", 1), ("quarter", 1)], unique=True)
+        await db.stock_computed_metrics.create_index("symbol", unique=True)
+        await db.stock_agent_cache.create_index("symbol", unique=True)
+        await db.stock_agent_cache.create_index("expires_at", expireAfterSeconds=0)
     except Exception as e:  # noqa: BLE001
         logger.warning(f"Index creation: {e}")
 
@@ -1302,6 +1311,7 @@ quant_lab_router = create_quant_lab_router(db, definedge, get_current_admin, CRO
 ipo_router = create_ipo_router(db, get_current_admin, CRON_SECRET)
 blackbox_router = create_blackbox_router(db, definedge, get_current_admin, CRON_SECRET)
 exitline_router = create_exitline_router(db, definedge)
+stock_terminal_router = create_stock_terminal_router(db, definedge, get_current_admin, CRON_SECRET)
 
 app.include_router(api_router)
 app.include_router(journal_router, prefix="/api")
@@ -1310,6 +1320,7 @@ app.include_router(quant_lab_router, prefix="/api")
 app.include_router(ipo_router, prefix="/api")
 app.include_router(blackbox_router, prefix="/api")
 app.include_router(exitline_router, prefix="/api")
+app.include_router(stock_terminal_router, prefix="/api")
 
 app.add_middleware(
     CORSMiddleware,
