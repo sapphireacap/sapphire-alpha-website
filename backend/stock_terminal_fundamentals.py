@@ -170,6 +170,9 @@ async def fetch_fundamentals(client: httpx.AsyncClient, symbol: str) -> dict:
 
     fundamentals = {
         "symbol": symbol,
+        "screener_price": price,  # Screener's own "Current Price" -- the second
+                                   # source stock_terminal_verification.py cross-
+                                   # checks against Definedge's daily close
         "pe_ratio": top.get("Stock P/E"),
         "pb_ratio": (price / book_value) if price and book_value else None,
         "roe": top.get("ROE"),

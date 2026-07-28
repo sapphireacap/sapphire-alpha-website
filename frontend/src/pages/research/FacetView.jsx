@@ -5,7 +5,7 @@ import { createChart, CandlestickSeries, ColorType, LineStyle } from "lightweigh
 import {
   ResponsiveContainer, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip,
 } from "recharts";
-import { Loader2, Sparkles, ChevronDown } from "lucide-react";
+import { Loader2, Sparkles, ChevronDown, ShieldAlert } from "lucide-react";
 import Navbar from "../../components/site/Navbar";
 import Footer from "../../components/site/Footer";
 import Disclaimer from "./Disclaimer";
@@ -90,6 +90,98 @@ const ShareholdingChart = ({ rows }) => {
           <Line type="monotone" dataKey="Public" stroke="#94A3B8" strokeWidth={1.5} strokeDasharray="4 3" dot={false} />
         </LineChart>
       </ResponsiveContainer>
+    </div>
+  );
+};
+
+const VERIFICATION_STYLE = {
+  VERIFIED: { color: "text-emerald-400", dot: "bg-emerald-400", label: "Verified" },
+  SINGLE_SOURCE: { color: "text-amber-400", dot: "bg-amber-400", label: "Single Source" },
+  CONFLICT: { color: "text-red-400", dot: "bg-red-400", label: "Conflict" },
+  NO_DATA: { color: "text-slate-500", dot: "bg-slate-600", label: "No Data" },
+};
+
+const VerificationBadge = ({ verification }) => {
+  if (!verification) return null;
+  const style = VERIFICATION_STYLE[verification.status] || VERIFICATION_STYLE.NO_DATA;
+  return (
+    <div className="inline-flex items-center gap-2" data-testid="lumen-verify-badge" title="Lumen Verify — cross-source price check">
+      <span className={`inline-flex items-center gap-1.5 rounded-full border border-white/10 px-3 py-1 font-mono-ui text-[10px] uppercase tracking-wider ${style.color}`}>
+        <i className={`h-1.5 w-1.5 rounded-full inline-block ${style.dot}`} /> {style.label}
+      </span>
+      {verification.status === "CONFLICT" && (
+        <span className="font-mono-ui text-xs text-slate-500">
+          Definedge {fmtINR(verification.definedge_price)} vs Screener {fmtINR(verification.screener_price)} ({fmtPct(verification.delta_pct)} apart)
+        </span>
+      )}
+    </div>
+  );
+};
+
+const CLARITY_TONE = (v) => (v == null ? "text-slate-500" : v >= 7 ? "text-emerald-400" : v >= 4 ? "text-amber-400" : "text-red-400");
+
+const ClarityScoreCard = ({ scorecard }) => {
+  if (!scorecard) return null;
+  const { final_score, sub_scores, weights } = scorecard;
+  return (
+    <div className={`${SURFACE} p-6`} data-testid="clarity-score-card">
+      <div className="flex items-center justify-between mb-5">
+        <h3 className="font-display text-base font-bold text-white">Clarity Score</h3>
+        <span className={`font-display text-4xl font-black ${CLARITY_TONE(final_score)}`}>{fmtNum(final_score, 1)}<span className="text-lg text-slate-600">/10</span></span>
+      </div>
+      <div className="space-y-3">
+        {Object.entries(sub_scores).map(([key, value]) => (
+          <div key={key}>
+            <div className="flex items-center justify-between mb-1">
+              <span className="text-xs text-slate-400 capitalize">{key.replace(/_/g, " ")} <span className="text-slate-600">({Math.round((weights?.[key] || 0) * 100)}%)</span></span>
+              <span className={`font-mono-ui text-xs font-semibold ${CLARITY_TONE(value)}`}>{value == null ? "n/a" : fmtNum(value, 1)}</span>
+            </div>
+            <div className="h-1.5 rounded-full bg-white/5 overflow-hidden">
+              <div className="h-full bg-sapphire-light" style={{ width: `${value == null ? 0 : value * 10}%` }} />
+            </div>
+          </div>
+        ))}
+      </div>
+      {scorecard.red_flag_penalty > 0 && (
+        <p className="text-xs text-slate-500 mt-4">-{fmtNum(scorecard.red_flag_penalty, 1)} applied for Fracture Scan flags below.</p>
+      )}
+    </div>
+  );
+};
+
+const FLAG_STYLE = {
+  PASS: { color: "text-emerald-400", bg: "bg-emerald-400/10 border-emerald-400/25" },
+  WARN: { color: "text-amber-400", bg: "bg-amber-400/10 border-amber-400/25" },
+  FAIL: { color: "text-red-400", bg: "bg-red-400/10 border-red-400/25" },
+  NA: { color: "text-slate-500", bg: "bg-white/5 border-white/10" },
+};
+
+const FractureScanTable = ({ flags }) => {
+  if (!flags?.length) return null;
+  return (
+    <div className={`${SURFACE} overflow-hidden`} data-testid="fracture-scan-table">
+      <div className="flex items-center gap-2 px-6 pt-6 pb-2">
+        <ShieldAlert size={16} className="text-sapphire-light" />
+        <h3 className="font-display text-base font-bold text-white">Fracture Scan</h3>
+      </div>
+      <div className="overflow-x-auto">
+        <table className="w-full text-left min-w-[520px]">
+          <tbody>
+            {flags.map((f) => {
+              const style = FLAG_STYLE[f.status] || FLAG_STYLE.NA;
+              return (
+                <tr key={f.rule} className="border-t border-white/[0.05]" data-testid={`fracture-scan-row-${f.rule.replace(/\s+/g, "-").toLowerCase()}`}>
+                  <td className="px-6 py-3 text-sm text-white whitespace-nowrap">{f.rule}</td>
+                  <td className="px-3 py-3">
+                    <span className={`inline-flex items-center justify-center rounded-full border px-2.5 py-0.5 font-mono-ui text-[10px] uppercase tracking-wider ${style.color} ${style.bg}`}>{f.status}</span>
+                  </td>
+                  <td className="px-3 py-3 text-xs text-slate-500">{f.detail}</td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 };
@@ -208,7 +300,7 @@ export default function FacetView() {
     );
   }
 
-  const { symbol_master: m, computed_metrics: cm, fundamentals: f, shareholding, price_bars } = data;
+  const { symbol_master: m, computed_metrics: cm, fundamentals: f, shareholding, price_bars, red_flags, scorecard, verification } = data;
   const latest = price_bars?.[price_bars.length - 1];
 
   return (
@@ -224,7 +316,8 @@ export default function FacetView() {
             <span className="font-mono-ui text-2xl text-slate-300">{fmtINR(latest?.close)}</span>
             {cm?.return_1d != null && <span className={`font-mono-ui text-sm ${toneOf(cm.return_1d)}`}>{fmtPct(cm.return_1d)}</span>}
           </div>
-          <p className="text-slate-500 mb-10">{m.company_name}{m.industry ? ` · ${m.industry}` : ""}</p>
+          <p className="text-slate-500 mb-3">{m.company_name}{m.industry ? ` · ${m.industry}` : ""}</p>
+          <div className="mb-10"><VerificationBadge verification={verification} /></div>
 
           <div className={`${SURFACE} p-4 mb-8`}>
             <PriceChart bars={price_bars} dma50={cm?.dma_50} dma200={cm?.dma_200} />
@@ -263,6 +356,11 @@ export default function FacetView() {
               <h3 className="font-display text-base font-bold text-white mb-4">Shareholding Pattern</h3>
               <ShareholdingChart rows={shareholding} />
             </div>
+          </div>
+
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-10">
+            <ClarityScoreCard scorecard={scorecard} />
+            <FractureScanTable flags={red_flags} />
           </div>
 
           <div className="mb-10">

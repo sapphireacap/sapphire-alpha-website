@@ -15,6 +15,8 @@ from fastapi import APIRouter, HTTPException, Request, Depends
 from stock_terminal_ingestion import run_nightly_ingestion
 from stock_terminal_fundamentals import ingest_fundamentals
 from stock_terminal_agent import run_agent_analysis
+from stock_terminal_scoring import scan_red_flags, compute_scorecard
+from stock_terminal_verification import verify_price
 
 logger = logging.getLogger(__name__)
 
@@ -129,6 +131,10 @@ def create_stock_terminal_router(db, definedge, get_current_admin, cron_secret: 
         shareholding = await db.stock_shareholding.find({"symbol": symbol}, {"_id": 0}).sort("quarter", 1).to_list(12)
         price_bars = await db.stock_prices_daily.find({"symbol": symbol}, {"_id": 0}).sort("date", -1).to_list(260)
 
+        red_flags = scan_red_flags(fundamentals, master, shareholding)
+        scorecard = await compute_scorecard(db, symbol, fundamentals, metrics, master, red_flags)
+        verification = await verify_price(db, symbol)
+
         return {
             "has_data": True,
             "symbol_master": master,
@@ -136,6 +142,9 @@ def create_stock_terminal_router(db, definedge, get_current_admin, cron_secret: 
             "fundamentals": fundamentals,
             "shareholding": shareholding,
             "price_bars": list(reversed(price_bars)),
+            "red_flags": red_flags,
+            "scorecard": scorecard,
+            "verification": verification,
         }
 
     @router.post("/stock/{symbol}/analyze")
