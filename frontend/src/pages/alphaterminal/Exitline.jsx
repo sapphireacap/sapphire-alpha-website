@@ -241,6 +241,9 @@ const Ladder = ({ levels, ltp }) => {
 
   return (
     <div className="glass rounded-2xl border border-white/10 overflow-hidden" data-testid="exitline-ladder">
+      <div className="px-5 py-3 border-b border-white/10">
+        <p className="font-mono-ui text-[10px] uppercase tracking-[0.24em] text-slate-400">Sapphire Levels™</p>
+      </div>
       <div className="overflow-x-auto">
         <table className="w-full min-w-[520px]" style={{ fontVariantNumeric: "tabular-nums" }}>
           <thead>
