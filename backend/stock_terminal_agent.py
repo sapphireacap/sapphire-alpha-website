@@ -231,3 +231,78 @@ async def run_agent_analysis(db, symbol: str, force: bool = False) -> dict:
         "analysis": "Analysis stopped after reaching the tool-call limit without a final answer.",
         "tool_calls": tool_calls_log, "generated_at": datetime.now(timezone.utc).isoformat(),
     }
+
+
+# ---------------------------------------------------------------------------
+# The Crucible -- Bull vs. Bear debate mode (Phase 5). Per the spec: "Both
+# personas share the same tool manifest and cached tool results -- they
+# argue interpretation, not data." Implemented as ONE real data-gathering
+# pass (the same pure tool functions above, called directly rather than
+# through another tool-use loop) followed by 6 plain completions (3 rounds
+# x 2 personas) that only ever see that already-fetched data plus the
+# transcript so far -- cheaper and simpler than giving every debate turn
+# its own tool-use loop, and just as faithful to "argue interpretation of
+# the same facts." The Clarity Score (stock_terminal_scoring.py, already
+# computed by the stock bundle route) is the spec's "quantitative
+# adjudicator" -- rendered by the frontend alongside the transcript, not
+# recomputed here.
+# ---------------------------------------------------------------------------
+DEBATE_ROUNDS = 3
+DEBATE_MAX_TOKENS = 350
+
+PERSONA_SUFFIX = {
+    "BULL": (
+        "You are arguing the investment BULL case for {symbol}. Present the strongest evidence for why this "
+        "stock represents a compelling opportunity, based ONLY on the data provided below. Every claim must "
+        "cite where it came from. You must acknowledge weaknesses but frame them constructively. "
+        "Keep this turn to 2-3 sentences."
+    ),
+    "BEAR": (
+        "You are arguing the investment BEAR case for {symbol}. Present the strongest evidence for caution or "
+        "avoidance, based ONLY on the data provided below. Every claim must cite where it came from. You must "
+        "acknowledge strengths but contextualise the risks. Keep this turn to 2-3 sentences."
+    ),
+}
+
+
+async def _gather_debate_data(db, symbol: str) -> dict:
+    return {
+        "price_history": await _tool_get_price_history(db, symbol, "1Y"),
+        "fundamentals": await _tool_get_fundamentals(db, symbol),
+        "shareholding": await _tool_get_shareholding(db, symbol),
+        "peers": await _tool_resolve_peers(db, symbol),
+        "sector_news": await _tool_get_sector_news(db, symbol),
+    }
+
+
+async def run_debate(db, symbol: str) -> dict:
+    """{"configured": False, "reason": ...} if ANTHROPIC_API_KEY is unset,
+    same graceful-degradation contract as run_agent_analysis. Otherwise
+    {"configured": True, "transcript": [{"round", "persona", "text"}, ...],
+    "generated_at": ...} -- 6 entries (3 rounds x BULL/BEAR)."""
+    api_key = os.environ.get("ANTHROPIC_API_KEY")
+    if not api_key:
+        return {"configured": False, "reason": "ANTHROPIC_API_KEY is not set."}
+
+    data = await _gather_debate_data(db, symbol)
+    data_blob = json.dumps(data, default=str)
+    client = anthropic.AsyncAnthropic(api_key=api_key)
+
+    transcript = []
+    history_text = "(debate has not started yet)"
+    for round_no in range(1, DEBATE_ROUNDS + 1):
+        for persona in ("BULL", "BEAR"):
+            system = (
+                f"{SYSTEM_PROMPT}\n\n{PERSONA_SUFFIX[persona].format(symbol=symbol)}\n\n"
+                f"Real data for {symbol} (JSON):\n{data_blob}"
+            )
+            user_content = f"Round {round_no} of {DEBATE_ROUNDS}. Debate so far:\n{history_text}\n\nGive your {persona} argument for this round."
+            response = await client.messages.create(
+                model=ANTHROPIC_MODEL, max_tokens=DEBATE_MAX_TOKENS, system=system,
+                messages=[{"role": "user", "content": user_content}],
+            )
+            text = "".join(b.text for b in response.content if b.type == "text")
+            transcript.append({"round": round_no, "persona": persona, "text": text})
+            history_text += f"\n\n{persona} (Round {round_no}): {text}"
+
+    return {"configured": True, "transcript": transcript, "generated_at": datetime.now(timezone.utc).isoformat()}

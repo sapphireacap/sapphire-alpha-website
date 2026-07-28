@@ -5,7 +5,7 @@ import { createChart, CandlestickSeries, ColorType, LineStyle } from "lightweigh
 import {
   ResponsiveContainer, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip,
 } from "recharts";
-import { Loader2, Sparkles, ChevronDown, ShieldAlert } from "lucide-react";
+import { Loader2, Sparkles, ChevronDown, ShieldAlert, Swords } from "lucide-react";
 import Navbar from "../../components/site/Navbar";
 import Footer from "../../components/site/Footer";
 import Disclaimer from "./Disclaimer";
@@ -259,6 +259,68 @@ const LumenAgentPanel = ({ symbol }) => {
   );
 };
 
+const CruciblePanel = ({ symbol }) => {
+  const [result, setResult] = useState(null);
+  const [loading, setLoading] = useState(false);
+
+  const run = async () => {
+    setLoading(true);
+    try {
+      const { data } = await axios.post(`${API}/stock-terminal/stock/${symbol}/debate`);
+      setResult(data);
+    } catch {
+      setResult({ configured: true, transcript: [] });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const bullRounds = result?.transcript?.filter((t) => t.persona === "BULL") || [];
+  const bearRounds = result?.transcript?.filter((t) => t.persona === "BEAR") || [];
+
+  return (
+    <div className={`${SURFACE} p-6`} data-testid="crucible-panel">
+      <div className="flex items-center justify-between flex-wrap gap-3 mb-4">
+        <h3 className="font-display text-base font-bold text-white flex items-center gap-2"><Swords size={16} className="text-sapphire-light" /> The Crucible</h3>
+        {!result && (
+          <button type="button" onClick={run} disabled={loading} className="btn-ghost !px-4 !py-2 text-sm disabled:opacity-50" data-testid="crucible-run-btn">
+            {loading ? <><Loader2 size={14} className="animate-spin" /> Debating…</> : "Start Debate"}
+          </button>
+        )}
+      </div>
+
+      {!result && !loading && (
+        <p className="text-sm text-slate-500">Two personas — Bull and Bear — argue three rounds over the same real data, each citing their source. The Clarity Score above is the quantitative tie-breaker.</p>
+      )}
+
+      {result && !result.configured && (
+        <p className="text-sm text-slate-500" data-testid="crucible-not-configured">The Crucible isn't configured on this deployment yet ({result.reason}).</p>
+      )}
+
+      {result?.configured && (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div>
+            <p className="font-mono-ui text-[10px] uppercase tracking-wider text-emerald-400 mb-2">Bull Case</p>
+            <div className="space-y-2">
+              {bullRounds.map((t) => (
+                <div key={t.round} className="rounded-lg border border-emerald-400/20 bg-emerald-400/5 p-3 text-sm text-slate-300" data-testid={`crucible-bull-${t.round}`}>{t.text}</div>
+              ))}
+            </div>
+          </div>
+          <div>
+            <p className="font-mono-ui text-[10px] uppercase tracking-wider text-red-400 mb-2">Bear Case</p>
+            <div className="space-y-2">
+              {bearRounds.map((t) => (
+                <div key={t.round} className="rounded-lg border border-red-400/20 bg-red-400/5 p-3 text-sm text-slate-300" data-testid={`crucible-bear-${t.round}`}>{t.text}</div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
 export default function FacetView() {
   const { symbol } = useParams();
   const [data, setData] = useState(null);
@@ -363,8 +425,9 @@ export default function FacetView() {
             <FractureScanTable flags={red_flags} />
           </div>
 
-          <div className="mb-10">
+          <div className="space-y-8 mb-10">
             <LumenAgentPanel symbol={m.symbol} />
+            <CruciblePanel symbol={m.symbol} />
           </div>
 
           <Disclaimer />

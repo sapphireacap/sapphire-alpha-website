@@ -14,7 +14,7 @@ from fastapi import APIRouter, HTTPException, Request, Depends
 
 from stock_terminal_ingestion import run_nightly_ingestion
 from stock_terminal_fundamentals import ingest_fundamentals
-from stock_terminal_agent import run_agent_analysis
+from stock_terminal_agent import run_agent_analysis, run_debate
 from stock_terminal_scoring import scan_red_flags, compute_scorecard
 from stock_terminal_verification import verify_price
 
@@ -157,5 +157,19 @@ def create_stock_terminal_router(db, definedge, get_current_admin, cron_secret: 
             return await run_agent_analysis(db, symbol, force=force)
         except Exception as e:  # noqa: BLE001
             raise HTTPException(status_code=502, detail=f"Lumen Agent analysis failed: {e}")
+
+    @router.post("/stock/{symbol}/debate")
+    async def debate_stock(symbol: str):
+        """The Crucible -- Bull vs. Bear debate for one symbol. Same
+        {"configured": False, ...} graceful-degradation contract as
+        /analyze. Not cached (unlike /analyze) -- each run is a fresh
+        3-round debate, cheap relative to the full tool-use analysis since
+        it's 6 plain completions over already-fetched data, not 6 more
+        tool-use loops."""
+        symbol = symbol.strip().upper()
+        try:
+            return await run_debate(db, symbol)
+        except Exception as e:  # noqa: BLE001
+            raise HTTPException(status_code=502, detail=f"The Crucible debate failed: {e}")
 
     return router
