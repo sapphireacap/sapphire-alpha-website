@@ -1,0 +1,30 @@
+name: Swing Picks — daily LCP refresh
+
+# Updates every Swing Picks row's LCP (last close price) from Definedge's
+# real EOD daily bar. The /admin/terminal/swing-picks-update-lcp route
+# already existed (docstring recommends once/day shortly after 15:30 IST
+# close) but had nothing scheduling it -- same gap momentum/GMP/Lumen
+# SIP/Prism Alpha all had before this session. Does NOT touch the pick list
+# itself (ticker/company/buy_at) -- that's a separate, external 10-day sync.
+# 10:30 UTC = 16:00 IST, weekdays only.
+on:
+  schedule:
+    - cron: "30 10 * * 1-5"
+  workflow_dispatch: {}
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Call swing-picks-update-lcp
+        run: |
+          status=$(curl -s -o response.json -w "%{http_code}" -X POST \
+            "https://sapphire-alpha-backend.onrender.com/api/admin/terminal/swing-picks-update-lcp" \
+            -H "X-Cron-Key: ${{ secrets.CRON_SECRET }}")
+          echo "HTTP status: $status"
+          cat response.json
+          echo
+          if [ "$status" != "200" ]; then
+            echo "::error::swing-picks-update-lcp failed with status $status"
+            exit 1
+          fi
