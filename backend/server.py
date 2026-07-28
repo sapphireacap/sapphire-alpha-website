@@ -834,12 +834,8 @@ async def momentum_track_reevaluate_all_admin(admin: dict = Depends(get_current_
     return await reevaluate_track_record(db, definedge, scanner="momentum")
 
 
-@api_router.get("/admin/terminal/scanner-track-record")
-async def scanner_track_record(scanner: str = "momentum", admin: dict = Depends(get_current_admin)):
-    """Admin-only for now, same pattern as the Black Box redesign — public
-    site shows zero performance data until the user is satisfied enough to
-    make it public again. No public route for this exists at all (not just
-    hidden in the frontend) so there's nothing to silently leak."""
+@api_router.get("/terminal/scanner-track-record")
+async def scanner_track_record(scanner: str = "momentum"):
     _validate_scanner(scanner)
     return await get_track_record_summary(db, scanner)
 
