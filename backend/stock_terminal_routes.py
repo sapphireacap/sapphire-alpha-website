@@ -13,6 +13,8 @@ import logging
 from fastapi import APIRouter, HTTPException, Request, Depends
 
 from stock_terminal_ingestion import run_nightly_ingestion
+from stock_terminal_fundamentals import ingest_fundamentals
+from stock_terminal_agent import run_agent_analysis
 
 logger = logging.getLogger(__name__)
 
@@ -79,7 +81,7 @@ def create_stock_terminal_router(db, definedge, get_current_admin, cron_secret: 
 
     @router.get("/symbols/search")
     async def search_symbols(q: str = ""):
-        """Symbol/company search-as-you-type for Prism View's picker."""
+        """Symbol/company search-as-you-type for Facet View's picker."""
         q = q.strip()
         if len(q) < 1:
             return []
@@ -89,5 +91,62 @@ def create_stock_terminal_router(db, definedge, get_current_admin, cron_secret: 
             {"_id": 0, "symbol": 1, "company_name": 1, "industry": 1},
         ).limit(20).to_list(20)
         return rows
+
+    # ---- Phase 2: fundamentals ingestion + Facet View + Lumen Agent -------
+    async def _run_fundamentals_ingestion(limit: int = None) -> dict:
+        try:
+            return await ingest_fundamentals(db, limit=limit)
+        except Exception as e:  # noqa: BLE001
+            raise HTTPException(status_code=502, detail=f"Stock Terminal fundamentals ingestion failed: {e}")
+
+    @router.post("/admin/ingest-fundamentals")
+    async def ingest_fundamentals_cron(request: Request):
+        """External-cron entry point -- fundamentals change far less often
+        than price, a weekly cadence is plenty (unlike the daily price/
+        breadth pipeline above)."""
+        if not cron_secret or request.headers.get("X-Cron-Key") != cron_secret:
+            raise HTTPException(status_code=401, detail="Invalid cron key")
+        return await _run_fundamentals_ingestion()
+
+    @router.post("/admin/ingest-fundamentals-now")
+    async def ingest_fundamentals_admin(limit: int = None, admin: dict = Depends(get_current_admin)):
+        return await _run_fundamentals_ingestion(limit=limit)
+
+    @router.get("/stock/{symbol}")
+    async def stock_bundle(symbol: str):
+        """Everything Facet View's header/panels need for one symbol:
+        symbol master, latest price + computed metrics, fundamentals,
+        shareholding trend. Red flags/scorecard/verification join this in
+        Phase 3. has_data=False (not a 404) if the symbol isn't in our
+        universe yet -- Facet View can still say so cleanly."""
+        symbol = symbol.strip().upper()
+        master = await db.stock_symbol_master.find_one({"symbol": symbol}, {"_id": 0})
+        if not master:
+            return {"has_data": False}
+
+        metrics = await db.stock_computed_metrics.find_one({"symbol": symbol}, {"_id": 0})
+        fundamentals = await db.stock_fundamentals.find_one({"symbol": symbol}, {"_id": 0})
+        shareholding = await db.stock_shareholding.find({"symbol": symbol}, {"_id": 0}).sort("quarter", 1).to_list(12)
+        price_bars = await db.stock_prices_daily.find({"symbol": symbol}, {"_id": 0}).sort("date", -1).to_list(260)
+
+        return {
+            "has_data": True,
+            "symbol_master": master,
+            "computed_metrics": metrics,
+            "fundamentals": fundamentals,
+            "shareholding": shareholding,
+            "price_bars": list(reversed(price_bars)),
+        }
+
+    @router.post("/stock/{symbol}/analyze")
+    async def analyze_stock(symbol: str, force: bool = False):
+        """Runs (or returns the cached result of) Lumen Agent's analysis for
+        one symbol. Returns {"configured": False, ...} cleanly if
+        ANTHROPIC_API_KEY isn't set -- never a 500 for that case."""
+        symbol = symbol.strip().upper()
+        try:
+            return await run_agent_analysis(db, symbol, force=force)
+        except Exception as e:  # noqa: BLE001
+            raise HTTPException(status_code=502, detail=f"Lumen Agent analysis failed: {e}")
 
     return router

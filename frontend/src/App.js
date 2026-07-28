@@ -24,6 +24,7 @@ import ModuleDetail from "@/pages/alphaterminal/ModuleDetail";
 import Ipos from "@/pages/Ipos";
 import IpoDetail from "@/pages/IpoDetail";
 import Aurora from "@/pages/research/Aurora";
+import FacetView from "@/pages/research/FacetView";
 import Admin from "@/pages/Admin";
 import { SignupPage, LoginPage, ForgotPasswordPage, ResetPasswordPage, VerifyEmailPage } from "@/pages/Auth";
 import { installAuthInterceptor } from "@/lib/auth";
@@ -69,6 +70,7 @@ const AppShell = () => {
             <Route path="/ipos" element={<Ipos />} />
             <Route path="/ipos/:id" element={<IpoDetail />} />
             <Route path="/research" element={<Aurora />} />
+            <Route path="/research/:symbol" element={<FacetView />} />
             <Route path="/admin33" element={<Admin />} />
             <Route path="/signup" element={<SignupPage />} />
             <Route path="/login" element={<LoginPage />} />
