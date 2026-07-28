@@ -54,6 +54,14 @@ const LEVEL_COLORS = {
 // isn't shown to users.
 const DISPLAY_LABELS = { H5: "S5", H4: "S4", H3: "S3", Pivot: "PZ", L3: "V3", L4: "V4" };
 
+// Full names paired with each code in the ladder table, matching the
+// "Sapphire Levels" reference card (Sentinel/Vault/Pivot Zone/Price Nexus).
+const FULL_NAMES = {
+  H5: "Sentinel 5", H4: "Sentinel 4", H3: "Sentinel 3",
+  Pivot: "Pivot Zone",
+  L3: "Vault 3", L4: "Vault 4", L5: "Vault 5",
+};
+
 const INTERVALS = [
   { key: 1, label: "1m" },
   { key: 5, label: "5m" },
@@ -253,8 +261,13 @@ const Ladder = ({ levels, ltp }) => {
                   data-testid={r.isLtp ? "exitline-ltp-row" : `exitline-level-${r.key}`}
                   className={`border-b border-white/[0.05] last:border-0 ${r.isLtp ? "bg-sapphire-light/15" : ""}`}
                 >
-                  <td className={`px-5 py-3 font-mono-ui text-xs uppercase tracking-[0.14em] whitespace-nowrap ${r.isLtp ? "text-sapphire-light font-bold" : r.key.startsWith("H") ? "text-emerald-400/80" : r.key.startsWith("L") ? "text-red-400/80" : "text-white"}`}>
-                    {r.isLtp ? "◆ PX (Live)" : (DISPLAY_LABELS[r.key] || r.key)}
+                  <td className="px-5 py-3 whitespace-nowrap">
+                    <span className={`block font-mono-ui text-xs uppercase tracking-[0.14em] ${r.isLtp ? "text-sapphire-light font-bold" : r.key.startsWith("H") ? "text-emerald-400/80" : r.key.startsWith("L") ? "text-red-400/80" : "text-white"}`}>
+                      {r.isLtp ? "◆ PX (Live)" : (DISPLAY_LABELS[r.key] || r.key)}
+                    </span>
+                    <span className="block text-[11px] text-slate-500 mt-0.5">
+                      {r.isLtp ? "Price Nexus" : (FULL_NAMES[r.key] || "")}
+                    </span>
                   </td>
                   <td className={`px-5 py-3 text-right font-mono-ui text-sm whitespace-nowrap ${r.isLtp ? "text-white font-bold" : "text-slate-300"}`}>₹{fmtNum(r.value)}</td>
                   <td className={`px-5 py-3 text-right font-mono-ui text-sm whitespace-nowrap ${distTone}`}>
