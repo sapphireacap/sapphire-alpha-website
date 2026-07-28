@@ -61,6 +61,21 @@ MALFORMED_TOOL_CALL_RETRIES = 2  # belt-and-suspenders retry on a malformed
 
 TAVILY_SEARCH_URL = "https://api.tavily.com/search"
 TAVILY_DOMAINS = ["economictimes.com", "moneycontrol.com", "livemint.com", "cnbctv18.com", "reuters.com"]
+SNIPPET_MAX_CHARS = 400  # Tavily's "content" field is often a large raw
+                          # scrape of the whole page, not a short snippet --
+                          # measured live: 8 untrimmed results made up 91% of
+                          # The Crucible's per-turn data blob (~16.5KB of an
+                          # ~18KB total) and pushed a single debate run over
+                          # Groq's 8000-tokens/minute limit in production
+                          # (real 413 rate_limit_exceeded, not hypothetical).
+                          # A citation only needs enough text to support the
+                          # claim, not the full page.
+
+
+def _truncate(text, max_chars):
+    if not text or len(text) <= max_chars:
+        return text
+    return text[:max_chars].rsplit(" ", 1)[0] + "…"
 
 SYSTEM_PROMPT = (
     "You are Lumen Agent, an equity research assistant for Indian (NSE) stocks. "
@@ -208,7 +223,8 @@ async def _tool_get_sector_news(db, symbol: str, days: int = 30) -> dict:
         return {"error": f"news search failed (HTTP {r.status_code})"}
     data = r.json()
     return {"results": [
-        {"title": x.get("title"), "url": x.get("url"), "snippet": x.get("content"), "published_date": x.get("published_date")}
+        {"title": x.get("title"), "url": x.get("url"), "snippet": _truncate(x.get("content"), SNIPPET_MAX_CHARS),
+         "published_date": x.get("published_date")}
         for x in data.get("results", [])
     ]}
 
