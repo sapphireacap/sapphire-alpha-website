@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import axios from "axios";
-import { Loader2, AlertTriangle, ChevronDown, ArrowUpDown } from "lucide-react";
+import { Loader2, ChevronDown, ArrowUpDown } from "lucide-react";
 import {
   ResponsiveContainer, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip,
 } from "recharts";
@@ -374,16 +374,6 @@ export default function OptionsStrategyDetail({ strategy }) {
 
   return (
     <div data-testid={`options-strategy-${strategy.slug}`}>
-      <div className="rounded-xl border border-amber-400/25 bg-amber-400/[0.06] px-5 py-4 flex items-start gap-3 mb-8">
-        <AlertTriangle size={16} className="text-amber-400 shrink-0 mt-0.5" />
-        <div>
-          <p className="text-sm font-semibold text-amber-300">Paper Trading — no real capital</p>
-          <p className="text-xs text-amber-200/70 mt-1 leading-relaxed">
-            Every position, signal, and P&amp;L figure below is simulated against live market prices, not traded with real money. This will stay clearly labelled "Paper" for as long as it is — a live track record, if one ever begins, will never be blended into this curve.
-          </p>
-        </div>
-      </div>
-
       <section className="mb-10">
         <SectionHeader no="01" title="Live Status" />
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">

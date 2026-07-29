@@ -21,9 +21,9 @@ export const STRATEGIES = [
     kind: "options-live",
     optionsLive: true,
     title: "Convexity Window",
-    subtitle: "Rule-based NIFTY / BANK NIFTY options buying",
+    subtitle: "Rule-based options buying",
     assetClass: "Index Options",
-    tags: ["Rule-Based", "Long Options", "Paper Trading"],
+    tags: ["Rule-Based", "Long Options"],
     summary: {
       what: "Convexity Window buys a single near-the-money NIFTY or BANK NIFTY option only when a set of volatility and price filters suggest convexity is cheap relative to the underlying's recent behavior — never on discretion.",
       market: "NIFTY & BANK NIFTY Weekly Options",
@@ -45,7 +45,7 @@ export const STRATEGIES = [
     title: "Gamma Backspread",
     subtitle: "Rule-based near-zero-theta options structure",
     assetClass: "Index Options",
-    tags: ["Rule-Based", "Options Structure", "Paper Trading"],
+    tags: ["Rule-Based", "Options Structure"],
     summary: {
       what: "Gamma Backspread sells one at-the-money option and buys two further out-of-the-money options of the same type and expiry, sized so the package carries close to zero time decay while staying net long Gamma — entered only when implied volatility is cheap on its own trailing history.",
       market: "NIFTY & BANK NIFTY Options",

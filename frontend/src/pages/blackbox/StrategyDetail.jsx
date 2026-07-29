@@ -1,6 +1,6 @@
 import { Link, useParams, useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
-import { ArrowLeft, ArrowUpRight, Lock, FlaskConical } from "lucide-react";
+import { ArrowLeft, ArrowUpRight, Lock } from "lucide-react";
 import Navbar from "../../components/site/Navbar";
 import Footer from "../../components/site/Footer";
 import { getStrategy, RISK_DISCLOSURE } from "./strategies";
@@ -58,19 +58,12 @@ export default function StrategyDetail() {
               <h1 className="font-display font-black tracking-tighter text-white text-4xl md:text-5xl leading-[0.95]">{strategy.title}</h1>
               <p className="mt-4 text-base font-light text-slate-400">{strategy.subtitle}</p>
 
-              <div className="flex items-center gap-2 mt-6">
-                {strategy.optionsLive ? (
-                  <>
-                    <FlaskConical size={12} className="text-amber-400" />
-                    <span className="font-mono-ui text-xs uppercase tracking-wider text-amber-400">Paper Trading — Live</span>
-                  </>
-                ) : (
-                  <>
-                    <Lock size={12} className="text-slate-500" />
-                    <span className="font-mono-ui text-xs uppercase tracking-wider text-slate-400">Coming Soon</span>
-                  </>
-                )}
-              </div>
+              {!strategy.optionsLive && (
+                <div className="flex items-center gap-2 mt-6">
+                  <Lock size={12} className="text-slate-500" />
+                  <span className="font-mono-ui text-xs uppercase tracking-wider text-slate-400">Coming Soon</span>
+                </div>
+              )}
 
               <div className="flex flex-wrap gap-2 mt-5">
                 {strategy.assetClass && (
