@@ -10,10 +10,64 @@
 // `capitalValue` is an internal computation input (the % base for Net
 // Return/CAGR), not something rendered to the public — don't add a public
 // "Capital Required" field back without checking this is still true.
+// Order below is deliberate: Convexity Window / Gamma Backspread lead
+// (they're the only strategies currently running -- see PAUSED note on the
+// legacy three), not just appended at the end.
 export const STRATEGIES = [
   {
-    slug: "prism-alpha",
+    slug: "convexity-window",
     no: "01",
+    apiPath: "convexity_window",
+    kind: "options-live",
+    optionsLive: true,
+    title: "Convexity Window",
+    subtitle: "Rule-based NIFTY / BANK NIFTY options buying",
+    assetClass: "Index Options",
+    tags: ["Rule-Based", "Long Options", "Paper Trading"],
+    summary: {
+      what: "Convexity Window buys a single near-the-money NIFTY or BANK NIFTY option only when a set of volatility and price filters suggest convexity is cheap relative to the underlying's recent behavior — never on discretion.",
+      market: "NIFTY & BANK NIFTY Weekly Options",
+      objective: "Capture short, sharp directional moves by paying for convexity only when it looks statistically underpriced.",
+      riskProfile: "Defined-risk, long-options only — the maximum loss on any trade is capped at the premium paid, with a hard stop-loss and a Greeks-based exit besides.",
+      holdingPeriod: "Intraday — every position is opened and closed within the same trading session (hard time stop 15:15 IST).",
+      executionStyle: "Fully systematic. Every filter and every exit rule is disclosed in full below — nothing about this strategy's logic is hidden.",
+      suitableInvestor: "Not investment advice. Currently in PAPER TRADING — no real capital is deployed. Published for research and transparency.",
+    },
+    methodology:
+      "Convexity Window computes implied volatility, Delta, Gamma, Theta and Vega itself from live option prices (not broker-supplied Greeks), and only enters a long call or put when: implied volatility sits meaningfully below 20-day realized volatility, the option's own breakeven move is smaller than the underlying's typical daily range, and price is trading on the same side of both the prior close and a 20-period intraday average. Full entry and exit rules are in the Rules panel below.",
+  },
+  {
+    slug: "gamma-backspread",
+    no: "02",
+    apiPath: "gamma_backspread",
+    kind: "options-live",
+    optionsLive: true,
+    title: "Gamma Backspread",
+    subtitle: "Rule-based near-zero-theta options structure",
+    assetClass: "Index Options",
+    tags: ["Rule-Based", "Options Structure", "Paper Trading"],
+    summary: {
+      what: "Gamma Backspread sells one at-the-money option and buys two further out-of-the-money options of the same type and expiry, sized so the package carries close to zero time decay while staying net long Gamma — entered only when implied volatility is cheap on its own trailing history.",
+      market: "NIFTY & BANK NIFTY Options",
+      objective: "Hold long convexity for longer than a single-option trade can (5–12 days to expiry) without theta working hard against the position.",
+      riskProfile: "Defined-risk on the long legs; the structure's overall risk is bounded by construction, not unlimited — full mechanics disclosed below.",
+      holdingPeriod: "Multi-day — positions are typically held several sessions, exited by rule (target/stop, theta drift, or 2 days-to-expiry, whichever comes first).",
+      executionStyle: "Fully systematic. Every filter and every exit rule is disclosed in full below — nothing about this strategy's logic is hidden.",
+      suitableInvestor: "Not investment advice. Currently in PAPER TRADING — no real capital is deployed. Published for research and transparency.",
+    },
+    methodology:
+      "Gamma Backspread computes implied volatility and Greeks itself from live option prices (not broker-supplied Greeks). It only enters when the at-the-money option's implied volatility sits in the cheapest third of its own trailing history, and only if an out-of-the-money strike exists that brings the package's net time decay close to zero while keeping Gamma and Vega positive. Full entry and exit rules are in the Rules panel below.",
+  },
+  // PAUSED (2026-07-29, to cut backend memory/load): backtest, live
+  // evaluation, and the admin panel for these three are all disabled on
+  // the backend (see server.py's DISABLED_FEATURES) -- nothing deleted,
+  // just stopped. They already showed "Coming Soon" with no real data on
+  // the public site before this (see the module docstring below), so the
+  // only visible change is the admin panel now shows a paused notice too
+  // instead of live buttons (see Admin.jsx's BlackBoxPanel).
+  {
+    slug: "prism-alpha",
+    no: "03",
     apiPath: "prism-alpha",
     kind: "prism",
     title: "Prism Alpha",
@@ -36,7 +90,7 @@ export const STRATEGIES = [
   },
   {
     slug: "prism-alpha-2",
-    no: "02",
+    no: "04",
     apiPath: "prism-alpha-2",
     kind: "prism",
     title: "Prism Alpha II",
@@ -59,7 +113,7 @@ export const STRATEGIES = [
   },
   {
     slug: "lumen-sip",
-    no: "03",
+    no: "05",
     apiPath: "lumen-sip",
     kind: "lumen",
     title: "Lumen SIP",
@@ -78,50 +132,6 @@ export const STRATEGIES = [
     },
     methodology:
       "Lumen SIP is a signal-based ETF allocation framework that shifts monthly contributions between an invested and cash phase using an internally developed trend model, built on publicly available research. The specific signal construction and parameters are proprietary and not disclosed.",
-  },
-  {
-    slug: "convexity-window",
-    no: "04",
-    apiPath: "convexity_window",
-    kind: "options-live",
-    optionsLive: true,
-    title: "Convexity Window",
-    subtitle: "Rule-based NIFTY / BANK NIFTY options buying",
-    assetClass: "Index Options",
-    tags: ["Rule-Based", "Long Options", "Paper Trading"],
-    summary: {
-      what: "Convexity Window buys a single near-the-money NIFTY or BANK NIFTY option only when a set of volatility and price filters suggest convexity is cheap relative to the underlying's recent behavior — never on discretion.",
-      market: "NIFTY & BANK NIFTY Weekly Options",
-      objective: "Capture short, sharp directional moves by paying for convexity only when it looks statistically underpriced.",
-      riskProfile: "Defined-risk, long-options only — the maximum loss on any trade is capped at the premium paid, with a hard stop-loss and a Greeks-based exit besides.",
-      holdingPeriod: "Intraday — every position is opened and closed within the same trading session (hard time stop 15:15 IST).",
-      executionStyle: "Fully systematic. Every filter and every exit rule is disclosed in full below — nothing about this strategy's logic is hidden.",
-      suitableInvestor: "Not investment advice. Currently in PAPER TRADING — no real capital is deployed. Published for research and transparency.",
-    },
-    methodology:
-      "Convexity Window computes implied volatility, Delta, Gamma, Theta and Vega itself from live option prices (not broker-supplied Greeks), and only enters a long call or put when: implied volatility sits meaningfully below 20-day realized volatility, the option's own breakeven move is smaller than the underlying's typical daily range, and price is trading on the same side of both the prior close and a 20-period intraday average. Full entry and exit rules are in the Rules panel below.",
-  },
-  {
-    slug: "gamma-backspread",
-    no: "05",
-    apiPath: "gamma_backspread",
-    kind: "options-live",
-    optionsLive: true,
-    title: "Gamma Backspread",
-    subtitle: "Rule-based near-zero-theta options structure",
-    assetClass: "Index Options",
-    tags: ["Rule-Based", "Options Structure", "Paper Trading"],
-    summary: {
-      what: "Gamma Backspread sells one at-the-money option and buys two further out-of-the-money options of the same type and expiry, sized so the package carries close to zero time decay while staying net long Gamma — entered only when implied volatility is cheap on its own trailing history.",
-      market: "NIFTY & BANK NIFTY Options",
-      objective: "Hold long convexity for longer than a single-option trade can (5–12 days to expiry) without theta working hard against the position.",
-      riskProfile: "Defined-risk on the long legs; the structure's overall risk is bounded by construction, not unlimited — full mechanics disclosed below.",
-      holdingPeriod: "Multi-day — positions are typically held several sessions, exited by rule (target/stop, theta drift, or 2 days-to-expiry, whichever comes first).",
-      executionStyle: "Fully systematic. Every filter and every exit rule is disclosed in full below — nothing about this strategy's logic is hidden.",
-      suitableInvestor: "Not investment advice. Currently in PAPER TRADING — no real capital is deployed. Published for research and transparency.",
-    },
-    methodology:
-      "Gamma Backspread computes implied volatility and Greeks itself from live option prices (not broker-supplied Greeks). It only enters when the at-the-money option's implied volatility sits in the cheapest third of its own trailing history, and only if an out-of-the-money strike exists that brings the package's net time decay close to zero while keeping Gamma and Vega positive. Full entry and exit rules are in the Rules panel below.",
   },
 ];
 

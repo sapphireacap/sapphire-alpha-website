@@ -12,11 +12,20 @@ import {
 //   "sharpe"    -> the standalone SharpeDashboardTool, embedded
 //   "exitline"  -> the standalone ExitlineTool, embedded (segment -> scrip
 //                  -> proprietary level ladder + SL/TP)
+// `live: false` modules are paused (2026-07-29) to cut backend memory/load
+// while the Render free-tier instance keeps crash-restarting on its memory
+// limit -- their pages show a "Coming Soon" placeholder and make no API
+// calls at all, instead of their normal dashboard. Nothing about the
+// module's own data or backend code is touched; flip the field back to
+// `true` to fully restore. Index Vector, Exitline, and Momentum Leaders
+// stay live throughout -- every other module is explicitly `live: false`
+// below (set on each one, not defaulted, so it's never ambiguous).
 export const MODULES = [
   {
     slug: "index-vector",
     no: "01",
     kind: "vector",
+    live: true,
     icon: Compass,
     title: "Index Vector",
     shortDescription: "Institutional market regime confirmation model.",
@@ -43,6 +52,7 @@ export const MODULES = [
     slug: "exitline",
     no: "02",
     kind: "exitline",
+    live: true,
     icon: Crosshair,
     title: "Intraday Exitline",
     shortDescription: "Proprietary intraday levels with a suggested SL and TP.",
@@ -60,6 +70,7 @@ export const MODULES = [
     slug: "momentum-engine",
     no: "03",
     kind: "scanner",
+    live: true,
     scannerKey: "momentum",
     icon: Activity,
     title: "Intraday Momentum Leaders",
@@ -78,6 +89,7 @@ export const MODULES = [
     slug: "swing-picks",
     no: "04",
     kind: "scanner",
+    live: false,
     scannerKey: "swing_picks",
     icon: Target,
     title: "Swing Picks",
@@ -96,6 +108,7 @@ export const MODULES = [
     slug: "relative-strength",
     no: "05",
     kind: "scanner",
+    live: false,
     scannerKey: "relative_strength",
     icon: Radar,
     title: "Relative Strength Engine",
@@ -114,6 +127,7 @@ export const MODULES = [
     slug: "sharpe-dashboard",
     no: "06",
     kind: "sharpe",
+    live: false,
     icon: BarChart3,
     title: "Sharpe Dashboard",
     shortDescription: "Risk-adjusted stock ranking engine.",
@@ -131,6 +145,7 @@ export const MODULES = [
     slug: "ewma-scanner",
     no: "07",
     kind: "ewma",
+    live: false,
     icon: Sliders,
     title: "EWMA Scanner",
     shortDescription: "Trend acceleration and crossover engine.",
@@ -148,6 +163,7 @@ export const MODULES = [
     slug: "breakout-candidates",
     no: "08",
     kind: "scanner",
+    live: false,
     scannerKey: "breakout",
     icon: TrendingUp,
     title: "Breakout Candidates",

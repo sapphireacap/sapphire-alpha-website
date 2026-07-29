@@ -7,9 +7,16 @@ name: Swing Picks — daily LCP refresh
 # SIP/Prism Alpha all had before this session. Does NOT touch the pick list
 # itself (ticker/company/buy_at) -- that's a separate, external 10-day sync.
 # 10:30 UTC = 16:00 IST, weekdays only.
+#
+# PAUSED (2026-07-29): schedule trigger removed to cut Render memory/load
+# while the free-tier instance is crash-restarting on its memory limit --
+# Swing Picks is hidden from the public Alpha Terminal directory for now
+# too. Nothing deleted: workflow_dispatch below still lets this be run
+# manually, and un-commenting the `schedule:` block below restores the
+# original cadence exactly.
 on:
-  schedule:
-    - cron: "30 10 * * 1-5"
+  # schedule:
+  #   - cron: "30 10 * * 1-5"
   workflow_dispatch: {}
 
 jobs:

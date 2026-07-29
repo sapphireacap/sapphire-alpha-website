@@ -9,6 +9,7 @@ import Navbar from "@/components/site/Navbar";
 import Hero from "@/components/site/Hero";
 import EditorialMarquee from "@/components/site/EditorialMarquee";
 import ComingSoon from "@/components/site/ComingSoon";
+import PausedFeature from "@/components/site/PausedFeature";
 import About from "@/components/site/About";
 import Manifesto from "@/components/site/Manifesto";
 import Research from "@/components/site/Research";
@@ -69,20 +70,29 @@ const AppShell = () => {
             <Route path="/alpha-terminal/:slug" element={<ModuleDetail />} />
             <Route path="/ipos" element={<Ipos />} />
             <Route path="/ipos/:id" element={<IpoDetail />} />
-            <Route path="/research" element={<Aurora />} />
-            <Route path="/research/:symbol" element={<FacetView />} />
+            {/* Research (Aurora/FacetView) paused 2026-07-29 to cut backend
+                memory/load -- real components untouched below, just not
+                routed to right now. Swap back to <Aurora />/<FacetView />
+                to restore. */}
+            <Route path="/research" element={<PausedFeature title="Research" description="The Research terminal is temporarily paused. It'll be back online shortly." />} />
+            <Route path="/research/:symbol" element={<PausedFeature title="Research" description="The Research terminal is temporarily paused. It'll be back online shortly." />} />
             <Route path="/admin33" element={<Admin />} />
             <Route path="/signup" element={<SignupPage />} />
             <Route path="/login" element={<LoginPage />} />
             <Route path="/forgot-password" element={<ForgotPasswordPage />} />
             <Route path="/reset-password" element={<ResetPasswordPage />} />
             <Route path="/verify-email" element={<VerifyEmailPage />} />
-            <Route path="/journal" element={<JournalLayout />}>
+            {/* Trade Journal paused 2026-07-29 to cut backend memory/load --
+                real JournalLayout/Dashboard/TradeEntry/TradeLog/Reviews
+                components untouched below, just not routed to right now.
+                Swap back to the commented block below to restore. */}
+            <Route path="/journal/*" element={<PausedFeature title="Trade Journal" description="The Trade Journal is temporarily paused. It'll be back online shortly." />} />
+            {/* <Route path="/journal" element={<JournalLayout />}>
               <Route index element={<Dashboard />} />
               <Route path="new" element={<TradeEntry />} />
               <Route path="trades" element={<TradeLog />} />
               <Route path="reviews" element={<Reviews />} />
-            </Route>
+            </Route> */}
             <Route path="/privacy" element={<LegalPage page="privacy" />} />
             <Route path="/terms" element={<LegalPage page="terms" />} />
             <Route path="/disclaimer" element={<LegalPage page="disclaimer" />} />

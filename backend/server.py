@@ -12,15 +12,50 @@ import httpx
 import bcrypt
 import jwt
 import zxcvbn
+
+# ---------------------------------------------------------------------------
+# Temporary cost-control measure (2026-07-29): the Render free-tier instance
+# (512 MB) has been crash-restarting from hitting its memory limit multiple
+# times a day, unrelated to any one feature (confirmed: crashes happened on
+# commits both before and after that day's feature work). Rather than
+# upgrade the plan, the least-essential features are paused here -- their
+# IMPORTS are skipped entirely (not just their routes hidden), so heavy
+# optional dependencies (matplotlib for Prism Alpha's backtest PNGs,
+# quant_lab's Nifty500-wide Sharpe/EWMA computations, stock_terminal's
+# scraping/agent stack) never load into the process at all. This is the
+# only way a "pause" actually reduces steady-state memory -- hiding a route
+# while still importing its module saves nothing.
+# NOTHING IS DELETED. Every paused module's code and data are untouched;
+# set DISABLED_FEATURES="" (or remove the env var and change the default
+# below back to "") to fully restore everything with no other changes.
+# Kept running: Index Vector, Exitline, Momentum Leaders (core `api_router`
+# routes + swing-picks/relative-strength/breakout share the same generic
+# `/terminal/stocks` endpoint so aren't separately gate-able here -- their
+# own cron refreshes are paused instead, see the .github/workflows/ files),
+# IPO/GMP, the new Convexity Window / Gamma Backspread options strategies.
+# Paused: Journal (+ its analytics router), Quant Lab (Sharpe Dashboard +
+# EWMA Scanner), Stock Terminal / Research (Aurora/Facet View), and the
+# legacy Black Box router (Prism Alpha, Prism Alpha II, Lumen SIP -- their
+# admin panels, live evaluation, and backtesting).
+DISABLED_FEATURES = set(
+    f.strip() for f in os.environ.get(
+        "DISABLED_FEATURES", "journal,quant_lab,stock_terminal,blackbox_legacy"
+    ).split(",") if f.strip()
+)
+
 from definedge_service import DefinedgeService, DefinedgeError, derive_bias, derive_bias_4, INDEX_CONFIG
-from journal_routes import create_journal_router
-from journal_analytics import create_analytics_router
-from quant_lab import create_quant_lab_router
+if "journal" not in DISABLED_FEATURES:
+    from journal_routes import create_journal_router
+    from journal_analytics import create_analytics_router
+if "quant_lab" not in DISABLED_FEATURES:
+    from quant_lab import create_quant_lab_router
 from ipo_routes import create_ipo_router
-from blackbox_routes import create_blackbox_router
+if "blackbox_legacy" not in DISABLED_FEATURES:
+    from blackbox_routes import create_blackbox_router
 from blackbox_options_routes import create_blackbox_options_router
 from exitline_routes import create_exitline_router
-from stock_terminal_routes import create_stock_terminal_router
+if "stock_terminal" not in DISABLED_FEATURES:
+    from stock_terminal_routes import create_stock_terminal_router
 from swing_picks_lcp import update_swing_picks_lcp
 from momentum_track_record import (
     capture_entries as capture_track_record_entries,
@@ -1314,24 +1349,31 @@ async def on_startup():
         logger.warning(f"Index creation: {e}")
 
 
-journal_router = create_journal_router(db, get_current_user, log_audit_event, definedge)
-analytics_router = create_analytics_router(db, get_current_user)
-quant_lab_router = create_quant_lab_router(db, definedge, get_current_admin, CRON_SECRET)
 ipo_router = create_ipo_router(db, get_current_admin, CRON_SECRET)
-blackbox_router = create_blackbox_router(db, definedge, get_current_admin, CRON_SECRET)
 blackbox_options_router = create_blackbox_options_router(db, definedge, get_current_admin, CRON_SECRET)
 exitline_router = create_exitline_router(db, definedge)
-stock_terminal_router = create_stock_terminal_router(db, definedge, get_current_admin, CRON_SECRET)
 
 app.include_router(api_router)
-app.include_router(journal_router, prefix="/api")
-app.include_router(analytics_router, prefix="/api")
-app.include_router(quant_lab_router, prefix="/api")
 app.include_router(ipo_router, prefix="/api")
-app.include_router(blackbox_router, prefix="/api")
 app.include_router(blackbox_options_router, prefix="/api")
 app.include_router(exitline_router, prefix="/api")
-app.include_router(stock_terminal_router, prefix="/api")
+
+# Paused features (see DISABLED_FEATURES above) -- router creation/mounting
+# skipped entirely, not just hidden, matching the skipped imports above.
+if "journal" not in DISABLED_FEATURES:
+    journal_router = create_journal_router(db, get_current_user, log_audit_event, definedge)
+    analytics_router = create_analytics_router(db, get_current_user)
+    app.include_router(journal_router, prefix="/api")
+    app.include_router(analytics_router, prefix="/api")
+if "quant_lab" not in DISABLED_FEATURES:
+    quant_lab_router = create_quant_lab_router(db, definedge, get_current_admin, CRON_SECRET)
+    app.include_router(quant_lab_router, prefix="/api")
+if "blackbox_legacy" not in DISABLED_FEATURES:
+    blackbox_router = create_blackbox_router(db, definedge, get_current_admin, CRON_SECRET)
+    app.include_router(blackbox_router, prefix="/api")
+if "stock_terminal" not in DISABLED_FEATURES:
+    stock_terminal_router = create_stock_terminal_router(db, definedge, get_current_admin, CRON_SECRET)
+    app.include_router(stock_terminal_router, prefix="/api")
 
 app.add_middleware(
     CORSMiddleware,

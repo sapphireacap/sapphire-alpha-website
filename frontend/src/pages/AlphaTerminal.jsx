@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import axios from "axios";
 import { motion, AnimatePresence } from "framer-motion";
 import { Link } from "react-router-dom";
-import { ArrowUpRight, TrendingUp, TrendingDown, Minus, ExternalLink, X } from "lucide-react";
+import { ArrowUpRight, TrendingUp, TrendingDown, Minus, ExternalLink, X, Lock } from "lucide-react";
 import Navbar from "../components/site/Navbar";
 import Footer from "../components/site/Footer";
 import ParticleField from "../components/site/ParticleField";
@@ -395,9 +395,49 @@ const useLastUpdateLabel = (module) => {
   return "On demand";
 };
 
+// Paused modules (module.live === false, see modules.js) skip the live-data
+// hook entirely (no API call) and render a locked card instead — same
+// visual treatment as Black Box's "Coming Soon" cards, so a paused Alpha
+// Terminal module and a not-yet-released Black Box strategy read
+// consistently across the site.
+const PausedDirectoryCard = ({ module, index }) => {
+  const Icon = module.icon;
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 20 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.6, ease: EASE, delay: index * 0.06 }}
+    >
+      <div
+        className="relative block h-full rounded-2xl border border-white/10 bg-[#0A0D18] p-6 opacity-70"
+        data-testid={`module-card-${module.slug}`}
+      >
+        <div className="flex items-start justify-between gap-3 mb-5">
+          <span className="flex items-center gap-3">
+            <span className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-white/10 bg-white/[0.03] text-slate-500">
+              <Icon size={16} />
+            </span>
+            <span className="font-mono-ui text-xs text-slate-500">{module.no}</span>
+          </span>
+        </div>
+        <h3 className="font-display text-xl font-bold text-white tracking-tight mb-1.5">{module.title}</h3>
+        <p className="text-sm font-light text-slate-500 mb-6 leading-relaxed">{module.shortDescription}</p>
+        <div className="flex items-center justify-between gap-3 pt-4 border-t border-white/[0.06]">
+          <span className="font-mono-ui text-[10px] uppercase tracking-wider text-slate-500">{module.category}</span>
+          <span className="inline-flex items-center gap-1.5 font-mono-ui text-[11px] uppercase tracking-wider text-slate-500">
+            <Lock size={10} /> Coming Soon
+          </span>
+        </div>
+      </div>
+    </motion.div>
+  );
+};
+
 const DirectoryCard = ({ module, index, onAbout }) => {
   const lastUpdate = useLastUpdateLabel(module);
   const Icon = module.icon;
+
+  if (!module.live) return <PausedDirectoryCard module={module} index={index} />;
 
   return (
     <motion.div

@@ -423,7 +423,7 @@ export default function ModuleDetail() {
 
   useEffect(() => {
     window.scrollTo(0, 0);
-    if (!module || module.kind !== "vector") return;
+    if (!module || !module.live || module.kind !== "vector") return;
 
     const loadSignals = () => {
       module.indices.forEach((idx) => {
@@ -463,9 +463,15 @@ export default function ModuleDetail() {
       <main className="relative bg-void min-h-screen">
         <Header module={module} />
         <div className="container-x">
-          <LiveDashboard module={module} signals={signals} />
-          {module.kind !== "exitline" && (
-            <HistoricalPerformance module={module} />
+          {module.live ? (
+            <>
+              <LiveDashboard module={module} signals={signals} />
+              {module.kind !== "exitline" && (
+                <HistoricalPerformance module={module} />
+              )}
+            </>
+          ) : (
+            <PausedModuleNotice />
           )}
         </div>
       </main>
@@ -473,3 +479,15 @@ export default function ModuleDetail() {
     </>
   );
 }
+
+// Shown instead of the live dashboard for a paused module (module.live ===
+// false, see modules.js) -- makes no API calls, matches the "Coming Soon"
+// treatment used elsewhere on the site (Black Box's StrategyDetail).
+const PausedModuleNotice = () => (
+  <Section no="01" title="Live Dashboard" testId="section-live-dashboard">
+    <div className={`${SURFACE} border-dashed px-6 py-14 text-center`} data-testid="module-coming-soon">
+      <p className="font-mono-ui text-[11px] uppercase tracking-[0.28em] text-slate-600 mb-3">Coming Soon</p>
+      <p className="text-sm font-light text-slate-500 max-w-sm mx-auto">This module is temporarily paused. Research access will resume once it's back online.</p>
+    </div>
+  </Section>
+);

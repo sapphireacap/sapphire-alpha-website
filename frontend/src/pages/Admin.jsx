@@ -460,6 +460,13 @@ const IndexTrackRecordPanel = ({ onAuthError }) => {
 };
 
 /* ----------------------------- Quant Lab ----------------------------- */
+// PAUSED (2026-07-29, to cut backend memory/load) -- quant_lab_router isn't
+// mounted on the backend right now (see server.py's DISABLED_FEATURES), so
+// this panel's calls would just 404/no-op. Same pattern as
+// LEGACY_BLACKBOX_PAUSED above: nothing deleted, flip back to false once
+// the backend router is re-enabled.
+const QUANT_LAB_PAUSED = true;
+
 const QuantLabPanel = ({ onAuthError }) => {
   const [status, setStatus] = useState(null);
   const [starting, setStarting] = useState(false);
@@ -496,6 +503,17 @@ const QuantLabPanel = ({ onAuthError }) => {
   };
 
   const running = status?.status === "running";
+
+  if (QUANT_LAB_PAUSED) {
+    return (
+      <div className="glass rounded-2xl p-6 md:p-8 mb-10" data-testid="admin-quant-lab-panel">
+        <h2 className="font-display text-xl font-bold text-white mb-2">Quant Lab — Sharpe Dashboard / EWMA Scanner</h2>
+        <p className="text-sm text-slate-400 leading-relaxed">
+          Paused to reduce backend memory usage. No code or data was deleted; this panel and its backend routes come back exactly as they were once re-enabled.
+        </p>
+      </div>
+    );
+  }
 
   return (
     <div className="glass rounded-2xl p-6 md:p-8 mb-10" data-testid="admin-quant-lab-panel">
@@ -692,6 +710,16 @@ const LumenLiveTrackingPanel = ({ onAuthError }) => {
   );
 };
 
+// PAUSED (2026-07-29, to cut backend memory/load): the legacy Black Box
+// router (Prism Alpha, Prism Alpha II, Lumen SIP -- evaluate/backtest/
+// status/portfolio/signals routes) is no longer mounted on the backend
+// (see server.py's DISABLED_FEATURES), so every call this panel makes
+// would just 404. Rather than let that surface as broken buttons and
+// silent failures, the panel below is skipped entirely in favor of a
+// short notice -- none of its code is touched, flip this back to false
+// (once the backend routes are re-enabled) to restore it exactly as-is.
+const LEGACY_BLACKBOX_PAUSED = true;
+
 const BlackBoxPanel = ({ onAuthError }) => {
   const [running, setRunning] = useState(false);
   const [lastResult, setLastResult] = useState(null);
@@ -758,6 +786,18 @@ const BlackBoxPanel = ({ onAuthError }) => {
       setLumenBacktesting(false);
     }
   };
+
+  if (LEGACY_BLACKBOX_PAUSED) {
+    return (
+      <div className="glass rounded-2xl p-6 md:p-8 mb-10" data-testid="admin-blackbox-panel">
+        <h2 className="font-display text-xl font-bold text-white mb-2">Black Box — Prism Alpha / Lumen SIP</h2>
+        <p className="text-sm text-slate-400 leading-relaxed">
+          Paused to reduce backend memory usage — evaluation, backtesting, and status for Prism Alpha, Prism Alpha II, and Lumen SIP are all temporarily disabled.
+          No code or data was deleted; this panel and its backend routes come back exactly as they were once re-enabled.
+        </p>
+      </div>
+    );
+  }
 
   return (
     <div className="glass rounded-2xl p-6 md:p-8 mb-10" data-testid="admin-blackbox-panel">
@@ -838,7 +878,13 @@ const BlackBoxPanel = ({ onAuthError }) => {
           on the public site; these routes require this admin session's token.
         </p>
         <div className="space-y-3" data-testid="admin-strategy-reports">
-          {STRATEGIES.map((s) => <StrategyReportAccordion key={s.slug} strategy={s} onAuthError={onAuthError} />)}
+          {/* This accordion's data layer (adapters.js's fetchStrategyView) only
+              understands "prism"/"lumen" kinds -- Convexity Window / Gamma
+              Backspread ("options-live") have their own full public report
+              (OptionsStrategyDetail.jsx) instead, not this admin-only shape. */}
+          {STRATEGIES.filter((s) => s.kind === "prism" || s.kind === "lumen").map((s) => (
+            <StrategyReportAccordion key={s.slug} strategy={s} onAuthError={onAuthError} />
+          ))}
         </div>
       </div>
     </div>

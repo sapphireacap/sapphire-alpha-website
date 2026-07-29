@@ -6,9 +6,15 @@ name: Lumen SIP — daily live evaluation
 # last recorded snapshot, safe to run even if a day was missed) but had
 # nothing scheduling it — same gap momentum/GMP had before this session.
 # 10:30 UTC = 16:00 IST, after NSE close (15:30 IST), weekdays only.
+#
+# PAUSED (2026-07-29): schedule trigger removed to cut Render memory/load
+# while the free-tier instance is crash-restarting on its memory limit.
+# Nothing deleted: workflow_dispatch below still lets this be run manually,
+# and un-commenting the `schedule:` block below restores the original
+# cadence exactly.
 on:
-  schedule:
-    - cron: "30 10 * * 1-5"
+  # schedule:
+  #   - cron: "30 10 * * 1-5"
   workflow_dispatch: {}
 
 jobs:

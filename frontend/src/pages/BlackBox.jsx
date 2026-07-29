@@ -111,7 +111,7 @@ const LiveStrategyCard = ({ strategy, index, statusSummary, className = "" }) =>
 
 export default function BlackBox() {
   useEffect(() => { window.scrollTo(0, 0); }, []);
-  const [alphaI, alphaII, lumen, convexity, backspread] = STRATEGIES;
+  const [convexity, backspread, alphaI, alphaII, lumen] = STRATEGIES;
   const [liveStatus, setLiveStatus] = useState({});
 
   useEffect(() => {
@@ -159,6 +159,21 @@ export default function BlackBox() {
 
         <section className="relative pb-16 md:pb-24">
           <div className="container-x">
+            <p className="font-mono-ui text-xs uppercase tracking-[0.2em] text-amber-400 mb-6 max-w-4xl mx-auto">Live Track Record — Paper Trading</p>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 md:gap-8 max-w-4xl mx-auto" data-testid="black-box-options-strategies">
+              <LiveStrategyCard strategy={convexity} index={0} statusSummary={liveStatus[convexity.apiPath]} />
+              <LiveStrategyCard strategy={backspread} index={1} statusSummary={liveStatus[backspread.apiPath]} />
+            </div>
+          </div>
+        </section>
+
+        {/* Paused 2026-07-29 (backend evaluation/backtest/admin panel all
+            disabled, see server.py's DISABLED_FEATURES) -- still shown here
+            exactly as before (nothing deleted), so nothing changes visually
+            beyond the section ordering above promoting the two live
+            strategies first. */}
+        <section className="relative pb-28 md:pb-40">
+          <div className="container-x">
             <p className="font-mono-ui text-xs uppercase tracking-[0.2em] text-slate-500 mb-6 max-w-4xl mx-auto">In Validation</p>
             <div className="flex flex-col items-center gap-6 md:gap-8 max-w-4xl mx-auto" data-testid="black-box-strategies">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6 md:gap-8 w-full">
@@ -166,16 +181,6 @@ export default function BlackBox() {
                 <StrategyCard strategy={alphaII} index={1} />
               </div>
               <StrategyCard strategy={lumen} index={2} className="w-full md:w-[calc(50%-1rem)]" />
-            </div>
-          </div>
-        </section>
-
-        <section className="relative pb-28 md:pb-40">
-          <div className="container-x">
-            <p className="font-mono-ui text-xs uppercase tracking-[0.2em] text-amber-400 mb-6 max-w-4xl mx-auto">Live Track Record — Paper Trading</p>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 md:gap-8 max-w-4xl mx-auto" data-testid="black-box-options-strategies">
-              <LiveStrategyCard strategy={convexity} index={0} statusSummary={liveStatus[convexity.apiPath]} />
-              <LiveStrategyCard strategy={backspread} index={1} statusSummary={liveStatus[backspread.apiPath]} />
             </div>
           </div>
         </section>
