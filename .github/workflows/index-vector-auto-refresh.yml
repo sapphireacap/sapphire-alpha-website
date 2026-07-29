@@ -1,0 +1,39 @@
+name: Index Vector — auto refresh
+
+# Recomputes the confluence bias + flip levels for all 4 Index Vector
+# indices (NIFTY/BANKNIFTY/SENSEX/BANKEX) throughout the trading session.
+# /admin/definedge/auto-refresh already existed for exactly this (skips
+# cleanly outside market hours / when Definedge isn't connected) but had
+# nothing scheduling it -- same gap as every other feature this session.
+# Confirmed live: real signal data was sitting 19 hours stale with no
+# indication anything was wrong, because nothing was calling this route at
+# all. Note this does NOT remove the daily manual OTP login requirement --
+# Definedge's own session resets every trading day, so this cron will
+# correctly no-op (see the route's own "not connected" skip) until that
+# morning login has been done; it only fixes staleness DURING a session
+# that's already been logged into.
+# 03:45-10:00 UTC = 09:15-15:30 IST, weekdays only, every 5 minutes (the
+# finest granularity GitHub Actions cron reliably supports).
+on:
+  schedule:
+    - cron: "45,50,55 3 * * 1-5"
+    - cron: "*/5 4-9 * * 1-5"
+    - cron: "0 10 * * 1-5"
+  workflow_dispatch: {}
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Call definedge/auto-refresh
+        run: |
+          status=$(curl -s -o response.json -w "%{http_code}" -X POST \
+            "https://sapphire-alpha-backend.onrender.com/api/admin/definedge/auto-refresh" \
+            -H "X-Cron-Key: ${{ secrets.CRON_SECRET }}")
+          echo "HTTP status: $status"
+          cat response.json
+          echo
+          if [ "$status" != "200" ]; then
+            echo "::error::definedge/auto-refresh failed with status $status"
+            exit 1
+          fi

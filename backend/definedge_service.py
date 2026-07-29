@@ -268,10 +268,27 @@ class DefinedgeService:
         return doc["api_session_key"]
 
     async def status(self):
+        """`connected` requires BOTH a stored session key AND that it was
+        verified on TODAY's IST calendar date -- matching the admin UI's own
+        documented behavior ("session resets every trading day — repeat
+        this each morning"). The old check only looked for key presence,
+        so it stayed green indefinitely even once the underlying session
+        had gone stale days ago — caught live: real Index Vector data was
+        19 hours stale (no auto-refresh cron ever existed, see server.py's
+        /admin/definedge/auto-refresh) while this badge showed CONNECTED
+        the whole time, giving false reassurance instead of the signal it
+        was supposed to be."""
         doc = await self.db.definedge_session.find_one({"id": "current"}, {"_id": 0})
+        connected = False
+        if doc and doc.get("api_session_key") and doc.get("updated_at"):
+            try:
+                updated = datetime.fromisoformat(doc["updated_at"]).astimezone(IST)
+                connected = updated.date() == datetime.now(IST).date()
+            except ValueError:
+                connected = False
         return {
             "configured": self.configured(),
-            "connected": bool(doc and doc.get("api_session_key")),
+            "connected": connected,
             "session_updated_at": doc.get("updated_at") if doc else None,
         }
 
