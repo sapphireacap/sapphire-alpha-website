@@ -18,6 +18,7 @@ from journal_analytics import create_analytics_router
 from quant_lab import create_quant_lab_router
 from ipo_routes import create_ipo_router
 from blackbox_routes import create_blackbox_router
+from blackbox_options_routes import create_blackbox_options_router
 from exitline_routes import create_exitline_router
 from stock_terminal_routes import create_stock_terminal_router
 from swing_picks_lcp import update_swing_picks_lcp
@@ -1301,6 +1302,14 @@ async def on_startup():
         await db.stock_computed_metrics.create_index("symbol", unique=True)
         await db.stock_agent_cache.create_index("symbol", unique=True)
         await db.stock_agent_cache.create_index("expires_at", expireAfterSeconds=0)
+        await db.blackbox_signals.create_index([("index", 1), ("strategy_id", 1), ("mode", 1), ("status", 1)])
+        await db.blackbox_signals.create_index([("mode", 1), ("timestamp", -1)])
+        await db.blackbox_daily_performance.create_index(
+            [("date", 1), ("index", 1), ("strategy_id", 1), ("mode", 1)], unique=True
+        )
+        await db.blackbox_strategy_status.create_index([("index", 1), ("strategy_id", 1), ("mode", 1)], unique=True)
+        await db.blackbox_iv_history.create_index([("index", 1), ("strategy_id", 1), ("date", 1)], unique=True)
+        await db.blackbox_config.create_index("index", unique=True)
     except Exception as e:  # noqa: BLE001
         logger.warning(f"Index creation: {e}")
 
@@ -1310,6 +1319,7 @@ analytics_router = create_analytics_router(db, get_current_user)
 quant_lab_router = create_quant_lab_router(db, definedge, get_current_admin, CRON_SECRET)
 ipo_router = create_ipo_router(db, get_current_admin, CRON_SECRET)
 blackbox_router = create_blackbox_router(db, definedge, get_current_admin, CRON_SECRET)
+blackbox_options_router = create_blackbox_options_router(db, definedge, get_current_admin, CRON_SECRET)
 exitline_router = create_exitline_router(db, definedge)
 stock_terminal_router = create_stock_terminal_router(db, definedge, get_current_admin, CRON_SECRET)
 
@@ -1319,6 +1329,7 @@ app.include_router(analytics_router, prefix="/api")
 app.include_router(quant_lab_router, prefix="/api")
 app.include_router(ipo_router, prefix="/api")
 app.include_router(blackbox_router, prefix="/api")
+app.include_router(blackbox_options_router, prefix="/api")
 app.include_router(exitline_router, prefix="/api")
 app.include_router(stock_terminal_router, prefix="/api")
 

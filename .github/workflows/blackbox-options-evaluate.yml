@@ -1,0 +1,31 @@
+name: Black Box — Convexity Window / Gamma Backspread evaluation
+
+# Intraday cron for the two new options-buying strategies (paper mode only
+# right now — see blackbox_options_engine.py's LIVE_MODE gate). Same 5-minute
+# GitHub Actions ceiling as every other intraday cron in this repo (Prism
+# Alpha, Lumen SIP, Index Vector) — there is no real 1-minute cron-job.org
+# integration anywhere in this codebase.
+# 03:45-10:00 UTC = 09:15-15:30 IST, weekdays only.
+on:
+  schedule:
+    - cron: "45,50,55 3 * * 1-5"
+    - cron: "*/5 4-9 * * 1-5"
+    - cron: "0 10 * * 1-5"
+  workflow_dispatch: {}
+
+jobs:
+  evaluate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Call blackbox/options-evaluate
+        run: |
+          status=$(curl -s -o response.json -w "%{http_code}" -X POST \
+            "https://sapphire-alpha-backend.onrender.com/api/blackbox/options-evaluate" \
+            -H "X-Cron-Key: ${{ secrets.CRON_SECRET }}")
+          echo "HTTP status: $status"
+          cat response.json
+          echo
+          if [ "$status" != "200" ]; then
+            echo "::error::blackbox/options-evaluate failed with status $status"
+            exit 1
+          fi

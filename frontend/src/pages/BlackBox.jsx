@@ -1,11 +1,14 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
+import axios from "axios";
 import { motion } from "framer-motion";
 import { Link } from "react-router-dom";
-import { Lock, ArrowUpRight } from "lucide-react";
+import { Lock, ArrowUpRight, FlaskConical } from "lucide-react";
 import Navbar from "../components/site/Navbar";
 import Footer from "../components/site/Footer";
 import ParticleField from "../components/site/ParticleField";
 import { STRATEGIES } from "./blackbox/strategies";
+
+const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 
 const EASE = [0.16, 1, 0.3, 1];
 
@@ -56,9 +59,74 @@ const StrategyCard = ({ strategy, index, className = "" }) => (
   </motion.div>
 );
 
+// Real-status card for the two publicly-tracked options strategies —
+// everything else about the shape (border, hover lift, tag pills) is
+// identical to StrategyCard above; only the status pill is real instead of
+// a fixed "Coming Soon", and it links straight into a page with real
+// numbers (OptionsStrategyDetail.jsx) instead of the numbers-free one.
+const LiveStrategyCard = ({ strategy, index, statusSummary, className = "" }) => (
+  <motion.div
+    initial={{ opacity: 0, y: 24 }}
+    animate={{ opacity: 1, y: 0 }}
+    transition={{ duration: 0.7, ease: EASE, delay: index * 0.12 }}
+    className={className}
+  >
+    <Link
+      to={`/black-box/${strategy.slug}`}
+      className="group relative block h-full rounded-2xl border border-white/10 bg-[#0A0D18] p-8 md:p-9 overflow-hidden transition-all duration-500 hover:-translate-y-1 hover:border-amber-400/40 hover:shadow-[0_0_44px_rgba(217,164,65,0.14)] cursor-pointer"
+      data-testid={`black-box-strategy-${strategy.slug}`}
+    >
+      <span className="font-mono-ui text-xs text-sapphire-light block mb-6">#{strategy.no}</span>
+      <h3 className="font-display text-2xl md:text-3xl font-bold text-white tracking-tight">{strategy.title}</h3>
+      <p className="mt-3 text-sm font-light text-slate-500 leading-relaxed">{strategy.subtitle}</p>
+
+      <div className="flex flex-wrap items-center gap-2 mt-8">
+        {strategy.assetClass && (
+          <span className="rounded-full border border-white/10 px-3 py-1 font-mono-ui text-[10px] uppercase tracking-wider text-slate-500">
+            {strategy.assetClass}
+          </span>
+        )}
+        <span className="inline-flex items-center gap-1.5 rounded-full border border-amber-400/25 bg-amber-400/[0.06] px-3 py-1 font-mono-ui text-[10px] uppercase tracking-wider text-amber-400">
+          <FlaskConical size={10} /> Paper Trading
+        </span>
+        {statusSummary && (
+          <span className="inline-flex items-center gap-1.5 rounded-full border border-white/10 px-3 py-1 font-mono-ui text-[10px] uppercase tracking-wider text-slate-400">
+            {statusSummary}
+          </span>
+        )}
+      </div>
+
+      <div className="absolute inset-0 flex flex-col items-center justify-center text-center px-8 bg-void/92 backdrop-blur-sm opacity-0 group-hover:opacity-100 transition-opacity duration-500 pointer-events-none">
+        <p className="font-display text-2xl font-bold text-white mb-3">Live Track Record</p>
+        <p className="text-sm font-light text-slate-400 max-w-xs leading-relaxed">
+          Every signal, win, and loss — published as it happens. Paper trading, real market data.
+        </p>
+        <span className="mt-6 inline-flex items-center gap-1.5 text-xs font-medium text-sapphire-light">
+          View Track Record <ArrowUpRight size={13} />
+        </span>
+      </div>
+    </Link>
+  </motion.div>
+);
+
 export default function BlackBox() {
   useEffect(() => { window.scrollTo(0, 0); }, []);
-  const [alphaI, alphaII, lumen] = STRATEGIES;
+  const [alphaI, alphaII, lumen, convexity, backspread] = STRATEGIES;
+  const [liveStatus, setLiveStatus] = useState({});
+
+  useEffect(() => {
+    let cancelled = false;
+    axios.get(`${API}/blackbox/strategies`).then(({ data }) => {
+      if (cancelled) return;
+      const byId = {};
+      for (const s of data.strategies || []) {
+        const inTrade = Object.values(s.indices || {}).some((v) => v.status === "in_trade");
+        byId[s.strategy_id] = inTrade ? "In Trade" : "Monitoring";
+      }
+      setLiveStatus(byId);
+    }).catch(() => {});
+    return () => { cancelled = true; };
+  }, []);
 
   return (
     <>
@@ -89,14 +157,25 @@ export default function BlackBox() {
           </div>
         </section>
 
-        <section className="relative pb-28 md:pb-40">
+        <section className="relative pb-16 md:pb-24">
           <div className="container-x">
+            <p className="font-mono-ui text-xs uppercase tracking-[0.2em] text-slate-500 mb-6 max-w-4xl mx-auto">In Validation</p>
             <div className="flex flex-col items-center gap-6 md:gap-8 max-w-4xl mx-auto" data-testid="black-box-strategies">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6 md:gap-8 w-full">
                 <StrategyCard strategy={alphaI} index={0} />
                 <StrategyCard strategy={alphaII} index={1} />
               </div>
               <StrategyCard strategy={lumen} index={2} className="w-full md:w-[calc(50%-1rem)]" />
+            </div>
+          </div>
+        </section>
+
+        <section className="relative pb-28 md:pb-40">
+          <div className="container-x">
+            <p className="font-mono-ui text-xs uppercase tracking-[0.2em] text-amber-400 mb-6 max-w-4xl mx-auto">Live Track Record — Paper Trading</p>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 md:gap-8 max-w-4xl mx-auto" data-testid="black-box-options-strategies">
+              <LiveStrategyCard strategy={convexity} index={0} statusSummary={liveStatus[convexity.apiPath]} />
+              <LiveStrategyCard strategy={backspread} index={1} statusSummary={liveStatus[backspread.apiPath]} />
             </div>
           </div>
         </section>

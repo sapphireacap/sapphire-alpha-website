@@ -1,0 +1,29 @@
+name: Black Box — Convexity Window / Gamma Backspread EOD close
+
+# Once-daily end-of-day job: force-closes any still-open paper position and
+# writes the day's IMMUTABLE blackbox_daily_performance record (see
+# blackbox_options_eod.py — once written, a daily record is never edited or
+# deleted by application code, this is the only writer). 15:35 IST = 10:05
+# UTC. GitHub Actions schedules can slip a few minutes under load, same
+# accepted limitation as every other cron in this repo.
+on:
+  schedule:
+    - cron: "5 10 * * 1-5"
+  workflow_dispatch: {}
+
+jobs:
+  eod-close:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Call blackbox/options-eod-close
+        run: |
+          status=$(curl -s -o response.json -w "%{http_code}" -X POST \
+            "https://sapphire-alpha-backend.onrender.com/api/blackbox/options-eod-close" \
+            -H "X-Cron-Key: ${{ secrets.CRON_SECRET }}")
+          echo "HTTP status: $status"
+          cat response.json
+          echo
+          if [ "$status" != "200" ]; then
+            echo "::error::blackbox/options-eod-close failed with status $status"
+            exit 1
+          fi
