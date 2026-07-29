@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import axios from "axios";
 import { motion } from "framer-motion";
 import { Link } from "react-router-dom";
-import { Lock, ArrowUpRight, FlaskConical } from "lucide-react";
+import { Lock, ArrowUpRight } from "lucide-react";
 import Navbar from "../components/site/Navbar";
 import Footer from "../components/site/Footer";
 import ParticleField from "../components/site/ParticleField";
@@ -86,9 +86,6 @@ const LiveStrategyCard = ({ strategy, index, statusSummary, className = "" }) =>
             {strategy.assetClass}
           </span>
         )}
-        <span className="inline-flex items-center gap-1.5 rounded-full border border-amber-400/25 bg-amber-400/[0.06] px-3 py-1 font-mono-ui text-[10px] uppercase tracking-wider text-amber-400">
-          <FlaskConical size={10} /> Paper Trading
-        </span>
         {statusSummary && (
           <span className="inline-flex items-center gap-1.5 rounded-full border border-white/10 px-3 py-1 font-mono-ui text-[10px] uppercase tracking-wider text-slate-400">
             {statusSummary}
@@ -159,7 +156,6 @@ export default function BlackBox() {
 
         <section className="relative pb-16 md:pb-24">
           <div className="container-x">
-            <p className="font-mono-ui text-xs uppercase tracking-[0.2em] text-amber-400 mb-6 max-w-4xl mx-auto">Live Track Record — Paper Trading</p>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6 md:gap-8 max-w-4xl mx-auto" data-testid="black-box-options-strategies">
               <LiveStrategyCard strategy={convexity} index={0} statusSummary={liveStatus[convexity.apiPath]} />
               <LiveStrategyCard strategy={backspread} index={1} statusSummary={liveStatus[backspread.apiPath]} />
