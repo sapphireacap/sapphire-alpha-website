@@ -11,6 +11,8 @@ implementation. If pnf_engine.py is ever changed, this test failing
 means a real behavioral regression against Definedge's own documented
 construction rules, not just a different opinion.
 """
+import pytest
+
 from pnf_engine import BoxSettings, build_columns
 
 BAJAJ_AUTO_PRICES = [
@@ -122,33 +124,77 @@ def test_reversal_is_symmetric():
     assert reversed_col.direction == "down"
 
 
-def test_percentage_box_anchors_to_the_series_own_first_price():
-    """Percentage/log box-value charts must anchor to the series' own
-    first price, not to an absolute grid fixed at price=1. Confirmed by
-    a live-verified finding already on record elsewhere in this
-    codebase (blackbox_prism_alpha.py's pre-existing _box_level
-    comment): "a chart starting at 100 flipped to the next box at
-    ~100.5, not 101" under absolute-grid-at-1 anchoring - i.e. an
-    absolute grid puts box boundaries at arbitrary offsets from
-    wherever a series happens to start.
+def test_percentage_box_uses_an_absolute_price_grid():
+    """Percentage/log box charts put box boundaries at FIXED prices
+    (level = log(price)/log(1+box_pct)), not at offsets from wherever the
+    series happens to begin.
 
-    With box_pct=1% and a series starting at 100, a genuine 1% move
-    lands exactly at 101 - anything short of that (e.g. 100.5, roughly
-    where an absolute grid might happen to place its nearest boundary)
-    must NOT establish a column yet."""
+    This test previously asserted the exact opposite, on the strength of
+    an old blackbox_prism_alpha comment reporting that "a chart starting
+    at 100 flipped to the next box at ~100.5, not 101" on an absolute
+    grid. That observation was right; reading it as a defect was the
+    mistake. A fixed grid's boundary near 100 simply isn't at 101, so
+    flipping at ~100.5 is the grid working correctly.
+
+    Falsified against a real platform chart on 2026-08-01 (NIFTY 24400
+    CE, 3% x 3): under chart-relative anchoring the CURRENT COLUMN
+    DIRECTION changed with the lookback - O over 3 and 7 days, X over
+    15/30/60/90 - on otherwise identical parameters. See
+    test_absolute_grid_is_independent_of_how_much_history_is_loaded
+    below, which pins the property that actually matters."""
     settings = BoxSettings(reversal_boxes=3, box_pct=0.01)
 
-    # 100.5 is less than a full 1% move from 100 - no column yet.
-    no_column_yet = build_columns([100, 100.5], settings)
-    assert no_column_yet == []
-
-    # 101 is exactly a full 1% move from 100 - establishes the first
-    # (up) column, anchored to 100, not to wherever an absolute grid's
-    # nearest boundary happens to fall.
-    first_column = build_columns([100, 101], settings)
+    # The grid is absolute, so a series starting at 100 crosses its first
+    # boundary just above 100 - not at 101.
+    first_column = build_columns([100, 100.5], settings)
     assert len(first_column) == 1
     assert first_column[0].direction == "up"
-    assert first_column[0].anchor == 100
+    assert first_column[0].anchor == 1.0
+    boundary = settings.price_at(first_column[0].end_level)
+    assert 100 < boundary <= 100.5
+
+    # Every box boundary is an exact power of (1 + box_pct).
+    lvl = settings.level_up(100.5)
+    assert settings.price_at(lvl) == pytest.approx(1.01 ** lvl)
+
+    # The superseded behaviour is still reachable for comparison.
+    relative = BoxSettings(reversal_boxes=3, box_pct=0.01, absolute_grid=False)
+    assert build_columns([100, 100.5], relative) == []
+    assert build_columns([100, 101], relative)[0].anchor == 100
+
+
+def test_absolute_grid_is_independent_of_how_much_history_is_loaded():
+    """The property the real-chart comparison actually turned on: two
+    viewers looking at the same instrument over different amounts of
+    history must see the SAME boxes and the same open column.
+
+    Chart-relative anchoring cannot deliver this - trimming the front of
+    the series moves the whole grid - which is how the bug was caught
+    (an option premium read Bearish on a 7-day window and Bullish on a
+    30-day window, same parameters, same day)."""
+    series = [100, 103, 101, 106, 104, 110, 107, 112, 109, 115, 111, 118]
+    settings = BoxSettings(reversal_boxes=3, box_pct=0.01)
+
+    full = build_columns(series, settings)
+    trimmed = build_columns(series[4:], settings)
+
+    # Same grid: the open column has the same direction and sits at the
+    # same box level. Its START level may legitimately differ - the
+    # trimmed series never saw that column open - but the EXTREME, which
+    # is what every signal and reversal level is measured from, must not
+    # move, and a given level must mean the same price in both.
+    assert full[-1].direction == trimmed[-1].direction
+    assert full[-1].end_level == trimmed[-1].end_level
+    assert settings.price_at(full[-1].end_level) == settings.price_at(trimmed[-1].end_level)
+
+    # And the same is NOT true of the superseded anchoring: there the
+    # extreme itself moves, so the reversal level moves with it.
+    relative = BoxSettings(reversal_boxes=3, box_pct=0.01, absolute_grid=False)
+    rel_full = build_columns(series, relative)
+    rel_trimmed = build_columns(series[4:], relative)
+    assert (rel_full[-1].anchor != rel_trimmed[-1].anchor)
+    assert (settings.price_at(rel_full[-1].end_level, rel_full[-1].anchor)
+            != settings.price_at(rel_trimmed[-1].end_level, rel_trimmed[-1].anchor))
 
 
 def test_float_error_at_an_exact_boundary_does_not_lose_a_box():

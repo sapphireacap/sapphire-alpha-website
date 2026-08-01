@@ -62,24 +62,42 @@ Verified rules:
    ever processes one value per input bar - High-Low/HLC modes exist
    on Definedge's platform but are deliberately not implemented here.
 
-8. Percentage/log box-value charts anchor their box grid to the
-   CHART'S OWN starting price, not to some absolute grid fixed at
-   price=1. This was flagged as an open assumption in an earlier
-   version of this module; resolved 2026-07-28 by a live-verified
-   finding already on record elsewhere in this codebase
-   (blackbox_prism_alpha.py, pre-existing comment): "a chart starting
-   at 100 flipped to the next box at ~100.5, not 101" under absolute-
-   grid-at-1 anchoring - i.e. an absolute grid puts box boundaries at
-   essentially arbitrary offsets from wherever a series happens to
-   start, which only coincide with a genuine box_pct move by luck.
-   Anchoring to the chart's own first price makes every box exactly
-   box_pct away from that starting reference, compounding forward
-   (100 -> 101 -> 102.01 -> ...), matching how a real chart's first
-   column is described printing (see rule 4) and matching the verified
-   finding above. `price_at()`/`level_up()`/`level_down()` all take an
-   explicit `anchor` for this reason - callers on the percentage-box
-   path MUST pass the series' own first price as the anchor, not rely
-   on a default.
+8. Percentage/log box-value charts use an ABSOLUTE box grid - box
+   boundaries sit at fixed prices (level = log(price)/log(1+box_pct),
+   i.e. anchored at price=1), NOT at offsets from whatever price the
+   chart happens to start at.
+
+   CORRECTED 2026-08-01, and this reversed the previous rule here.
+   From 2026-07-28 this module anchored the grid to the series' own
+   first price, on the strength of an old comment in
+   blackbox_prism_alpha.py: "a chart starting at 100 flipped to the
+   next box at ~100.5, not 101" under absolute-grid-at-1 anchoring.
+   That OBSERVATION was accurate but the conclusion drawn from it was
+   backwards - flipping at ~100.5 is precisely what a fixed price grid
+   does when a series happens to start at 100, because the boundary
+   was never at 101 to begin with. It is not a defect; it is the
+   defining behaviour, and it is the only behaviour that lets two
+   people looking at the same instrument over different amounts of
+   history see the SAME boxes.
+
+   Falsified by real chart data (NIFTY 24400 CE, 3% x 3, 31-Jul-2026):
+   chart-relative anchoring made the current column direction depend on
+   the lookback - O over a 3/7-day window but X over 15/30/60/90 days,
+   on identical parameters - while the absolute grid returned the same
+   column (291.57..309.33, flip at 318.61) over every one of those
+   windows, and matched what the real platform chart showed. A rule
+   whose answer changes with how far back you scroll cannot be what a
+   charting platform implements.
+
+   Note the book's own worked exercise cannot distinguish the two: it
+   is an ABSOLUTE box-value chart (box=10) starting at 2300, already a
+   clean multiple of the box, so both anchorings agree throughout. That
+   is why this went unresolved for so long.
+
+   `price_at()`/`level_up()`/`level_down()` still take an explicit
+   `anchor` (default 1.0 = the absolute grid). Set
+   BoxSettings(absolute_grid=False) to restore the old chart-relative
+   behaviour for comparison; nothing in production should need it.
 """
 from __future__ import annotations
 
@@ -99,6 +117,11 @@ class BoxSettings:
     reversal_boxes: int = 3
     box_pct: Optional[float] = None
     box_value: Optional[float] = None
+    # See module docstring rule 8. True (the default) puts box boundaries
+    # at fixed prices, so the same instrument reads identically no matter
+    # how much history is loaded. False restores the superseded
+    # chart-relative anchoring, kept only for A/B comparison.
+    absolute_grid: bool = True
 
     def __post_init__(self):
         if (self.box_pct is None) == (self.box_value is None):
@@ -146,6 +169,15 @@ class Column:
     anchor: float = 1.0  # the series' own first price (box_pct mode) - pass
                          # this back into settings.price_at(level, anchor)
                          # to recover a real price; unused for box_value mode.
+    # Index into the INPUT price series of the sample that opened this
+    # column and of the latest sample that extended it. P&F has no time
+    # axis, so these are not part of the chart's logic at all - they exist
+    # purely so a caller can label a column with the date/timestamp it
+    # formed over (a chart needs "this column ran from Jan 3 to Jan 19").
+    # Default -1 means "not tracked", which is what hand-built Columns in
+    # tests and pattern fixtures carry.
+    start_index: int = -1
+    end_index: int = -1
 
     @property
     def box_count(self) -> int:
@@ -164,11 +196,19 @@ def build_columns(prices: list, settings: BoxSettings) -> list[Column]:
     returned Column carries that anchor (see Column.anchor) so a caller
     can convert levels back to real prices without tracking it
     separately."""
-    vals = [float(p) for p in prices if p is not None and float(p) > 0]
+    # Keep each kept value's index in the ORIGINAL `prices` list, so a
+    # caller can map a column back to the bars/timestamps it spans even
+    # when Nones or non-positive prices were filtered out here.
+    kept = [(n, float(p)) for n, p in enumerate(prices) if p is not None and float(p) > 0]
+    idxs = [n for n, _ in kept]
+    vals = [v for _, v in kept]
     if not vals:
         return []
 
-    anchor = vals[0]
+    # Rule 8: an absolute grid ignores where the series starts, so the
+    # anchor is the fixed reference price 1.0. Every Column still carries
+    # its anchor so price_at() round-trips regardless of which mode built it.
+    anchor = 1.0 if settings.absolute_grid else vals[0]
     columns: list[Column] = []
     direction: Optional[str] = None
     # Reference point for the very first column - not itself a
@@ -177,18 +217,24 @@ def build_columns(prices: list, settings: BoxSettings) -> list[Column]:
     ref_level = settings.level_up(vals[0], anchor)
     extreme_level = ref_level
 
-    for p in vals[1:]:
+    # `bar` is the index into the caller's original `prices` list of the
+    # sample being processed - carried onto each Column purely for
+    # labelling (see Column.start_index). end_index advances only when the
+    # column actually PRINTS a new box, so it marks the column's last real
+    # print rather than the last sample that happened to sit inside it.
+    for pos, p in enumerate(vals[1:], start=1):
+        bar = idxs[pos]
         if direction is None:
             up_lv = settings.level_up(p, anchor)
             down_lv = settings.level_down(p, anchor)
             if up_lv >= ref_level + 1:
                 direction = "up"
                 extreme_level = up_lv
-                columns.append(Column("up", ref_level + 1, extreme_level, anchor))
+                columns.append(Column("up", ref_level + 1, extreme_level, anchor, bar, bar))
             elif down_lv <= ref_level - 1:
                 direction = "down"
                 extreme_level = down_lv
-                columns.append(Column("down", ref_level - 1, extreme_level, anchor))
+                columns.append(Column("down", ref_level - 1, extreme_level, anchor, bar, bar))
             continue
 
         if direction == "up":
@@ -196,25 +242,27 @@ def build_columns(prices: list, settings: BoxSettings) -> list[Column]:
             if up_lv > extreme_level:
                 extreme_level = up_lv
                 columns[-1].end_level = extreme_level
+                columns[-1].end_index = bar
                 continue
             down_lv = settings.level_down(p, anchor)
             if down_lv <= extreme_level - settings.reversal_boxes:
                 direction = "down"
                 new_start = extreme_level - 1
                 extreme_level = down_lv
-                columns.append(Column("down", new_start, extreme_level, anchor))
+                columns.append(Column("down", new_start, extreme_level, anchor, bar, bar))
         else:  # down
             down_lv = settings.level_down(p, anchor)
             if down_lv < extreme_level:
                 extreme_level = down_lv
                 columns[-1].end_level = extreme_level
+                columns[-1].end_index = bar
                 continue
             up_lv = settings.level_up(p, anchor)
             if up_lv >= extreme_level + settings.reversal_boxes:
                 direction = "up"
                 new_start = extreme_level + 1
                 extreme_level = up_lv
-                columns.append(Column("up", new_start, extreme_level, anchor))
+                columns.append(Column("up", new_start, extreme_level, anchor, bar, bar))
 
     return columns
 

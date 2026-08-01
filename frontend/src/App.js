@@ -22,6 +22,7 @@ import AlphaTerminal from "@/pages/AlphaTerminal";
 import BlackBox from "@/pages/BlackBox";
 import StrategyDetail from "@/pages/blackbox/StrategyDetail";
 import ModuleDetail from "@/pages/alphaterminal/ModuleDetail";
+import PnfChart from "@/pages/alphaterminal/PnfChart";
 import Ipos from "@/pages/Ipos";
 import IpoDetail from "@/pages/IpoDetail";
 import Aurora from "@/pages/research/Aurora";
@@ -67,6 +68,9 @@ const AppShell = () => {
             <Route path="/alpha-terminal" element={<AlphaTerminal />} />
             <Route path="/black-box" element={<BlackBox />} />
             <Route path="/black-box/:slug" element={<StrategyDetail />} />
+            {/* Must precede the /:slug route below — otherwise "pnf" is
+                swallowed as a module slug and never reaches this page. */}
+            <Route path="/alpha-terminal/pnf" element={<PnfChart />} />
             <Route path="/alpha-terminal/:slug" element={<ModuleDetail />} />
             <Route path="/ipos" element={<Ipos />} />
             <Route path="/ipos/:id" element={<IpoDetail />} />

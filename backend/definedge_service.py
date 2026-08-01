@@ -118,6 +118,27 @@ REVERSAL_BOXES = 3       # 3 boxes ~= 1.5%
 ATM_LEG_BOX_PCT = 0.03       # 3% — the two monthly-expiry ATM CE/PE legs (read individually, not a straddle)
 ATM_LEG_REVERSAL_BOXES = 3   # 3 boxes ~= 9% — confirmed against a real Definedge chart titled "(3% x 3)"
 
+# A P&F chart belongs to an INSTRUMENT and runs continuously for that
+# instrument's whole life — it is never reset at a session boundary. Until
+# 2026-08-01 the Vector's legs were fetched 09:15->now, so every leg's
+# chart was rebuilt from scratch each morning and typically carried only
+# 2-3 columns, far too few for any column/pattern read to mean anything.
+#
+# Requesting this many days back simply returns whatever the contract
+# actually has: an option listed 2 months ago returns 2 months, and the
+# roll to the next expiry starts a genuinely new chart on its own, because
+# that is a different token. Verified live against the 24400 CE: 30d ->
+# 6,543 bars, 90/150/200d -> 7,711 bars all starting 27-May (the
+# contract's own listing), no upstream error and ~0.2s either way, so
+# over-requesting costs nothing and under-requesting silently truncates
+# the chart.
+CONTRACT_HISTORY_DAYS = 200
+
+# Only the tail is persisted/served for plotting — the full continuous
+# series is what the P&F state is computed from, but shipping ~7k points
+# per leg x 6 legs into Mongo and the browser is pointless.
+CHART_DISPLAY_POINTS = 400
+
 
 # ---------------------------------------------------------------------------
 # Point & Figure engine — thin wrapper over pnf_engine.py, which implements
@@ -632,11 +653,27 @@ class DefinedgeService:
         return bars
 
     async def _spot(self, index_key: str = "NIFTY"):
+        """Latest traded index level — the most recent close in a multi-day
+        window, NOT today's session only.
+
+        This used to request the default today-09:15->now window, which
+        returns nothing on a non-trading day and so made the whole of
+        compute_vector() fail with "History failed (400)" every weekend and
+        holiday (reproduced Sat 2026-08-01). An 8-day window naturally
+        rides over weekends and long holidays without us having to work out
+        the previous trading day ourselves — the same approach
+        _prev_close() below already used successfully.
+
+        During a live session the newest bar is still today's, so the ATM
+        strike this feeds is unchanged on trading days."""
         cfg = INDEX_CONFIG[index_key]
-        closes = await self._closes(cfg["spot_segment"], cfg["spot_token"])
+        now = datetime.now(IST)
+        frm = (now - timedelta(days=8)).strftime("%d%m%Y0000")
+        to = now.strftime("%d%m%Y%H%M")
+        closes = await self._closes(cfg["spot_segment"], cfg["spot_token"], frm=frm, to=to)
         if not closes:
             raise DefinedgeError(f"No {index_key} spot data returned.")
-        return list(closes.values())[-1]
+        return closes[self._sorted_ts(closes)[-1]]
 
     async def _prev_close(self, index_key: str = "NIFTY"):
         """An index's last close before today's session — cached per calendar
@@ -657,7 +694,10 @@ class DefinedgeService:
         closes = await self._closes(cfg["spot_segment"], cfg["spot_token"], frm=frm, to=to)
         if not closes:
             raise DefinedgeError(f"No previous session close data for {index_key}.")
-        value = list(closes.values())[-1]
+        # Chronological pick rather than dict-insertion order: ddmmyyyyHHMM
+        # is day-first, so "last line returned" is only the latest bar if
+        # the upstream happens to send ascending order.
+        value = closes[self._sorted_ts(closes)[-1]]
         self._prev_close_cache[index_key] = (today_str, value)
         return value
 
@@ -747,44 +787,65 @@ class DefinedgeService:
         self._vix_cache = (now, value)
         return value
 
-    async def _straddle_series(self, ce_token: str, pe_token: str, segment: str = "NFO"):
-        """Per-minute straddle premium (CE close + PE close) for today's
-        session, aligned on shared timestamps. Returns
-        [{"t": "HH:MM", "v": premium}, ...] sorted chronologically — `v`
-        alone feeds pnf_trend(); the full point list is what lets the
-        frontend plot an actual chart instead of just the derived trend
-        label (previously this returned a bare value list and the caller
-        discarded everything except the derived trend — no chart data ever
-        left this function). `segment` is NFO for NIFTY/BANKNIFTY, BFO for
-        SENSEX/BANKEX (see INDEX_CONFIG)."""
-        ce, pe = await asyncio.gather(
-            self._closes(segment, ce_token),
-            self._closes(segment, pe_token),
-        )
-        common = sorted(t for t in ce if t in pe)
+    def _history_window(self, days: int = CONTRACT_HISTORY_DAYS):
+        now = datetime.now(IST)
+        return ((now - timedelta(days=days)).strftime("%d%m%Y0000"),
+                now.strftime("%d%m%Y%H%M"))
+
+    @staticmethod
+    def _sorted_ts(stamps):
+        """Definedge's ddmmyyyyHHMM is day-first, so it does NOT sort
+        correctly as a raw string once a series spans more than one month
+        — parse before sorting. (Same trap already hit and fixed in the
+        Black Box modules; it only became reachable here once these series
+        stopped being single-session.)"""
+        return sorted(stamps, key=lambda t: datetime.strptime(t, "%d%m%Y%H%M"))
+
+    @staticmethod
+    def _labeller(stamps):
+        """"HH:MM" while a series stays inside one day, "DD/MM HH:MM" once
+        it spans more — these charts are continuous now, so a bare clock
+        time would repeat every session and be unreadable."""
+        days = {t[:8] for t in stamps}
+        fmt = "%H:%M" if len(days) <= 1 else "%d/%m %H:%M"
 
         def label(raw_ts):
             try:
-                return datetime.strptime(raw_ts, "%d%m%Y%H%M").strftime("%H:%M")
+                return datetime.strptime(raw_ts, "%d%m%Y%H%M").strftime(fmt)
             except ValueError:
                 return raw_ts
+        return label
 
+    async def _straddle_series(self, ce_token: str, pe_token: str, segment: str = "NFO"):
+        """Per-minute straddle premium (CE close + PE close) over the
+        CONTRACT'S WHOLE AVAILABLE LIFE, aligned on shared timestamps.
+        Returns [{"t": label, "v": premium}, ...] sorted chronologically.
+
+        Continuous by design — see CONTRACT_HISTORY_DAYS. This used to
+        fetch only today's session, which reset the P&F chart every
+        morning; a P&F chart is never reset at a day boundary, and the
+        roll to the next expiry starts a new chart by itself because the
+        tokens change. `segment` is NFO for NIFTY/BANKNIFTY, BFO for
+        SENSEX/BANKEX (see INDEX_CONFIG)."""
+        frm, to = self._history_window()
+        ce, pe = await asyncio.gather(
+            self._closes(segment, ce_token, frm=frm, to=to),
+            self._closes(segment, pe_token, frm=frm, to=to),
+        )
+        common = self._sorted_ts(t for t in ce if t in pe)
+        label = self._labeller(common)
         return [{"t": label(t), "v": ce[t] + pe[t]} for t in common]
 
     async def _single_leg_series(self, token: str, segment: str = "NFO"):
         """Per-minute close price for ONE option leg — not summed into a
         straddle. Used for the monthly ATM CE/PE confirmation legs, which
-        are read independently rather than combined. Same point-list shape
-        as _straddle_series so both feed pnf_trend()/charts identically."""
-        closes = await self._closes(segment, token)
-
-        def label(raw_ts):
-            try:
-                return datetime.strptime(raw_ts, "%d%m%Y%H%M").strftime("%H:%M")
-            except ValueError:
-                return raw_ts
-
-        return [{"t": label(t), "v": closes[t]} for t in sorted(closes)]
+        are read independently rather than combined. Same continuous
+        window and point-list shape as _straddle_series."""
+        frm, to = self._history_window()
+        closes = await self._closes(segment, token, frm=frm, to=to)
+        stamps = self._sorted_ts(closes)
+        label = self._labeller(stamps)
+        return [{"t": label(t), "v": closes[t]} for t in stamps]
 
     # ---- orchestration -------------------------------------------------
     async def compute_vector(self, index_key: str = "NIFTY"):
@@ -837,11 +898,19 @@ class DefinedgeService:
             "reversal": "3 box",
             "atm_leg_box_size": "3%",
             "atm_leg_reversal": "3 box",
+            # Trends above are computed from the FULL continuous series;
+            # only the display tail is persisted (see CHART_DISPLAY_POINTS).
             "chart": {
-                "monthly_up": monthly_up,
-                "monthly_down": monthly_down,
-                "monthly_atm_ce": monthly_atm_ce,
-                "monthly_atm_pe": monthly_atm_pe,
+                "monthly_up": monthly_up[-CHART_DISPLAY_POINTS:],
+                "monthly_down": monthly_down[-CHART_DISPLAY_POINTS:],
+                "monthly_atm_ce": monthly_atm_ce[-CHART_DISPLAY_POINTS:],
+                "monthly_atm_pe": monthly_atm_pe[-CHART_DISPLAY_POINTS:],
+            },
+            "chart_points": {
+                "monthly_up": len(monthly_up),
+                "monthly_down": len(monthly_down),
+                "monthly_atm_ce": len(monthly_atm_ce),
+                "monthly_atm_pe": len(monthly_atm_pe),
             },
         }
 
@@ -868,8 +937,10 @@ class DefinedgeService:
                     f"ATM CE {monthly_atm_ce_trend.lower()}, ATM PE {monthly_atm_pe_trend.lower()} (exp {tokens['monthly']['expiry']})."
                 ),
             })
-            signal["chart"]["weekly_up"] = weekly_up
-            signal["chart"]["weekly_down"] = weekly_down
+            signal["chart"]["weekly_up"] = weekly_up[-CHART_DISPLAY_POINTS:]
+            signal["chart"]["weekly_down"] = weekly_down[-CHART_DISPLAY_POINTS:]
+            signal["chart_points"]["weekly_up"] = len(weekly_up)
+            signal["chart_points"]["weekly_down"] = len(weekly_down)
         else:
             bias = derive_bias_4(monthly_up_trend, monthly_down_trend, monthly_atm_ce_trend, monthly_atm_pe_trend)
             signal.update({

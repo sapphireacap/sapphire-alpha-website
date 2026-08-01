@@ -113,10 +113,17 @@ POLE_SEARCH_WINDOW = 60         # backward pole/follow-through search only looks
 # construction rule, verified against Definedge's own book and Shelf docs,
 # not assumed. Two things specific to this module's OWN history predate and
 # independently corroborate two of pnf_engine's rules:
-#   - Anchoring to the chart's own starting price (not an absolute grid at
-#     price=1) was verified live here first ("a chart starting at 100
-#     flipped to the next box at ~100.5, not 101" under absolute anchoring)
-#     — this is exactly pnf_engine's rule 8, added after this finding.
+#   - [SUPERSEDED 2026-08-01] This module once reported that "a chart
+#     starting at 100 flipped to the next box at ~100.5, not 101" under
+#     absolute anchoring, and that was read as proof the grid must be
+#     anchored to the chart's own starting price — which became
+#     pnf_engine's rule 8. The observation was right; the conclusion was
+#     backwards. A fixed price grid has no boundary at 101 for a series
+#     that happens to start at 100, so flipping at ~100.5 is the grid
+#     working correctly. Rule 8 is now REVERSED (absolute grid), proven
+#     against a real platform chart to the paisa — see pnf_engine.py.
+#     This module's box math follows it: level_up/level_down are called
+#     with the default anchor (1.0), not base_price.
 #   - This module's own column-tracking loop already only needed 1 box to
 #     establish the very first column (not reversal_boxes) — matching
 #     pnf_engine's rule 4 independently, since this loop was never changed
@@ -154,7 +161,11 @@ def build_pnf_columns(bars: list, box_pct: float = BOX_PCT, reversal_boxes: int 
     columns = []
     direction = None
     base_price = float(samples[0][1])
-    base_level = 0  # by construction: level_up(base_price, anchor=base_price) == 0
+    # Absolute box grid (pnf_engine rule 8, corrected 2026-08-01): box
+    # boundaries sit at fixed prices, so the starting reference is
+    # wherever base_price falls on that grid — NOT level 0. It used to be
+    # 0 because the grid was anchored to base_price itself.
+    base_level = settings.level_up(base_price)
     base_ts = samples[0][0]
 
     cur_high_level = cur_low_level = base_level
@@ -169,6 +180,15 @@ def build_pnf_columns(bars: list, box_pct: float = BOX_PCT, reversal_boxes: int 
             "low_level": cur_low_level,
             "high_price": cur_high_price,
             "low_price": cur_low_price,
+            # BOX prices for the column's extremes (what the real chart's
+            # commentary panel reports as Hi/Lo), as distinct from
+            # high_price/low_price above, which are the raw traded prices
+            # that happened to reach those boxes. The Pole retracement
+            # must be measured on these, in PRICE space — averaging box
+            # LEVELS gives the geometric mean, which is not the 50% the
+            # chart draws. See pnf_patterns.mid_price().
+            "high_box_price": settings.price_at(cur_high_level),
+            "low_box_price": settings.price_at(cur_low_level),
             "box_count": cur_high_level - cur_low_level,
             "start_ts": cur_start_ts,
             "end_ts": end_ts,
@@ -178,8 +198,8 @@ def build_pnf_columns(bars: list, box_pct: float = BOX_PCT, reversal_boxes: int 
         p = float(raw_p)
 
         if direction is None:
-            up_lv = settings.level_up(p, base_price)
-            down_lv = settings.level_down(p, base_price)
+            up_lv = settings.level_up(p)
+            down_lv = settings.level_down(p)
             if up_lv >= base_level + 1:
                 direction = "X"
                 cur_low_level, cur_high_level = base_level, up_lv
@@ -194,12 +214,12 @@ def build_pnf_columns(bars: list, box_pct: float = BOX_PCT, reversal_boxes: int 
             continue
 
         if direction == "X":
-            up_lv = settings.level_up(p, base_price)
+            up_lv = settings.level_up(p)
             if up_lv > cur_high_level:
                 cur_high_level, cur_high_price = up_lv, p
                 cur_end_ts = ts
                 continue
-            down_lv = settings.level_down(p, base_price)
+            down_lv = settings.level_down(p)
             if down_lv <= cur_high_level - reversal_boxes:
                 close_column(ts)
                 # new O column shares its top boundary with the old X column's high
@@ -210,12 +230,12 @@ def build_pnf_columns(bars: list, box_pct: float = BOX_PCT, reversal_boxes: int 
                 cur_start_ts = ts
                 cur_end_ts = ts
         else:  # O
-            down_lv = settings.level_down(p, base_price)
+            down_lv = settings.level_down(p)
             if down_lv < cur_low_level:
                 cur_low_level, cur_low_price = down_lv, p
                 cur_end_ts = ts
                 continue
-            up_lv = settings.level_up(p, base_price)
+            up_lv = settings.level_up(p)
             if up_lv >= cur_low_level + reversal_boxes:
                 close_column(ts)
                 old_low_level, old_low_price = cur_low_level, cur_low_price
@@ -310,7 +330,10 @@ def find_low_pole(columns: list, i: int):
         return None  # not even a Double Bottom Sell
     if (c0["low_level"] - c2["low_level"]) <= POLE_MIN_BOXES:
         return None
-    pole_range = c2["high_level"] - c2["low_level"]
+    # Price-space range (box high minus box low), for the same reason the
+    # High Pole uses it — the caller's >50% retracement test measures
+    # against this, and a level-space range makes that the geometric mean.
+    pole_range = c2["high_box_price"] - c2["low_box_price"]
     if pole_range <= 0:
         return None
     return {"pole_range": pole_range}
@@ -327,10 +350,14 @@ def find_high_pole(columns: list, i: int):
         return None
     if (c2["high_level"] - c0["high_level"]) <= POLE_MIN_BOXES:
         return None
-    pole_range = c2["high_level"] - c2["low_level"]
+    # Retracement in PRICE space off the pole column's box high/low — see
+    # the note on high_box_price in build_pnf_columns. Doing this in level
+    # space (as this did until 2026-08-01) measures against the geometric
+    # mean, so the 50% test fired at the wrong price on a log grid.
+    pole_range = c2["high_box_price"] - c2["low_box_price"]
     if pole_range <= 0:
         return None
-    retrace = (c2["high_level"] - c3["low_level"]) / pole_range
+    retrace = (c2["high_box_price"] - c3["low_box_price"]) / pole_range
     if retrace <= POLE_MIN_RETRACE:
         return None
     return {"pole_index": i - 1}
@@ -624,8 +651,8 @@ def _analyze_option_bars(opt_bars: list, direction: str) -> dict:
         pole_info = find_low_pole(columns, i)
         if pole_info is None:
             continue
-        pole_range = pole_info["pole_range"]
-        pole_low = columns[i]["low_level"]
+        pole_range = pole_info["pole_range"]      # price-space, see find_low_pole
+        pole_low = columns[i]["low_box_price"]    # box price, matching pole_range
         pole_confirmed = False  # >50% retracement — checked dynamically below, not
                                  # rigidly against just the column immediately after
                                  # the pole (see find_low_pole's docstring for why)
@@ -634,7 +661,7 @@ def _analyze_option_bars(opt_bars: list, direction: str) -> dict:
             if not pole_confirmed:
                 if columns[j]["direction"] != "X":
                     continue
-                retrace = (columns[j]["high_level"] - pole_low) / pole_range
+                retrace = (columns[j]["high_box_price"] - pole_low) / pole_range
                 if retrace <= POLE_MIN_RETRACE:
                     continue
                 pole_confirmed = True  # retracement just completed AT this column —

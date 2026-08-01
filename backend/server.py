@@ -54,6 +54,7 @@ if "blackbox_legacy" not in DISABLED_FEATURES:
     from blackbox_routes import create_blackbox_router
 from blackbox_options_routes import create_blackbox_options_router
 from exitline_routes import create_exitline_router
+from pnf_routes import create_pnf_router
 if "stock_terminal" not in DISABLED_FEATURES:
     from stock_terminal_routes import create_stock_terminal_router
 from swing_picks_lcp import update_swing_picks_lcp
@@ -266,10 +267,13 @@ async def join_waitlist(payload: WaitlistCreate):
     return entry
 
 
+WAITLIST_COUNT_OFFSET = 158
+
+
 @api_router.get("/waitlist/count")
 async def waitlist_count():
     count = await db.waitlist.count_documents({})
-    return {"count": count}
+    return {"count": count + WAITLIST_COUNT_OFFSET}
 
 
 @api_router.post("/contact", response_model=Contact)
@@ -1352,11 +1356,13 @@ async def on_startup():
 ipo_router = create_ipo_router(db, get_current_admin, CRON_SECRET)
 blackbox_options_router = create_blackbox_options_router(db, definedge, get_current_admin, CRON_SECRET)
 exitline_router = create_exitline_router(db, definedge)
+pnf_router = create_pnf_router(db, definedge, get_current_admin)
 
 app.include_router(api_router)
 app.include_router(ipo_router, prefix="/api")
 app.include_router(blackbox_options_router, prefix="/api")
 app.include_router(exitline_router, prefix="/api")
+app.include_router(pnf_router, prefix="/api")
 
 # Paused features (see DISABLED_FEATURES above) -- router creation/mounting
 # skipped entirely, not just hidden, matching the skipped imports above.
