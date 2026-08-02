@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useCallback } from "react";
+import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import axios from "axios";
 import { toast } from "sonner";
 import { Loader2, Search, Crosshair, TrendingUp, TrendingDown, Minus } from "lucide-react";
@@ -12,6 +12,7 @@ const SEGMENTS = [
   { key: "NSE", label: "NSE (Cash)" },
   { key: "FUT", label: "Futures" },
   { key: "OPT", label: "Options" },
+  { key: "US", label: "US Indices" },
 ];
 
 const INTERVALS = [
@@ -24,6 +25,10 @@ const INTERVALS = [
   { key: "5", label: "5 min" },
   { key: "1", label: "1 min" },
 ];
+
+// US indices come from a free-tier data source that only has daily
+// history (no real intraday index data) — see backend/alpha_vantage_client.py.
+const US_INTERVALS = ["daily", "weekly", "monthly"];
 
 // The book's own commonly-used box sizes. Percentage boxes (not absolute)
 // are the default because they keep the box a constant *proportion* of
@@ -47,6 +52,14 @@ const PAD_L = 8;
 const PAD_T = 12;
 const AXIS_W = 78;
 
+// Mouse-wheel zoom range and the frame the chart scrolls inside — purely
+// visual (an SVG viewBox scale), so nothing about the underlying grid
+// math above is touched.
+const MIN_ZOOM = 0.5;
+const MAX_ZOOM = 3;
+const ZOOM_STEP = 1.08;
+const FRAME_MAX_H = 620;
+
 const fmtNum = (v, d = 2) =>
   v == null ? "—" : Number(v).toLocaleString("en-IN", { minimumFractionDigits: d, maximumFractionDigits: d });
 
@@ -62,6 +75,29 @@ const BIAS_STYLE = {
 
 const PnfGrid = ({ data, showTrendLines, showMa, highlight, onHoverColumn }) => {
   const { columns, grid, trend_lines: lines, meta, indicators } = data;
+  const frameRef = useRef(null);
+  const [zoom, setZoom] = useState(1);
+
+  // Reset to 1x whenever a new chart is plotted, rather than carrying a
+  // stale zoom level over onto unrelated data.
+  useEffect(() => setZoom(1), [data]);
+
+  // Native (non-React) listener so preventDefault reliably stops the page
+  // itself from scrolling while the wheel is over the chart — React's
+  // synthetic onWheel is attached passively and can't reliably do this.
+  useEffect(() => {
+    const el = frameRef.current;
+    if (!el) return undefined;
+    const onWheel = (e) => {
+      e.preventDefault();
+      setZoom((z) => {
+        const next = e.deltaY < 0 ? z * ZOOM_STEP : z / ZOOM_STEP;
+        return Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, next));
+      });
+    };
+    el.addEventListener("wheel", onWheel, { passive: false });
+    return () => el.removeEventListener("wheel", onWheel);
+  }, []);
 
   // Level -> row index, counted from the TOP of the grid so that higher
   // prices render higher on screen.
@@ -100,30 +136,30 @@ const PnfGrid = ({ data, showTrendLines, showMa, highlight, onHoverColumn }) => 
   }, [showMa, indicators, grid.levels, colX, meta.render_offset]);
 
   return (
-    <div className="overflow-x-auto overflow-y-hidden rounded-lg border border-white/10 bg-[#0B1220]">
-      <svg width={width} height={height} className="block font-mono-ui">
-        {/* horizontal guides */}
+    <div
+      ref={frameRef}
+      className="overflow-auto rounded-lg border border-white/10 bg-[#0B1220]"
+      style={{ maxHeight: FRAME_MAX_H }}
+    >
+      <svg
+        viewBox={`0 0 ${width} ${height}`}
+        width={width * zoom} height={height * zoom}
+        className="block font-mono-ui"
+      >
+        {/* price axis labels only — no background gridlines */}
         {grid.levels.map(({ level, price }) => {
           const y = PAD_T + rowOf(level) * ROW_H;
           const isLabel = (grid.max_level - level) % labelStep === 0;
+          if (!isLabel) return null;
           return (
-            <g key={level}>
-              <line
-                x1={PAD_L} y1={y + ROW_H / 2}
-                x2={PAD_L + columns.length * COL_W} y2={y + ROW_H / 2}
-                stroke={isLabel ? "rgba(255,255,255,0.09)" : "rgba(255,255,255,0.035)"}
-                strokeWidth="1"
-              />
-              {isLabel && (
-                <text
-                  x={PAD_L + columns.length * COL_W + 8}
-                  y={y + ROW_H / 2 + 3.5}
-                  fill="#64748B" fontSize="10"
-                >
-                  {fmtNum(price, price < 100 ? 2 : 1)}
-                </text>
-              )}
-            </g>
+            <text
+              key={level}
+              x={PAD_L + columns.length * COL_W + 8}
+              y={y + ROW_H / 2 + 3.5}
+              fill="#64748B" fontSize="10"
+            >
+              {fmtNum(price, price < 100 ? 2 : 1)}
+            </text>
           );
         })}
 
@@ -239,10 +275,11 @@ const PnfChart = () => {
     return () => { cancelled = true; clearTimeout(t); };
   }, [segment, query]);
 
-  // Derivative chains
+  // Derivative chains — only FUT/OPT have expiries/strikes; NSE and US
+  // (index proxies, no derivatives) never fetch them.
   useEffect(() => {
     setExpiry(""); setStrikes([]); setStrike("");
-    if (!symbol || segment === "NSE") { setExpiries([]); return; }
+    if (!symbol || (segment !== "FUT" && segment !== "OPT")) { setExpiries([]); return; }
     axios.get(`${API}/pnf/instruments`, { params: { segment, symbol }, ...authHeaders() })
       .then(({ data: d }) => setExpiries(d.expiries || []))
       .catch(() => setExpiries([]));
@@ -255,16 +292,22 @@ const PnfChart = () => {
       .catch(() => setStrikes([]));
   }, [symbol, expiry, segment]);
 
+  // US indices only have daily+ history — drop back to daily if an
+  // intraday interval was left selected from a different segment.
+  useEffect(() => {
+    if (segment === "US" && !US_INTERVALS.includes(interval)) setIntervalKey("daily");
+  }, [segment, interval]);
+
   const plot = async () => {
     if (!symbol) { toast.error("Pick an instrument first."); return; }
-    if (segment !== "NSE" && !expiry) { toast.error("Pick an expiry."); return; }
+    if ((segment === "FUT" || segment === "OPT") && !expiry) { toast.error("Pick an expiry."); return; }
     if (segment === "OPT" && !strike) { toast.error("Pick a strike."); return; }
     setLoading(true); setHighlight(null);
     try {
       const { data: d } = await axios.get(`${API}/pnf/chart`, {
         params: {
           symbol, segment, interval, box_pct: boxPct,
-          ...(segment !== "NSE" ? { expiry } : {}),
+          ...(segment === "FUT" || segment === "OPT" ? { expiry } : {}),
           ...(segment === "OPT" ? { strike, option_type: optionType } : {}),
         },
         ...authHeaders(),
@@ -326,7 +369,7 @@ const PnfChart = () => {
               {symbols.map((s) => <option key={s} value={s}>{s}</option>)}
             </select>
           </div>
-          {segment !== "NSE" && (
+          {(segment === "FUT" || segment === "OPT") && (
             <div>
               <span className={label}>Expiry</span>
               <select className={selectCls} value={expiry} onChange={(e) => setExpiry(e.target.value)}>
@@ -355,7 +398,8 @@ const PnfChart = () => {
           <div>
             <span className={label}>Timeframe</span>
             <select className={selectCls} value={interval} onChange={(e) => setIntervalKey(e.target.value)}>
-              {INTERVALS.map((i) => <option key={i.key} value={i.key}>{i.label}</option>)}
+              {(segment === "US" ? INTERVALS.filter((i) => US_INTERVALS.includes(i.key)) : INTERVALS)
+                .map((i) => <option key={i.key} value={i.key}>{i.label}</option>)}
             </select>
           </div>
           <div>
@@ -380,6 +424,14 @@ const PnfChart = () => {
             </button>
           </div>
         </div>
+
+        {segment === "US" && (
+          <p className="text-[11px] text-slate-500 -mt-4 mb-6 max-w-3xl">
+            Nasdaq 100 and S&amp;P 500 are plotted from their most liquid tracking ETF (QQQ / SPY) —
+            the only source with real daily history on this data feed. Structure and patterns are
+            effectively identical to the raw index; daily/weekly/monthly only, no intraday.
+          </p>
+        )}
 
         {!data && !loading && (
           <EmptyState reason="Pick an instrument and hit Plot to build its structure chart." />
@@ -418,6 +470,7 @@ const PnfChart = () => {
               </span>
               <Toggle on={showTrendLines} set={setShowTrendLines} text="45° lines" />
               <Toggle on={showMa} set={setShowMa} text={`${data.params.ma_period}-col MA`} />
+              <span className="text-slate-600">scroll chart to zoom</span>
               <span className="ml-auto text-slate-500">
                 {data.meta.total_columns} columns · {data.meta.bars} bars · {data.meta.first_label} → {data.meta.last_label}
               </span>

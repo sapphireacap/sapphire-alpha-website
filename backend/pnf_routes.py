@@ -12,16 +12,21 @@ exitline_routes does it — upstream data-provider errors name the vendor
 and its session mechanics directly, and that attribution must never
 reach a response body.
 """
+import logging
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 
+import alpha_vantage_client as av
 import pnf_chart
 from definedge_service import DefinedgeError
 from exitline import list_expiries, list_strikes, list_symbols, resolve_instrument
 from pnf_indicators import DEFAULT_XO_LOOKBACK
 
-VALID_SEGMENTS = ("NSE", "FUT", "OPT")
+logger = logging.getLogger(__name__)
+
+VALID_SEGMENTS = ("NSE", "FUT", "OPT", "US")
+US_INTERVALS = ("daily", "weekly", "monthly")  # no real intraday index data on the free AV tier
 MAX_SCAN_SYMBOLS = 40
 
 
@@ -59,6 +64,11 @@ def create_pnf_router(db, definedge, get_current_admin) -> APIRouter:
         expiry/strike lists — same shape as Exitline's picker so the
         frontend selector logic is identical."""
         segment = _check_segment(segment)
+        if segment == "US":
+            q = (query or "").strip().upper()
+            syms = [k for k in av.US_INDEX_PROXIES
+                    if q in k or q in av.US_INDEX_PROXIES[k]["label"].upper()]
+            return {"symbols": syms}
         try:
             master = await definedge._get_all_master()
         except DefinedgeError as e:
@@ -70,6 +80,41 @@ def create_pnf_router(db, definedge, get_current_admin) -> APIRouter:
         return {"symbols": list_symbols(master, segment, query)}
 
     # -- the chart ---------------------------------------------------------
+
+    async def _chart_us(symbol: str, interval: str, box_pct: Optional[float],
+                        box_value: Optional[float], cfg, xo_lookback: int,
+                        ma_period: int) -> dict:
+        """US index branch: same build_chart() as every other segment —
+        only the bar-fetching differs (Alpha Vantage's cached ETF-proxy
+        history instead of Definedge). No P&F construction rule changes."""
+        sym = symbol.strip().upper()
+        if sym not in av.US_INDEX_PROXIES:
+            raise HTTPException(status_code=404, detail=f"No instrument found for {symbol}.")
+        if interval not in US_INTERVALS:
+            raise HTTPException(status_code=400,
+                                detail="US indices are available at daily, weekly or monthly intervals only.")
+        try:
+            bars = await av.daily_bars(db, sym)
+            bars = pnf_chart.resample_daily(bars, interval)
+            payload = pnf_chart.build_chart(
+                bars, box_pct=box_pct, box_value=box_value,
+                reversal=pnf_chart.DEFAULT_REVERSAL, cfg=cfg,
+                xo_lookback=xo_lookback, ma_period=ma_period,
+            )
+        except pnf_chart.PnfError as e:
+            raise HTTPException(status_code=400, detail=str(e))
+        except av.AlphaVantageError as e:
+            logger.warning("Alpha Vantage fetch failed for %s: %s", sym, e)
+            raise HTTPException(status_code=502,
+                                detail="Chart data is temporarily unavailable — please try again shortly.")
+        payload["params"]["interval"] = interval
+        info = av.US_INDEX_PROXIES[sym]
+        payload["instrument"] = {
+            "symbol": sym,
+            "selector_segment": "US",
+            "tradingsymbol": f"{info['label']} (tracked via {info['proxy']})",
+        }
+        return payload
 
     @router.get("/chart")
     async def chart(symbol: str, segment: str = "NSE", interval: str = "daily",
@@ -95,13 +140,17 @@ def create_pnf_router(db, definedge, get_current_admin) -> APIRouter:
         segment = _check_segment(segment)
         if box_value is not None:
             box_pct = None
-        found = await _resolve(segment, symbol, expiry, strike, option_type)
         cfg = pnf_chart.pf.PatternConfig(
             pole_min_boxes=pole_min_boxes,
             turtle_columns=turtle_columns,
             anchor_min_boxes=anchor_min_boxes,
             triangle_50_rule=triangle_50_rule,
         )
+
+        if segment == "US":
+            return await _chart_us(symbol, interval, box_pct, box_value, cfg, xo_lookback, ma_period)
+
+        found = await _resolve(segment, symbol, expiry, strike, option_type)
         try:
             payload = await pnf_chart.chart_for_instrument(
                 definedge, found["segment"], found["token"], interval,
