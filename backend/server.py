@@ -7,6 +7,7 @@ import logging
 import asyncio
 import bisect
 import hashlib
+import hmac
 import secrets
 import httpx
 import bcrypt
@@ -98,6 +99,19 @@ FRONTEND_BASE_URL = os.environ.get("FRONTEND_BASE_URL", "https://www.sapphirealp
 # independent of admin login so the interactive admin credential never has to
 # live in CI.
 CRON_SECRET = os.environ.get("CRON_SECRET")
+
+# P&F Studio checkout (Razorpay Orders — one-time payment per billing cycle,
+# not a recurring Subscription: the Razorpay account's Subscriptions product
+# isn't activated, and Orders needs zero extra setup. See
+# get_current_pnf_subscriber / /pnf-access/* below.
+RAZORPAY_KEY_ID = os.environ.get("RAZORPAY_KEY_ID")
+RAZORPAY_KEY_SECRET = os.environ.get("RAZORPAY_KEY_SECRET")
+# USD cents, mirrors Pricing.jsx's P&F Studio plan and PnfStudio.jsx's cycle
+# cards -- keep all three in sync manually if the price ever changes. Live
+# mode will additionally require Razorpay's international payments to be
+# enabled on the account (test mode accepts USD with no extra setup).
+PNF_CYCLE_AMOUNTS_USD_CENTS = {"monthly": 4900, "quarterly": 12900, "yearly": 44400}
+PNF_CYCLE_MONTHS = {"monthly": 1, "quarterly": 3, "yearly": 12}
 
 IST = timezone(timedelta(hours=5, minutes=30))
 
@@ -362,6 +376,22 @@ async def get_current_admin(request: Request) -> dict:
     return user
 
 
+async def get_current_pnf_subscriber(request: Request) -> dict:
+    """P&F Studio is paid-access: any authenticated user with an active
+    pnf_access_until in the future, or an admin (admins are never gated
+    behind their own paid tiers). Access is granted by an admin from
+    /admin33 (manual, since no payment processor is wired up yet) and
+    expires naturally once pnf_access_until passes -- no separate revoke
+    path is needed for the common case of a subscription simply lapsing."""
+    user = await get_current_user(request)
+    if user.get("role") == "admin":
+        return user
+    until = user.get("pnf_access_until")
+    if not until or datetime.fromisoformat(until) <= datetime.now(timezone.utc):
+        raise HTTPException(status_code=402, detail="An active P&F Studio subscription is required.")
+    return user
+
+
 # ---- rate limiting (shared across login/signup/password-reset) -----------
 async def _check_rate_limit(request: Request, email: str, scope: str) -> list:
     """Keys on IP+email (stops one attacker hammering one target) AND
@@ -552,6 +582,7 @@ async def auth_me(user: dict = Depends(get_current_user)):
         "role": user.get("role", "trader"),
         "setup_tags": user.get("setup_tags", []),
         "emotion_tags": user.get("emotion_tags", []),
+        "pnf_access_until": user.get("pnf_access_until"),
     }
 
 
@@ -695,6 +726,137 @@ async def reset_password(payload: PasswordResetConfirm, request: Request):
     )
     await log_audit_event(request, user["id"], "password_reset_completed")
     return {"message": "Password updated. Please sign in with your new password."}
+
+
+# ---------------------------------------------------------------------------
+# P&F Studio access (paid tier). Two ways in: self-serve Razorpay checkout
+# below (/pnf-access/checkout + /verify -- one-time payment per billing
+# cycle via Razorpay Orders, not a recurring Subscription, since the
+# Razorpay account's Subscriptions product isn't activated), or an admin
+# granting/extending access by hand (/admin/pnf-access/*) for cases outside
+# self-serve (refunds, manual bank transfers, etc). See
+# get_current_pnf_subscriber for how access is actually checked.
+# ---------------------------------------------------------------------------
+class PnfAccessGrant(BaseModel):
+    email: EmailStr
+    months: int  # 1 (monthly), 3 (quarterly), or 12 (yearly) — mirrors Pricing.jsx's cycles
+
+
+class PnfAccessRevoke(BaseModel):
+    email: EmailStr
+
+
+@api_router.get("/admin/pnf-access")
+async def lookup_pnf_access(email: EmailStr, admin: dict = Depends(get_current_admin)):
+    user = await db.users.find_one({"email": email.lower()}, {"_id": 0, "email": 1, "name": 1, "pnf_access_until": 1})
+    if not user:
+        raise HTTPException(status_code=404, detail="No account with this email.")
+    return user
+
+
+@api_router.post("/admin/pnf-access/grant")
+async def grant_pnf_access(payload: PnfAccessGrant, admin: dict = Depends(get_current_admin)):
+    if payload.months not in (1, 3, 12):
+        raise HTTPException(status_code=400, detail="months must be 1, 3, or 12.")
+    email = payload.email.lower()
+    user = await db.users.find_one({"email": email})
+    if not user:
+        raise HTTPException(status_code=404, detail="No account with this email.")
+    # Extends from the existing expiry if still active, otherwise from now —
+    # a renewal before lapse doesn't lose the remaining paid time.
+    new_until = _extend_access_until(user.get("pnf_access_until"), payload.months)
+    await db.users.update_one({"email": email}, {"$set": {"pnf_access_until": new_until}})
+    return {"email": email, "pnf_access_until": new_until}
+
+
+@api_router.post("/admin/pnf-access/revoke")
+async def revoke_pnf_access(payload: PnfAccessRevoke, admin: dict = Depends(get_current_admin)):
+    email = payload.email.lower()
+    user = await db.users.find_one({"email": email})
+    if not user:
+        raise HTTPException(status_code=404, detail="No account with this email.")
+    await db.users.update_one({"email": email}, {"$set": {"pnf_access_until": None}})
+    return {"email": email, "pnf_access_until": None}
+
+
+def _extend_access_until(current_until: Optional[str], months: int) -> str:
+    now = datetime.now(timezone.utc)
+    base = datetime.fromisoformat(current_until) if current_until and datetime.fromisoformat(current_until) > now else now
+    return (base + timedelta(days=30 * months)).isoformat()
+
+
+class PnfCheckoutRequest(BaseModel):
+    cycle: str  # monthly | quarterly | yearly
+
+
+@api_router.post("/pnf-access/checkout")
+async def pnf_checkout(payload: PnfCheckoutRequest, user: dict = Depends(get_current_user)):
+    if payload.cycle not in PNF_CYCLE_AMOUNTS_USD_CENTS:
+        raise HTTPException(status_code=400, detail="cycle must be monthly, quarterly, or yearly.")
+    if not RAZORPAY_KEY_ID or not RAZORPAY_KEY_SECRET:
+        raise HTTPException(status_code=503, detail="Checkout is not configured yet.")
+
+    amount = PNF_CYCLE_AMOUNTS_USD_CENTS[payload.cycle]
+    receipt = f"pnf_{uuid.uuid4().hex[:24]}"  # Razorpay caps receipt at 40 chars
+    async with httpx.AsyncClient(timeout=15) as client:
+        resp = await client.post(
+            "https://api.razorpay.com/v1/orders",
+            auth=(RAZORPAY_KEY_ID, RAZORPAY_KEY_SECRET),
+            json={
+                "amount": amount, "currency": "USD", "receipt": receipt,
+                "notes": {"email": user["email"], "cycle": payload.cycle, "product": "pnf_studio"},
+            },
+        )
+    if resp.status_code != 200:
+        logger.warning("Razorpay order creation failed: %s %s", resp.status_code, resp.text)
+        raise HTTPException(status_code=502, detail="Could not start checkout. Please try again shortly.")
+
+    order = resp.json()
+    await db.pnf_orders.insert_one({
+        "order_id": order["id"],
+        "email": user["email"],
+        "cycle": payload.cycle,
+        "amount": amount,
+        "status": "created",
+        "created_at": datetime.now(timezone.utc).isoformat(),
+    })
+    return {"order_id": order["id"], "amount": amount, "currency": "USD", "key_id": RAZORPAY_KEY_ID}
+
+
+class PnfVerifyRequest(BaseModel):
+    razorpay_order_id: str
+    razorpay_payment_id: str
+    razorpay_signature: str
+
+
+@api_router.post("/pnf-access/verify")
+async def pnf_verify(payload: PnfVerifyRequest, user: dict = Depends(get_current_user)):
+    order = await db.pnf_orders.find_one({"order_id": payload.razorpay_order_id})
+    if not order or order["email"] != user["email"]:
+        raise HTTPException(status_code=404, detail="Order not found.")
+
+    if order["status"] == "paid":
+        # Already verified (e.g. a retried client callback) -- idempotent, no
+        # second grant, just report the current expiry.
+        fresh = await db.users.find_one({"email": user["email"]}, {"pnf_access_until": 1})
+        return {"pnf_access_until": fresh.get("pnf_access_until")}
+
+    expected_signature = hmac.new(
+        RAZORPAY_KEY_SECRET.encode(),
+        f"{payload.razorpay_order_id}|{payload.razorpay_payment_id}".encode(),
+        hashlib.sha256,
+    ).hexdigest()
+    if not hmac.compare_digest(expected_signature, payload.razorpay_signature):
+        raise HTTPException(status_code=400, detail="Payment verification failed.")
+
+    now = datetime.now(timezone.utc)
+    new_until = _extend_access_until(user.get("pnf_access_until"), PNF_CYCLE_MONTHS[order["cycle"]])
+    await db.users.update_one({"email": user["email"]}, {"$set": {"pnf_access_until": new_until}})
+    await db.pnf_orders.update_one(
+        {"order_id": payload.razorpay_order_id},
+        {"$set": {"status": "paid", "payment_id": payload.razorpay_payment_id, "paid_at": now.isoformat()}},
+    )
+    return {"pnf_access_until": new_until}
 
 
 # ---------------------------------------------------------------------------
@@ -1278,6 +1440,7 @@ async def on_startup():
 
     try:
         await db.users.create_index("email", unique=True)
+        await db.pnf_orders.create_index("order_id", unique=True)
         await db.terminal_stocks.create_index([("scanner", 1), ("order", 1)])
         await db.refresh_tokens.create_index("token_hash", unique=True)
         await db.refresh_tokens.create_index("family_id")
@@ -1357,7 +1520,7 @@ async def on_startup():
 ipo_router = create_ipo_router(db, get_current_admin, CRON_SECRET)
 blackbox_options_router = create_blackbox_options_router(db, definedge, get_current_admin, CRON_SECRET)
 exitline_router = create_exitline_router(db, definedge)
-pnf_router = create_pnf_router(db, definedge, get_current_admin)
+pnf_router = create_pnf_router(db, definedge, get_current_pnf_subscriber)
 
 app.include_router(api_router)
 app.include_router(ipo_router, prefix="/api")

@@ -164,24 +164,17 @@ export const Navbar = () => {
           {/* <ThemeToggle /> -- hidden for now, see the import comment above */}
           <button
             onClick={() => navigate("/login")}
-            className="hidden lg:inline-flex text-sm text-slate-300 hover:text-white transition-colors duration-200"
+            className="hidden lg:inline-flex items-center justify-center rounded-full border border-white/15 px-4 py-2 text-sm font-medium text-slate-200 hover:text-white hover:border-white/30 hover:bg-white/5 transition-colors duration-200"
             data-testid="nav-login-btn"
           >
             Log In
           </button>
           <button
             onClick={() => navigate("/signup")}
-            className="hidden lg:inline-flex text-sm text-slate-300 hover:text-white transition-colors duration-200"
+            className="hidden lg:inline-flex items-center justify-center rounded-full bg-sapphire px-4 py-2 text-sm font-semibold text-white hover:bg-sapphire-light transition-colors duration-200"
             data-testid="nav-signup-btn"
           >
             Sign Up
-          </button>
-          <button
-            onClick={() => goSection("waitlist")}
-            className="btn-sapphire hidden sm:inline-flex !px-6 !py-2.5 text-sm"
-            data-testid="nav-get-notified-btn"
-          >
-            Get Notified
           </button>
           <button
             onClick={() => setOpen((v) => !v)}
@@ -217,13 +210,17 @@ export const Navbar = () => {
               ))}
               <button
                 onClick={() => { setOpen(false); navigate("/login"); }}
-                className="text-left text-base py-1 text-slate-200"
+                className="mt-2 w-full inline-flex items-center justify-center rounded-full border border-white/15 py-2.5 text-sm font-medium text-slate-200"
                 data-testid="nav-mobile-login-btn"
               >
-                Log In / Sign Up
+                Log In
               </button>
-              <button onClick={() => goSection("waitlist")} className="btn-sapphire mt-2 w-full">
-                Get Notified
+              <button
+                onClick={() => { setOpen(false); navigate("/signup"); }}
+                className="w-full inline-flex items-center justify-center rounded-full bg-sapphire py-2.5 text-sm font-semibold text-white"
+                data-testid="nav-mobile-signup-btn"
+              >
+                Sign Up
               </button>
             </div>
           </motion.div>

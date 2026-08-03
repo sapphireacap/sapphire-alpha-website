@@ -1,11 +1,12 @@
 """API for the Point & Figure charting platform.
 
-ADMIN-GATED BY DEFAULT. Every route here is behind Depends(get_current_admin),
-matching how the Black Box routes are gated: this endpoint serves live
-trading signals and pattern-derived entry/stop/target levels, which is
-exactly the class of data that was deliberately pulled off the public
-site during the Black Box redesign. Making any of it public should be a
-conscious decision, not a side effect of adding a chart.
+PAID-ACCESS GATED. Every route here is behind Depends(get_current_pnf_subscriber)
+(server.py) -- any authenticated user with an active pnf_access_until, or an
+admin. Was admin-only until 2026-08-04; P&F Studio is now a paid product
+(login + subscription, granted manually by an admin from /admin33 until a
+payment processor is wired up), not an internal tool, but the same
+"nothing here should be public by accident" posture applies as it did under
+the old admin-only gate.
 
 Error text is sanitized through _public_error for the same reason
 exitline_routes does it — upstream data-provider errors name the vendor
@@ -37,7 +38,7 @@ def _public_error(e: DefinedgeError) -> str:
     return msg
 
 
-def create_pnf_router(db, definedge, get_current_admin) -> APIRouter:
+def create_pnf_router(db, definedge, get_current_subscriber) -> APIRouter:
     router = APIRouter(prefix="/pnf", tags=["pnf"])
 
     def _check_segment(segment: str) -> str:
@@ -59,7 +60,7 @@ def create_pnf_router(db, definedge, get_current_admin) -> APIRouter:
     @router.get("/instruments")
     async def instruments(segment: str, query: str = "", symbol: Optional[str] = None,
                           expiry: Optional[str] = None,
-                          admin: dict = Depends(get_current_admin)):
+                          user: dict = Depends(get_current_subscriber)):
         """Populates the scrip selector and, for derivatives, the
         expiry/strike lists — same shape as Exitline's picker so the
         frontend selector logic is identical."""
@@ -126,7 +127,7 @@ def create_pnf_router(db, definedge, get_current_admin) -> APIRouter:
                     xo_lookback: int = DEFAULT_XO_LOOKBACK, ma_period: int = 20,
                     pole_min_boxes: int = 5, turtle_columns: int = 10,
                     anchor_min_boxes: int = 15, triangle_50_rule: bool = False,
-                    admin: dict = Depends(get_current_admin)):
+                    user: dict = Depends(get_current_subscriber)):
         """A full P&F chart: grid, columns, every detected pattern with its
         failure level, indicators, 45-degree trend lines and counts.
 
@@ -177,7 +178,7 @@ def create_pnf_router(db, definedge, get_current_admin) -> APIRouter:
                    box_pct: float = pnf_chart.DEFAULT_BOX_PCT,
                    patterns: Optional[str] = None, bias: Optional[str] = None,
                    within_columns: int = 3, years: int = 5,
-                   admin: dict = Depends(get_current_admin)):
+                   user: dict = Depends(get_current_subscriber)):
         """Run the pattern library across a list of symbols and return the
         ones showing a live setup.
 
@@ -248,7 +249,7 @@ def create_pnf_router(db, definedge, get_current_admin) -> APIRouter:
         }
 
     @router.get("/patterns")
-    async def pattern_catalogue(admin: dict = Depends(get_current_admin)):
+    async def pattern_catalogue(user: dict = Depends(get_current_subscriber)):
         """The full library, for the UI's filter list — name, display
         label and whether the book classes it as a major formation."""
         from pnf_patterns import DETECTORS, MAJOR_PATTERNS

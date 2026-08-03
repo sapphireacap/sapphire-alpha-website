@@ -3,10 +3,10 @@ import axios from "axios";
 import { toast } from "sonner";
 import { Loader2, Search, Crosshair, TrendingUp, TrendingDown, Minus } from "lucide-react";
 import { field, selectCls, label, EmptyState } from "./QuantLab";
-import { ADMIN_TOKEN_KEY } from "../../lib/auth";
+import { TRADER_TOKEN_KEY } from "../Auth";
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
-const authHeaders = () => ({ headers: { Authorization: `Bearer ${localStorage.getItem(ADMIN_TOKEN_KEY)}` } });
+const authHeaders = () => ({ headers: { Authorization: `Bearer ${localStorage.getItem(TRADER_TOKEN_KEY)}` } });
 
 const SEGMENTS = [
   { key: "NSE", label: "NSE (Cash)" },

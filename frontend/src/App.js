@@ -25,6 +25,7 @@ import BlackBox from "@/pages/BlackBox";
 import StrategyDetail from "@/pages/blackbox/StrategyDetail";
 import ModuleDetail from "@/pages/alphaterminal/ModuleDetail";
 import PnfChart from "@/pages/alphaterminal/PnfChart";
+import PnfStudio from "@/pages/PnfStudio";
 import Ipos from "@/pages/Ipos";
 import IpoDetail from "@/pages/IpoDetail";
 import Pricing from "@/pages/Pricing";
@@ -32,7 +33,7 @@ import Aurora from "@/pages/research/Aurora";
 import FacetView from "@/pages/research/FacetView";
 import Admin from "@/pages/Admin";
 import { SignupPage, LoginPage, ForgotPasswordPage, ResetPasswordPage, VerifyEmailPage } from "@/pages/Auth";
-import { installAuthInterceptor } from "@/lib/auth";
+import { installAuthInterceptor, RequirePnfAccess } from "@/lib/auth";
 import JournalLayout from "@/pages/journal/JournalLayout";
 import Dashboard from "@/pages/journal/Dashboard";
 import TradeEntry from "@/pages/journal/TradeEntry";
@@ -73,8 +74,11 @@ const AppShell = () => {
             <Route path="/black-box" element={<BlackBox />} />
             <Route path="/black-box/:slug" element={<StrategyDetail />} />
             {/* Must precede the /:slug route below — otherwise "pnf" is
-                swallowed as a module slug and never reaches this page. */}
-            <Route path="/alpha-terminal/pnf" element={<PnfChart />} />
+                swallowed as a module slug and never reaches this page.
+                Paid-access gated (see RequirePnfAccess) -- /pnf-studio is
+                the marketing/subscribe page anyone lacking access lands on. */}
+            <Route path="/alpha-terminal/pnf" element={<RequirePnfAccess><PnfChart /></RequirePnfAccess>} />
+            <Route path="/pnf-studio" element={<PnfStudio />} />
             <Route path="/alpha-terminal/:slug" element={<ModuleDetail />} />
             {/* Shared placeholder for every nav entry that isn't public yet
                 (P&F Studio, Log In / Sign Up) -- see NotAvailablePage. */}

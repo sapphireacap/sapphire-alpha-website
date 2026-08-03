@@ -934,6 +934,111 @@ const MomentumTrackRecordPanel = ({ onAuthError }) => {
   );
 };
 
+/* --------------------------- P&F Studio Access --------------------------- */
+// Manual entitlement grant -- no payment processor is wired up yet, so an
+// admin activates/extends a subscriber's pnf_access_until by hand after
+// confirming payment out-of-band (see PnfStudio.jsx's "Request Access").
+const PnfAccessPanel = ({ onAuthError }) => {
+  const [email, setEmail] = useState("");
+  const [months, setMonths] = useState(1);
+  const [lookup, setLookup] = useState(null);
+  const [busy, setBusy] = useState(false);
+
+  const check = async () => {
+    if (!email.trim()) return;
+    setBusy(true);
+    setLookup(null);
+    try {
+      const { data } = await axios.get(`${API}/admin/pnf-access`, { ...authHeaders(), params: { email } });
+      setLookup(data);
+    } catch (err) {
+      if (err?.response?.status === 401) { onAuthError(); return; }
+      toast.error(errMsg(err, "Lookup failed."));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const grant = async () => {
+    setBusy(true);
+    try {
+      const { data } = await axios.post(`${API}/admin/pnf-access/grant`, { email, months }, authHeaders());
+      setLookup(data);
+      toast.success(`Access granted through ${new Date(data.pnf_access_until).toLocaleDateString()}.`);
+    } catch (err) {
+      if (err?.response?.status === 401) { onAuthError(); return; }
+      toast.error(errMsg(err, "Grant failed."));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const revoke = async () => {
+    setBusy(true);
+    try {
+      const { data } = await axios.post(`${API}/admin/pnf-access/revoke`, { email }, authHeaders());
+      setLookup(data);
+      toast.success("Access revoked.");
+    } catch (err) {
+      if (err?.response?.status === 401) { onAuthError(); return; }
+      toast.error(errMsg(err, "Revoke failed."));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const inputCls = "w-full bg-white/5 border border-white/10 rounded-md px-3 py-2 text-sm text-white outline-none focus:border-sapphire-light transition-colors";
+
+  return (
+    <div className="glass rounded-2xl p-6 md:p-8 mb-10" data-testid="admin-pnf-access-panel">
+      <h2 className="font-display text-xl font-bold text-white mb-2">P&F Studio Access</h2>
+      <p className="text-sm text-slate-500 mb-6">
+        Grant or extend a subscriber's paid access by email. Grants extend from the current expiry if still active,
+        otherwise from today. Admin accounts always have access regardless of this field.
+      </p>
+      <div className="flex flex-col sm:flex-row gap-3 items-stretch sm:items-end">
+        <div className="flex-1">
+          <label className="font-mono-ui text-[11px] uppercase tracking-[0.15em] text-slate-500 block mb-2">Email</label>
+          <input value={email} onChange={(e) => setEmail(e.target.value)} className={inputCls} placeholder="trader@example.com" data-testid="pnf-access-email" />
+        </div>
+        <div>
+          <label className="font-mono-ui text-[11px] uppercase tracking-[0.15em] text-slate-500 block mb-2">Duration</label>
+          <select
+            value={months}
+            onChange={(e) => setMonths(Number(e.target.value))}
+            style={{ colorScheme: "dark" }}
+            className="bg-[#0A0D18] border border-white/15 rounded-lg px-4 py-2 text-sm text-white outline-none focus:border-sapphire-light"
+            data-testid="pnf-access-months"
+          >
+            <option value={1}>1 month</option>
+            <option value={3}>3 months</option>
+            <option value={12}>12 months</option>
+          </select>
+        </div>
+        <button onClick={check} disabled={busy || !email.trim()} className="btn-ghost !px-4 !py-2 text-sm disabled:opacity-50" data-testid="pnf-access-lookup-btn">
+          Check
+        </button>
+        <button onClick={grant} disabled={busy || !email.trim()} className="btn-sapphire !px-4 !py-2 text-sm disabled:opacity-50" data-testid="pnf-access-grant-btn">
+          Grant
+        </button>
+        <button onClick={revoke} disabled={busy || !email.trim()} className="rounded-md border border-red-500/30 text-red-400 hover:bg-red-500/10 transition-colors text-sm px-4 py-2 disabled:opacity-50" data-testid="pnf-access-revoke-btn">
+          Revoke
+        </button>
+      </div>
+      {lookup && (
+        <div className="mt-5 text-sm text-slate-400 font-mono-ui" data-testid="pnf-access-lookup-result">
+          {lookup.email} —{" "}
+          {lookup.pnf_access_until
+            ? new Date(lookup.pnf_access_until) > new Date()
+              ? <span className="text-emerald-400">active until {new Date(lookup.pnf_access_until).toLocaleDateString()}</span>
+              : <span className="text-slate-500">expired {new Date(lookup.pnf_access_until).toLocaleDateString()}</span>
+            : <span className="text-slate-500">no access</span>}
+        </div>
+      )}
+    </div>
+  );
+};
+
 /* ------------------------------ IPO Section ------------------------------ */
 const EXCHANGES = ["NSE", "BSE"];
 const emptyIpo = () => ({
@@ -1319,6 +1424,7 @@ const Dashboard = ({ onLogout }) => {
         <IpoPanel onAuthError={onLogout} />
         <BlackBoxPanel onAuthError={onLogout} />
         <MomentumTrackRecordPanel onAuthError={onLogout} />
+        <PnfAccessPanel onAuthError={onLogout} />
 
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-8">
           <div>

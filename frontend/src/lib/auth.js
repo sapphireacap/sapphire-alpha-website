@@ -84,3 +84,42 @@ export const RequireAuth = ({ tokenKey, loginPath, children }) => {
   if (!authed) return null;
   return typeof children === "function" ? children(user) : children;
 };
+
+/**
+ * P&F Studio's gate: requires a signed-in trader with an active
+ * pnf_access_until (or an admin). Anyone else is bounced to the /pnf-studio
+ * marketing/subscribe page rather than /login, since that page is what
+ * explains why they don't have access and what to do about it.
+ */
+export const RequirePnfAccess = ({ children }) => {
+  const [state, setState] = useState(null); // null=loading | "ok" | "blocked"
+  const [user, setUser] = useState(null);
+  const navigate = useNavigate();
+
+  useEffect(() => {
+    const token = localStorage.getItem(TRADER_TOKEN_KEY);
+    if (!token) { setState("blocked"); return; }
+    axios.get(`${API}/auth/me`, { headers: { Authorization: `Bearer ${token}` } })
+      .then((r) => {
+        const hasAccess = r.data.role === "admin" ||
+          (r.data.pnf_access_until && new Date(r.data.pnf_access_until) > new Date());
+        setUser(r.data);
+        setState(hasAccess ? "ok" : "blocked");
+      })
+      .catch(() => { localStorage.removeItem(TRADER_TOKEN_KEY); setState("blocked"); });
+  }, []);
+
+  useEffect(() => {
+    if (state === "blocked") navigate("/pnf-studio", { replace: true });
+  }, [state, navigate]);
+
+  if (state === null) {
+    return (
+      <div className="min-h-screen bg-void flex items-center justify-center text-slate-500">
+        <Loader2 className="animate-spin" />
+      </div>
+    );
+  }
+  if (state !== "ok") return null;
+  return typeof children === "function" ? children(user) : children;
+};
