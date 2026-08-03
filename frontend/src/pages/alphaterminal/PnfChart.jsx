@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useCallback, useRef } from "react";
+import { useState, useEffect, useLayoutEffect, useMemo, useCallback, useRef } from "react";
 import axios from "axios";
 import { toast } from "sonner";
 import { Loader2, Search, Crosshair, TrendingUp, TrendingDown, Minus } from "lucide-react";
@@ -52,13 +52,24 @@ const PAD_L = 8;
 const PAD_T = 12;
 const AXIS_W = 78;
 
-// Mouse-wheel zoom range and the frame the chart scrolls inside — purely
-// visual (an SVG viewBox scale), so nothing about the underlying grid
-// math above is touched.
-const MIN_ZOOM = 0.5;
-const MAX_ZOOM = 3;
-const ZOOM_STEP = 1.08;
-const FRAME_MAX_H = 620;
+// Zoom/pan range for the TradingView-style "camera" (see PnfGrid below) —
+// purely visual (an SVG viewBox window), so nothing about the underlying
+// grid math above is touched. X and Y scale independently, matching
+// TradingView's own split: the mouse wheel / drag over the chart scales
+// time, the wheel / drag over the price axis scales price only.
+const MIN_X_ZOOM = 1;
+const MAX_X_ZOOM = 20;
+const MIN_Y_ZOOM = 1;
+const MAX_Y_ZOOM = 6;
+const WHEEL_ZOOM_STEP = 1.15;
+const AXIS_DRAG_SENSITIVITY = 0.006; // exponential factor per px dragged on the price axis
+const FRAME_H = 620;   // fixed pixel height of the chart frame — the <svg> elements
+                        // below are always exactly this size, so zoom/pan can never
+                        // grow the DOM box itself and spill into the page; only the
+                        // viewBox "window" onto the data moves.
+const PAD_R = 10;       // right padding inside the main (non-axis) pane
+
+const clampNum = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
 
 const fmtNum = (v, d = 2) =>
   v == null ? "—" : Number(v).toLocaleString("en-IN", { minimumFractionDigits: d, maximumFractionDigits: d });
@@ -76,40 +87,140 @@ const BIAS_STYLE = {
 const PnfGrid = ({ data, showTrendLines, showMa, highlight, onHoverColumn }) => {
   const { columns, grid, trend_lines: lines, meta, indicators } = data;
   const frameRef = useRef(null);
-  const [zoom, setZoom] = useState(1);
+  const mainSvgRef = useRef(null);
+  const axisSvgRef = useRef(null);
+  const dragRef = useRef(null);
 
-  // Reset to 1x whenever a new chart is plotted, rather than carrying a
-  // stale zoom level over onto unrelated data.
-  useEffect(() => setZoom(1), [data]);
-
-  // Native (non-React) listener so preventDefault reliably stops the page
-  // itself from scrolling while the wheel is over the chart — React's
-  // synthetic onWheel is attached passively and can't reliably do this.
-  useEffect(() => {
-    const el = frameRef.current;
-    if (!el) return undefined;
-    const onWheel = (e) => {
-      e.preventDefault();
-      setZoom((z) => {
-        const next = e.deltaY < 0 ? z * ZOOM_STEP : z / ZOOM_STEP;
-        return Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, next));
-      });
-    };
-    el.addEventListener("wheel", onWheel, { passive: false });
-    return () => el.removeEventListener("wheel", onWheel);
-  }, []);
+  // xZoom/yZoom + panX/panY define a "camera" window (an SVG viewBox) over
+  // the chart's full content space. The two <svg> elements below never
+  // change physical size — only the window they look through does — so
+  // the chart is always fully contained inside the FRAME_H-tall frame,
+  // exactly like a TradingView pane, instead of growing an oversized SVG
+  // inside a scrolling container (which is what let zoom escape into a
+  // page-level scroll before).
+  const [xZoom, setXZoom] = useState(1);
+  const [yZoom, setYZoom] = useState(1);
+  const [panX, setPanX] = useState(0);
+  const [panY, setPanY] = useState(0);
+  const [dragging, setDragging] = useState(false);
 
   // Level -> row index, counted from the TOP of the grid so that higher
   // prices render higher on screen.
   const rowOf = useCallback((lvl) => grid.max_level - lvl, [grid.max_level]);
   const colX = useCallback((i) => PAD_L + (i - meta.render_offset) * COL_W, [meta.render_offset]);
 
-  const width = PAD_L + columns.length * COL_W + AXIS_W;
-  const height = PAD_T * 2 + (grid.max_level - grid.min_level + 1) * ROW_H;
+  const plotW = PAD_L + columns.length * COL_W + PAD_R;
+  const contentH = PAD_T * 2 + (grid.max_level - grid.min_level + 1) * ROW_H;
 
-  // Price labels every few rows only — a 0.25% box over a long history
-  // produces hundreds of levels and labelling all of them is unreadable.
-  const labelStep = Math.max(1, Math.round((grid.max_level - grid.min_level) / 26));
+  // Reset the camera whenever a new chart is plotted, rather than carrying
+  // a stale zoom/pan over onto unrelated data. Defaults to the most recent
+  // columns at the chart's native box size (same visual density as
+  // before), pinned to the right edge — older columns are reached by
+  // panning left, same as scrolling a TradingView chart back in time.
+  useLayoutEffect(() => {
+    const pxW = mainSvgRef.current?.getBoundingClientRect().width || plotW;
+    const initViewW = Math.min(plotW, pxW);
+    const initXZoom = clampNum(plotW / initViewW, MIN_X_ZOOM, MAX_X_ZOOM);
+    setXZoom(initXZoom);
+    setPanX(Math.max(0, plotW - plotW / initXZoom));
+    setYZoom(1);
+    setPanY(0);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [data]);
+
+  const viewW = plotW / xZoom;
+  const viewH = contentH / yZoom;
+  const vx = clampNum(panX, 0, Math.max(0, plotW - viewW));
+  const vy = clampNum(panY, 0, Math.max(0, contentH - viewH));
+
+  // Wheel over the price axis scales price (Y); wheel over the chart
+  // itself scales time (X) — the same split TradingView uses. Both zoom
+  // toward the cursor so the point under it stays put. Native (non-React)
+  // listener so preventDefault reliably stops the PAGE itself from
+  // scrolling while the wheel is over the chart — React's synthetic
+  // onWheel is attached passively and can't reliably do this.
+  useEffect(() => {
+    const el = frameRef.current;
+    if (!el) return undefined;
+    const onWheel = (e) => {
+      e.preventDefault();
+      const overAxis = axisSvgRef.current?.contains(e.target);
+      const factor = e.deltaY < 0 ? WHEEL_ZOOM_STEP : 1 / WHEEL_ZOOM_STEP;
+      if (overAxis) {
+        const rect = axisSvgRef.current.getBoundingClientRect();
+        const frac = clampNum((e.clientY - rect.top) / rect.height, 0, 1);
+        const nz = clampNum(yZoom * factor, MIN_Y_ZOOM, MAX_Y_ZOOM);
+        const nViewH = contentH / nz;
+        setYZoom(nz);
+        setPanY(clampNum(vy + frac * viewH - frac * nViewH, 0, Math.max(0, contentH - nViewH)));
+      } else {
+        const rect = mainSvgRef.current.getBoundingClientRect();
+        const frac = clampNum((e.clientX - rect.left) / rect.width, 0, 1);
+        const nz = clampNum(xZoom * factor, MIN_X_ZOOM, MAX_X_ZOOM);
+        const nViewW = plotW / nz;
+        setXZoom(nz);
+        setPanX(clampNum(vx + frac * viewW - frac * nViewW, 0, Math.max(0, plotW - nViewW)));
+      }
+    };
+    el.addEventListener("wheel", onWheel, { passive: false });
+    return () => el.removeEventListener("wheel", onWheel);
+  }, [vx, vy, viewW, viewH, plotW, contentH, xZoom, yZoom]);
+
+  const resetView = useCallback(() => {
+    const pxW = mainSvgRef.current?.getBoundingClientRect().width || plotW;
+    const initViewW = Math.min(plotW, pxW);
+    const initXZoom = clampNum(plotW / initViewW, MIN_X_ZOOM, MAX_X_ZOOM);
+    setXZoom(initXZoom);
+    setPanX(Math.max(0, plotW - plotW / initXZoom));
+    setYZoom(1);
+    setPanY(0);
+  }, [plotW]);
+
+  // Drag on the chart pans in both axes, staying clamped inside the data's
+  // own bounds (so it can never scroll into empty space, let alone past
+  // the frame). Drag on the price axis instead re-scales price only — the
+  // "pinch the Y axis" gesture. Pointer capture keeps tracking the drag
+  // even once the cursor leaves the element.
+  const onPanPointerDown = (e) => {
+    e.currentTarget.setPointerCapture(e.pointerId);
+    dragRef.current = { mode: "pan", startX: e.clientX, startY: e.clientY, panX0: vx, panY0: vy };
+    setDragging(true);
+  };
+  const onAxisPointerDown = (e) => {
+    e.currentTarget.setPointerCapture(e.pointerId);
+    dragRef.current = { mode: "yzoom", startY: e.clientY, yZoom0: yZoom, centerY0: vy + viewH / 2 };
+    setDragging(true);
+  };
+  const onPointerMove = (e) => {
+    const d = dragRef.current;
+    if (!d) return;
+    if (d.mode === "pan") {
+      const rect = mainSvgRef.current.getBoundingClientRect();
+      const dContentX = -(e.clientX - d.startX) * (viewW / rect.width);
+      const dContentY = -(e.clientY - d.startY) * (viewH / rect.height);
+      setPanX(clampNum(d.panX0 + dContentX, 0, Math.max(0, plotW - viewW)));
+      setPanY(clampNum(d.panY0 + dContentY, 0, Math.max(0, contentH - viewH)));
+    } else if (d.mode === "yzoom") {
+      const deltaPx = e.clientY - d.startY;
+      const nz = clampNum(d.yZoom0 * Math.exp(-deltaPx * AXIS_DRAG_SENSITIVITY), MIN_Y_ZOOM, MAX_Y_ZOOM);
+      const nViewH = contentH / nz;
+      setYZoom(nz);
+      setPanY(clampNum(d.centerY0 - nViewH / 2, 0, Math.max(0, contentH - nViewH)));
+    }
+  };
+  const onPointerUp = (e) => {
+    if (dragRef.current) {
+      try { e.currentTarget.releasePointerCapture(e.pointerId); } catch { /* already released */ }
+    }
+    dragRef.current = null;
+    setDragging(false);
+  };
+
+  // Price labels every few rows only, based on how many rows are actually
+  // in view right now — a 0.25% box over a long history produces hundreds
+  // of levels and labelling all of them is unreadable, but zooming the
+  // price axis in should reveal more labels, not the same fixed step.
+  const labelStep = Math.max(1, Math.round(viewH / ROW_H / 26));
 
   const maPoints = useMemo(() => {
     if (!showMa) return null;
@@ -138,31 +249,27 @@ const PnfGrid = ({ data, showTrendLines, showMa, highlight, onHoverColumn }) => 
   return (
     <div
       ref={frameRef}
-      className="overflow-auto rounded-lg border border-white/10 bg-[#0B1220]"
-      style={{ maxHeight: FRAME_MAX_H }}
+      className="flex rounded-lg border border-white/10 bg-[#0B1220] overflow-hidden select-none"
+      style={{ height: FRAME_H }}
     >
+      {/* Main pane — pans/zooms in both axes via viewBox alone; its actual
+          width/height attributes never change, so this can never overflow
+          its own box the way a resized SVG in a scrolling div could. */}
       <svg
-        viewBox={`0 0 ${width} ${height}`}
-        width={width * zoom} height={height * zoom}
+        ref={mainSvgRef}
+        viewBox={`${vx} ${vy} ${viewW} ${viewH}`}
+        preserveAspectRatio="none"
+        style={{
+          width: `calc(100% - ${AXIS_W}px)`, height: FRAME_H,
+          touchAction: "none", cursor: dragging ? "grabbing" : "grab",
+        }}
         className="block font-mono-ui"
+        onPointerDown={onPanPointerDown}
+        onPointerMove={onPointerMove}
+        onPointerUp={onPointerUp}
+        onPointerCancel={onPointerUp}
+        onDoubleClick={resetView}
       >
-        {/* price axis labels only — no background gridlines */}
-        {grid.levels.map(({ level, price }) => {
-          const y = PAD_T + rowOf(level) * ROW_H;
-          const isLabel = (grid.max_level - level) % labelStep === 0;
-          if (!isLabel) return null;
-          return (
-            <text
-              key={level}
-              x={PAD_L + columns.length * COL_W + 8}
-              y={y + ROW_H / 2 + 3.5}
-              fill="#64748B" fontSize="10"
-            >
-              {fmtNum(price, price < 100 ? 2 : 1)}
-            </text>
-          );
-        })}
-
         {/* 45-degree objective trend lines */}
         {showTrendLines && lines.map((ln, n) => {
           const x1 = colX(Math.max(ln.start_index, meta.render_offset)) + COL_W / 2;
@@ -200,7 +307,7 @@ const PnfGrid = ({ data, showTrendLines, showMa, highlight, onHoverColumn }) => 
               onMouseLeave={() => onHoverColumn?.(null)}
               style={{ cursor: "crosshair" }}
             >
-              <rect x={x} y={PAD_T} width={COL_W} height={height - PAD_T * 2} fill="transparent" />
+              <rect x={x} y={PAD_T} width={COL_W} height={contentH - PAD_T * 2} fill="transparent" />
               {col.levels.map((lvl) => {
                 const y = PAD_T + rowOf(lvl) * ROW_H;
                 const cx = x + COL_W / 2;
@@ -227,11 +334,43 @@ const PnfGrid = ({ data, showTrendLines, showMa, highlight, onHoverColumn }) => 
           const tone = highlight.bias === "bearish" ? "#F87171" : highlight.bias === "bullish" ? "#34D399" : "#94A3B8";
           return (
             <rect
-              x={a} y={PAD_T} width={Math.max(b - a, COL_W)} height={height - PAD_T * 2}
+              x={a} y={PAD_T} width={Math.max(b - a, COL_W)} height={contentH - PAD_T * 2}
               fill={tone} fillOpacity="0.07" stroke={tone} strokeOpacity="0.5" strokeWidth="1" rx="3"
             />
           );
         })()}
+      </svg>
+
+      {/* Price axis — a separate fixed-width pane so it stays put while the
+          main pane pans left/right through history; its vertical window
+          mirrors the main pane's (vy/viewH) so labels line up with rows,
+          and dragging or scrolling on it re-scales price only — the
+          TradingView "pinch the Y axis" gesture (no touch pinch on
+          desktop, so drag is the equivalent here). */}
+      <svg
+        ref={axisSvgRef}
+        viewBox={`0 ${vy} ${AXIS_W} ${viewH}`}
+        preserveAspectRatio="none"
+        width={AXIS_W}
+        height={FRAME_H}
+        style={{ touchAction: "none", cursor: "ns-resize", flexShrink: 0 }}
+        className="block font-mono-ui border-l border-white/5"
+        onPointerDown={onAxisPointerDown}
+        onPointerMove={onPointerMove}
+        onPointerUp={onPointerUp}
+        onPointerCancel={onPointerUp}
+        onDoubleClick={resetView}
+      >
+        {grid.levels.map(({ level, price }) => {
+          const y = PAD_T + rowOf(level) * ROW_H;
+          const isLabel = (grid.max_level - level) % labelStep === 0;
+          if (!isLabel) return null;
+          return (
+            <text key={level} x={8} y={y + ROW_H / 2 + 3.5} fill="#64748B" fontSize="10">
+              {fmtNum(price, price < 100 ? 2 : 1)}
+            </text>
+          );
+        })}
       </svg>
     </div>
   );
@@ -470,14 +609,14 @@ const PnfChart = () => {
               </span>
               <Toggle on={showTrendLines} set={setShowTrendLines} text="45° lines" />
               <Toggle on={showMa} set={setShowMa} text={`${data.params.ma_period}-col MA`} />
-              <span className="text-slate-600">scroll chart to zoom</span>
+              <span className="text-slate-600">scroll to zoom · drag to pan · drag/scroll price axis to scale · double-click to reset</span>
               <span className="ml-auto text-slate-500">
                 {data.meta.total_columns} columns · {data.meta.bars} bars · {data.meta.first_label} → {data.meta.last_label}
               </span>
             </div>
 
             <div className="grid grid-cols-1 xl:grid-cols-[1fr_340px] gap-5">
-              <div>
+              <div className="min-w-0">
                 <PnfGrid
                   data={data}
                   showTrendLines={showTrendLines}
