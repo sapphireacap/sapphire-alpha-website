@@ -14,7 +14,9 @@ const links = [
   { label: "IPOs", to: "/ipos" },
   { label: "Journal", to: "/journal" },
   { label: "The Black Box", to: "/black-box" },
-  { label: "Investing", id: "investing" },
+  // Not the real admin-gated tool at /alpha-terminal/pnf -- this route is
+  // a public placeholder that geo-checks the visitor (see PnfStudioGate).
+  { label: "P&F Studio", to: "/pnf-studio" },
   { label: "Contact", id: "contact" },
 ];
 

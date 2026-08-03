@@ -276,6 +276,33 @@ async def waitlist_count():
     return {"count": count + WAITLIST_COUNT_OFFSET}
 
 
+@api_router.get("/geo/country")
+async def geo_country(request: Request):
+    """Best-effort IP-based country lookup for the nav's P&F Studio
+    geo-gate (India isn't shown the tool for now). Render sits behind a
+    proxy, so the real visitor IP is in X-Forwarded-For, not
+    request.client.host (that's the proxy's own IP) — falls back to the
+    latter only for local dev, where there's no proxy in front at all.
+    ip-api.com over ipapi.co: confirmed live that ipapi.co's free tier
+    rate-limits fast on a shared/cloud outbound IP (got a real 429 while
+    building this), ip-api.com's free tier held up fine for the same IPs.
+    Fails open to an unknown country on any lookup error rather than ever
+    blocking the page itself over a third-party hiccup."""
+    xff = request.headers.get("x-forwarded-for")
+    ip = xff.split(",")[0].strip() if xff else (request.client.host if request.client else None)
+    if not ip or ip in ("127.0.0.1", "::1"):
+        return {"country_code": None}
+    try:
+        async with httpx.AsyncClient(timeout=5) as c:
+            r = await c.get(f"http://ip-api.com/json/{ip}", params={"fields": "status,countryCode"})
+        body = r.json()
+        if r.status_code == 200 and body.get("status") == "success" and body.get("countryCode"):
+            return {"country_code": body["countryCode"].upper()}
+    except httpx.HTTPError as e:
+        logger.warning("Geo lookup failed for %s: %s", ip, e)
+    return {"country_code": None}
+
+
 @api_router.post("/contact", response_model=Contact)
 async def create_contact(payload: ContactCreate):
     entry = Contact(**payload.model_dump())

@@ -14,6 +14,7 @@ import About from "@/components/site/About";
 import Manifesto from "@/components/site/Manifesto";
 import Research from "@/components/site/Research";
 import Investing from "@/components/site/Investing";
+import PnfStudioGate from "@/components/site/PnfStudioGate";
 import Contact from "@/components/site/Contact";
 import Footer from "@/components/site/Footer";
 import LegalPage from "@/components/site/LegalPage";
@@ -72,6 +73,7 @@ const AppShell = () => {
                 swallowed as a module slug and never reaches this page. */}
             <Route path="/alpha-terminal/pnf" element={<PnfChart />} />
             <Route path="/alpha-terminal/:slug" element={<ModuleDetail />} />
+            <Route path="/pnf-studio" element={<PnfStudioGate />} />
             <Route path="/ipos" element={<Ipos />} />
             <Route path="/ipos/:id" element={<IpoDetail />} />
             {/* Research (Aurora/FacetView) paused 2026-07-29 to cut backend
