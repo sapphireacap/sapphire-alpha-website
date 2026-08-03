@@ -22,14 +22,14 @@ const SCANNERS = [
 ];
 const BIAS = ["Bullish", "Bearish", "Neutral"];
 
-// Mirrors backend/definedge_service.py's INDEX_CONFIG chart_mode — NIFTY and
-// SENSEX still list real weekly-cadence contracts (6-leg confluence);
-// BANKNIFTY and BANKEX are monthly-only now, so their manual-override form
-// skips the weekly fields entirely rather than showing inputs for legs that
-// don't exist. Kept in sync manually since this is presentation-only (the
+// Mirrors backend/definedge_service.py's INDEX_CONFIG chart_mode — NIFTY
+// still lists real weekly-cadence contracts (6-leg confluence); BANKNIFTY
+// and FINNIFTY are monthly-only, so their manual-override form skips the
+// weekly fields entirely rather than showing inputs for legs that don't
+// exist. Kept in sync manually since this is presentation-only (the
 // backend is the source of truth for how bias actually gets computed/derived).
-const INDEX_OPTS = ["NIFTY", "BANKNIFTY", "SENSEX", "BANKEX"];
-const INDEX_CHART_MODE = { NIFTY: "6", BANKNIFTY: "4", SENSEX: "6", BANKEX: "4" };
+const INDEX_OPTS = ["NIFTY", "BANKNIFTY", "FINNIFTY"];
+const INDEX_CHART_MODE = { NIFTY: "6", BANKNIFTY: "4", FINNIFTY: "4" };
 
 const authHeaders = () => ({ headers: { Authorization: `Bearer ${localStorage.getItem(TOKEN_KEY)}` } });
 const tempId = () => `new-${Math.random().toString(36).slice(2)}`;

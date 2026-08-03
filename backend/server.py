@@ -909,8 +909,9 @@ async def swing_picks_update_lcp_admin(admin: dict = Depends(get_current_admin))
 # ---------------------------------------------------------------------------
 # Index Vector — multi-index directional bias indicator (formerly the
 # NIFTY-only "Straddle Compass"; extended 2026-07-27 to also run BANKNIFTY,
-# SENSEX, and BANKEX — see definedge_service.py's INDEX_CONFIG/compute_vector
-# for the actual computation. This section is just the storage/API layer:
+# SENSEX, and BANKEX, then 2026-08-03 swapped SENSEX/BANKEX out for FINNIFTY
+# — see definedge_service.py's INDEX_CONFIG/compute_vector for the actual
+# computation. This section is just the storage/API layer:
 # one doc per index in db.index_signal (id = f"current_{index}"), one
 # append-only db.index_signal_history collection tagged with an `index`
 # field. NIFTY is additionally write-mirrored into the legacy db.nifty_signal
@@ -918,7 +919,7 @@ async def swing_picks_update_lcp_admin(admin: dict = Depends(get_current_admin))
 # journal_routes.py's straddle_regime_at_entry auto-fill (which reads those
 # two collection names directly) needed no changes.
 # ---------------------------------------------------------------------------
-VALID_INDICES = tuple(INDEX_CONFIG.keys())  # ("NIFTY", "BANKNIFTY", "SENSEX", "BANKEX")
+VALID_INDICES = tuple(INDEX_CONFIG.keys())  # ("NIFTY", "BANKNIFTY", "FINNIFTY")
 
 
 def _validate_index(index: str):
@@ -933,7 +934,7 @@ class SignalUpdate(BaseModel):
     atm: str = ""                  # e.g. "24000"
     up_strike: str = ""            # ATM + 200
     down_strike: str = ""          # ATM - 200
-    weekly_expiry: str = ""        # chart_mode "4" indices (BANKNIFTY/BANKEX) leave this blank
+    weekly_expiry: str = ""        # chart_mode "4" indices (BANKNIFTY/FINNIFTY) leave this blank
     monthly_expiry: str = ""
     weekly_up_trend: str = "Neutral"      # Bullish (rising) | Bearish (falling) | Neutral — chart_mode "6" only
     weekly_down_trend: str = "Neutral"
@@ -1119,7 +1120,7 @@ async def update_signal(payload: SignalUpdate, admin: dict = Depends(get_current
     chart_mode = INDEX_CONFIG[payload.index]["chart_mode"]
     # If admin leaves bias on Neutral but the legs imply a direction, derive
     # it via the same confluence rule compute_vector() uses for this index's
-    # chart_mode (6-leg for NIFTY/SENSEX, 4-leg for BANKNIFTY/BANKEX — see
+    # chart_mode (6-leg for NIFTY, 4-leg for BANKNIFTY/FINNIFTY — see
     # INDEX_CONFIG).
     if data["bias"] == "Neutral":
         if chart_mode == "6":

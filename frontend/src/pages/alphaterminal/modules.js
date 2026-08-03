@@ -31,19 +31,20 @@ export const MODULES = [
     shortDescription: "Institutional market regime confirmation model.",
     category: "Market Intelligence",
     status: "Operational",
-    universe: "NIFTY, BANKNIFTY, SENSEX, BANKEX Index Options",
+    universe: "NIFTY, BANKNIFTY, FINNIFTY Index Options",
     coverage: "Weekly & Monthly Expiries",
     // Displayed inside the module page, one compass per index, in this
-    // order. Same P&F box%/reversal parameters and same all-legs-must-agree
+    // order (2-1 formation on the Live Dashboard grid — see ModuleDetail.jsx).
+    // Same P&F box%/reversal parameters and same all-legs-must-agree
     // confluence rule for every index — only the underlying contracts
-    // differ. NIFTY/SENSEX still list real weekly-cadence contracts;
-    // BANKNIFTY/BANKEX are monthly-only now (confirmed live against
-    // Definedge's master data), so those two skip the weekly leg entirely
-    // rather than reading a fake one — see definedge_service.py's
-    // INDEX_CONFIG chart_mode for the backend side of this.
-    indices: ["NIFTY", "BANKNIFTY", "SENSEX", "BANKEX"],
+    // differ. NIFTY still lists real weekly-cadence contracts; BANKNIFTY/
+    // FINNIFTY are monthly-only (confirmed live against Definedge's master
+    // data), so those two skip the weekly leg entirely rather than reading
+    // a fake one — see definedge_service.py's INDEX_CONFIG chart_mode for
+    // the backend side of this.
+    indices: ["NIFTY", "BANKNIFTY", "FINNIFTY"],
     overview: {
-      purpose: "Confirms the near-term directional regime for NIFTY, BANKNIFTY, SENSEX, and BANKEX before you commit to a trade.",
+      purpose: "Confirms the near-term directional regime for NIFTY, BANKNIFTY, and FINNIFTY before you commit to a trade.",
       whatItMeasures: "Aggregates signals across each index's options market structure into a single Bullish, Bearish, or Neutral read.",
       interpret: "Use it as confirmation, not a standalone entry signal — an aligned bias supports a trade idea already in place; an opposing bias is a caution flag.",
     },

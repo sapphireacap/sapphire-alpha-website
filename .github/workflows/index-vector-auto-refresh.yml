@@ -1,7 +1,7 @@
 name: Index Vector — auto refresh
 
 # Recomputes the confluence bias + flip levels for all 4 Index Vector
-# indices (NIFTY/BANKNIFTY/SENSEX/BANKEX) throughout the trading session.
+# indices (NIFTY/BANKNIFTY/FINNIFTY) throughout the trading session.
 # /admin/definedge/auto-refresh already existed for exactly this (skips
 # cleanly outside market hours / when Definedge isn't connected) but had
 # nothing scheduling it -- same gap as every other feature this session.

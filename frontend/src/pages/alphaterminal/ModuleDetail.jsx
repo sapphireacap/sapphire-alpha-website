@@ -189,15 +189,23 @@ const ScannerDashboard = ({ scannerKey }) => {
 // public Historical Performance section) - moved to AlphaTerminal.jsx's
 // exports since Historical Performance's real display is admin-only now
 // (Admin.jsx's IndexTrackRecordPanel) and this file no longer needs it.
-// Live Dashboard shows all 4 covered indices at once as cards instead (no
-// selector needed - this is the "what's happening right now" view).
+// Live Dashboard shows all covered indices at once as cards instead (no
+// selector needed - this is the "what's happening right now" view). With
+// an odd count (3, as of 2026-08-03's NIFTY/BANKNIFTY/FINNIFTY lineup) the
+// last card spans both columns on md+ for a 2-1 formation instead of
+// leaving a dangling gap next to it.
 const LiveDashboard = ({ module, signals }) => (
   <Section no="01" title="Live Dashboard" testId="section-live-dashboard">
     {module.kind === "vector" && (
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4" data-testid="vector-index-grid">
-        {module.indices.map((idx) => (
-          <StraddleCompass key={idx} signal={signals[idx]} index={idx} />
-        ))}
+        {module.indices.map((idx, i) => {
+          const isLastOfOdd = i === module.indices.length - 1 && module.indices.length % 2 === 1;
+          return (
+            <div key={idx} className={isLastOfOdd ? "md:col-span-2" : ""}>
+              <StraddleCompass signal={signals[idx]} index={idx} />
+            </div>
+          );
+        })}
       </div>
     )}
     {module.kind === "scanner" && <ScannerDashboard scannerKey={module.scannerKey} />}

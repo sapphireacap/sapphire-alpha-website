@@ -213,7 +213,7 @@ export const BIAS_STYLE = {
 // about how the bias is computed (no strikes, expiries, or leg trends): the
 // public signal API itself only ever returns bias/spot/note/updated_at now,
 // so there is nothing to leak here even if this component tried to.
-export const INDEX_LABELS = { NIFTY: "NIFTY", BANKNIFTY: "BANKNIFTY", SENSEX: "SENSEX", BANKEX: "BANKEX" };
+export const INDEX_LABELS = { NIFTY: "NIFTY", BANKNIFTY: "BANKNIFTY", FINNIFTY: "FINNIFTY" };
 
 const fmtFlipLevel = (v) => (v == null ? "—" : Math.round(v).toLocaleString("en-IN"));
 

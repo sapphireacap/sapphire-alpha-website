@@ -83,29 +83,30 @@ VIX_TOKEN = "26017"          # India VIX token (NSE segment) — lives in the ns
                               # verified live via the quotes endpoint during Phase 2 design.
 
 # Index Vector coverage — one entry per index the Vector runs on. Every field
-# here was confirmed live against allmaster.zip on 2026-07-27 (not guessed):
+# here was confirmed live against allmaster.zip (NIFTY/BANKNIFTY on
+# 2026-07-27, FINNIFTY on 2026-08-03 when SENSEX/BANKEX were dropped in favor
+# of it — not guessed):
 #   option_symbol/option_segment: how each index's OPTIDX contracts are
 #     tagged in the master (SYMBOL + SEG columns) — resolve_leg() filters on
-#     both. NIFTY/BANKNIFTY -> NFO; SENSEX/BANKEX -> BFO (SENSEX/BANKEX do
-#     not exist at all in the NSE-only nsefno.zip, only in allmaster.zip).
+#     both. All three covered indices are NFO.
 #   spot_segment/spot_token: the index's own quote/history token. NIFTY and
 #     BANKNIFTY are both NSE-segment indices, but BANKNIFTY's master SYMBOL
 #     is "Nifty Bank" (token 26009), NOT "BANKNIFTY" — that's the options
-#     contracts' symbol, not the index quote's. SENSEX (1) and BANKEX (12)
-#     are BSE-segment.
+#     contracts' symbol, not the index quote's. FINNIFTY's underlying is
+#     "Nifty Fin Service" (token 26037) — not to be confused with the
+#     similarly-named "Nifty FinSrv25 50" (26065) or "Nifty FinSerExBnk"
+#     (26118), which are different indices with no matching option chain.
 #   chart_mode: "6" (weekly+monthly straddles + monthly ATM CE/PE) for
 #     indices that still list genuine weekly-cadence contracts (confirmed
-#     live: NIFTY expiries fall ~weekly on Tuesdays, SENSEX ~weekly on
-#     Thursdays); "4" (monthly straddle + monthly ATM CE/PE only, no weekly
-#     leg at all) for BANKNIFTY/BANKEX, which NSE/BSE consolidated down to
-#     monthly-only some time back (confirmed live: only 3-6 expiries listed,
-#     each ~a month apart) — there is no real weekly contract to read for
-#     those two, so chart_mode "4" doesn't fake one.
+#     live: NIFTY expiries fall ~weekly on Tuesdays); "4" (monthly straddle +
+#     monthly ATM CE/PE only, no weekly leg at all) for BANKNIFTY/FINNIFTY,
+#     which only list monthly-cadence expiries (confirmed live: FINNIFTY's
+#     master only carries 3 expiries, each ~a month apart) — there is no real
+#     weekly contract to read for either, so chart_mode "4" doesn't fake one.
 INDEX_CONFIG = {
     "NIFTY": {"label": "Nifty 50", "option_symbol": "NIFTY", "option_segment": "NFO", "spot_segment": "NSE", "spot_token": "26000", "chart_mode": "6"},
     "BANKNIFTY": {"label": "Bank Nifty", "option_symbol": "BANKNIFTY", "option_segment": "NFO", "spot_segment": "NSE", "spot_token": "26009", "chart_mode": "4"},
-    "SENSEX": {"label": "Sensex", "option_symbol": "SENSEX", "option_segment": "BFO", "spot_segment": "BSE", "spot_token": "1", "chart_mode": "6"},
-    "BANKEX": {"label": "Bankex", "option_symbol": "BANKEX", "option_segment": "BFO", "spot_segment": "BSE", "spot_token": "12", "chart_mode": "4"},
+    "FINNIFTY": {"label": "Fin Nifty", "option_symbol": "FINNIFTY", "option_segment": "NFO", "spot_segment": "NSE", "spot_token": "26037", "chart_mode": "4"},
 }
 
 SPOT_CACHE_TTL = 2.0   # seconds — protects against many concurrent visitors each triggering their own upstream call
@@ -210,7 +211,7 @@ def derive_bias(weekly_up_trend: str, weekly_down_trend: str, monthly_up_trend: 
 
 def derive_bias_4(monthly_up_trend: str, monthly_down_trend: str,
                    monthly_atm_ce_trend: str, monthly_atm_pe_trend: str) -> str:
-    """4-chart confluence for monthly-only indices (BANKNIFTY/BANKEX,
+    """4-chart confluence for monthly-only indices (BANKNIFTY/FINNIFTY,
     chart_mode "4" — see INDEX_CONFIG) — the same rule as derive_bias() with
     the weekly leg dropped entirely, since there is no real weekly contract
     to read for these two. All FOUR legs must still agree."""
@@ -527,7 +528,7 @@ class DefinedgeService:
                 "legs": {"up": resolve_leg(weekly_expiry, atm + 200), "down": resolve_leg(weekly_expiry, atm - 200)},
             }
         else:
-            # chart_mode "4" (BANKNIFTY/BANKEX) — monthly-only, no separate
+            # chart_mode "4" (BANKNIFTY/FINNIFTY) — monthly-only, no separate
             # weekly contract exists, so there's nothing to avoid a collision
             # with; just take the plain monthly pick.
             monthly_expiry = self._pick_monthly_expiry(all_expiries, today)
@@ -825,8 +826,8 @@ class DefinedgeService:
         fetch only today's session, which reset the P&F chart every
         morning; a P&F chart is never reset at a day boundary, and the
         roll to the next expiry starts a new chart by itself because the
-        tokens change. `segment` is NFO for NIFTY/BANKNIFTY, BFO for
-        SENSEX/BANKEX (see INDEX_CONFIG)."""
+        tokens change. `segment` is NFO for every currently-covered index
+        (see INDEX_CONFIG)."""
         frm, to = self._history_window()
         ce, pe = await asyncio.gather(
             self._closes(segment, ce_token, frm=frm, to=to),
@@ -849,10 +850,10 @@ class DefinedgeService:
 
     # ---- orchestration -------------------------------------------------
     async def compute_vector(self, index_key: str = "NIFTY"):
-        """Runs the Index Vector for one index. chart_mode "6" (NIFTY,
-        SENSEX) reads weekly+monthly straddles plus monthly ATM CE/PE;
-        chart_mode "4" (BANKNIFTY, BANKEX — no real weekly contract exists,
-        see INDEX_CONFIG) reads only the monthly straddle plus monthly ATM
+        """Runs the Index Vector for one index. chart_mode "6" (NIFTY)
+        reads weekly+monthly straddles plus monthly ATM CE/PE; chart_mode
+        "4" (BANKNIFTY, FINNIFTY — no real weekly contract exists, see
+        INDEX_CONFIG) reads only the monthly straddle plus monthly ATM
         CE/PE. Same box%/reversal parameters and same derive_bias-family
         all-legs-must-agree rule either way."""
         cfg = INDEX_CONFIG[index_key]
@@ -860,8 +861,9 @@ class DefinedgeService:
 
         # Fetch spot and the (possibly cold-cache) unified master file
         # concurrently — neither depends on the other, only token resolution
-        # below does. allmaster.zip (not the NSE-only nsefno.zip) is required
-        # here since SENSEX/BANKEX only exist in the unified file.
+        # below does. allmaster.zip (not the NSE-only nsefno.zip) is used
+        # for consistency with the Quant Lab's generic symbol lookup, which
+        # shares this cache.
         spot, df = await asyncio.gather(self._spot(index_key), self._get_all_master())
         atm = int(round(spot / 100.0) * 100)
         tokens = self._resolve_tokens(df, atm, index_key)
