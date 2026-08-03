@@ -10,7 +10,7 @@ import HeroDashboardMockup from "./HeroDashboardMockup";
 // rather than inventing unrelated marketing claims.
 const TRUST_SIGNALS = [
   { icon: TrendingUp, label: "Evidence-Led", sub: "Research-first process" },
-  { icon: ShieldCheck, label: "No Black Box", sub: "Fully systematic" },
+  { icon: ShieldCheck, label: "Systematic Execution", sub: "Rules over emotions." },
   { icon: ExternalLink, label: "Built to Compound", sub: "Discipline over prediction" },
 ];
 
@@ -133,17 +133,6 @@ export const Hero = () => {
               })}
             </motion.div>
 
-            {/* Data readout ticker */}
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              transition={{ delay: 1.3, duration: 1 }}
-              className="mt-10 flex flex-wrap gap-x-10 gap-y-3 font-mono-ui text-xs text-slate-500"
-            >
-              <span><span className="text-sapphire-light">//</span> SIGNAL_STRENGTH: <span className="text-emerald-400">0.847</span></span>
-              <span><span className="text-sapphire-light">//</span> REGIME: <span className="text-emerald-400">RISK_ON</span></span>
-              <span><span className="text-sapphire-light">//</span> STATUS: <span className="text-white">BUILDING</span></span>
-            </motion.div>
           </div>
 
           <div className="flex lg:col-span-6 items-center justify-center">

@@ -13,10 +13,14 @@ const LOGO = "https://customer-assets-agu9un31.emergentagent.net/job_systematic-
 const EASE = [0.16, 1, 0.3, 1];
 
 // Kept visible: the core product pages. Tucked into "More": the page's
-// own identity anchors (About/Contact) plus IPOs, Journal, and P&F
-// Studio -- keeps the primary bar to four items instead of nine wide.
+// own identity anchors (About/Contact) plus IPOs and Journal -- keeps the
+// primary bar to four items instead of nine wide.
+// "Research" replaced with "P&F Studio" (2026-08-04): /research was already
+// just a paused-feature placeholder in the primary bar, while P&F Studio is
+// a real paid product (see /pnf-studio, backend's get_current_pnf_subscriber)
+// that deserves primary billing, not a tuck-away link.
 const PRIMARY_LINKS = [
-  { label: "Research", to: "/research" },
+  { label: "P&F Studio", to: "/pnf-studio" },
   { label: "Alpha Terminal", to: "/alpha-terminal" },
   { label: "The Black Box", to: "/black-box" },
   { label: "Pricing", to: "/pricing" },
@@ -25,10 +29,7 @@ const PRIMARY_LINKS = [
 const MORE_LINKS = [
   { label: "IPOs", to: "/ipos", icon: Ticket },
   { label: "Journal", to: "/journal", icon: NotebookText },
-  // Not the real admin-gated tool at /alpha-terminal/pnf -- this route is
-  // a public placeholder (see NotAvailablePage), same one Login/Sign Up
-  // points to below.
-  { label: "P&F Studio", to: "/not-available", icon: LineChart },
+  { label: "Research", to: "/research", icon: LineChart },
   { label: "Contact", id: "contact", icon: Mail },
   { label: "About", id: "about", icon: User },
 ];
@@ -162,14 +163,14 @@ export const Navbar = () => {
         <div className="flex items-center gap-4 shrink-0">
           {/* <ThemeToggle /> -- hidden for now, see the import comment above */}
           <button
-            onClick={() => navigate("/not-available")}
+            onClick={() => navigate("/login")}
             className="hidden lg:inline-flex text-sm text-slate-300 hover:text-white transition-colors duration-200"
             data-testid="nav-login-btn"
           >
             Log In
           </button>
           <button
-            onClick={() => navigate("/not-available")}
+            onClick={() => navigate("/signup")}
             className="hidden lg:inline-flex text-sm text-slate-300 hover:text-white transition-colors duration-200"
             data-testid="nav-signup-btn"
           >
@@ -215,7 +216,7 @@ export const Navbar = () => {
                 </button>
               ))}
               <button
-                onClick={() => { setOpen(false); navigate("/not-available"); }}
+                onClick={() => { setOpen(false); navigate("/login"); }}
                 className="text-left text-base py-1 text-slate-200"
                 data-testid="nav-mobile-login-btn"
               >

@@ -105,7 +105,9 @@ export const openTradingViewChart = (ticker) => {
   window.open(`https://www.tradingview.com/chart/?symbol=NSE:${symbol}`, "_blank", "noopener,noreferrer");
 };
 
-export const MomentumTable = ({ rows }) => (
+export const MomentumTable = ({ rows, onRowClick, disclaimer = DISCLAIMER }) => {
+  const handleClick = onRowClick || ((r) => openTradingViewChart(r.ticker));
+  return (
   <div className="rounded-2xl border border-white/10 bg-[#0A0D18] overflow-hidden" data-testid="momentum-table">
     {/* Desktop / tablet table */}
     <div className="hidden md:block">
@@ -129,7 +131,7 @@ export const MomentumTable = ({ rows }) => (
               initial={{ opacity: 0, y: 12 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.5, ease: EASE, delay: i * 0.06 }}
-              onClick={() => openTradingViewChart(r.ticker)}
+              onClick={() => handleClick(r)}
               className="group border-b border-white/[0.05] last:border-0 transition-colors duration-300 hover:bg-sapphire/[0.06] cursor-pointer"
               data-testid={`momentum-row-${i}`}
             >
@@ -164,7 +166,7 @@ export const MomentumTable = ({ rows }) => (
           initial={{ opacity: 0, y: 12 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.5, ease: EASE, delay: i * 0.06 }}
-          onClick={() => openTradingViewChart(r.ticker)}
+          onClick={() => handleClick(r)}
           className="p-5 cursor-pointer active:bg-sapphire/[0.06] transition-colors"
           data-testid={`momentum-card-${i}`}
         >
@@ -197,11 +199,12 @@ export const MomentumTable = ({ rows }) => (
 
     <div className="px-5 md:px-6 py-5 border-t border-white/10">
       <p className="text-xs font-light text-slate-500 leading-relaxed max-w-4xl" data-testid="momentum-disclaimer">
-        {DISCLAIMER}
+        {disclaimer}
       </p>
     </div>
   </div>
-);
+  );
+};
 
 export const BIAS_STYLE = {
   Bullish: { color: "text-emerald-300", ring: "border-emerald-400/30", glow: "rgba(52,211,153,0.18)", Icon: TrendingUp, dot: "bg-emerald-400" },
