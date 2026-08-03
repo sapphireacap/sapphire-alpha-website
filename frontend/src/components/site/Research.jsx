@@ -101,8 +101,8 @@ export const Research = () => {
   return (
     <section id="research" className="relative py-24 md:py-40" data-testid="research-section">
       <div className="container-x">
-        <div className="grid grid-cols-12 gap-12 md:gap-16 items-center">
-          <Reveal className="col-span-12 lg:col-span-6 order-2 lg:order-1">
+        <div className="flex flex-col lg:grid lg:grid-cols-12 gap-12 md:gap-16 items-center">
+          <Reveal className="lg:col-span-6 order-2 lg:order-1">
             <p className="overline mb-6">Research · Approach</p>
             <h2 className="font-display font-black tracking-tighter text-white text-4xl md:text-5xl leading-[1.03] mb-6">
               Understanding markets through research.
@@ -128,7 +128,7 @@ export const Research = () => {
             </div>
           </Reveal>
 
-          <Reveal delay={0.2} className="col-span-12 lg:col-span-6 order-1 lg:order-2">
+          <Reveal delay={0.2} className="lg:col-span-6 order-1 lg:order-2">
             <div className="relative">
               <div className="absolute inset-0 radial-glow scale-90" />
               <HexDiagram />

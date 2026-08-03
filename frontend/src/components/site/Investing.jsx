@@ -44,8 +44,8 @@ export const Investing = () => {
   return (
     <section id="investing" className="relative py-24 md:py-40" data-testid="investing-section">
       <div className="container-x">
-        <div className="grid grid-cols-12 gap-12 md:gap-16 items-start">
-          <div className="col-span-12 lg:col-span-7">
+        <div className="flex flex-col lg:grid lg:grid-cols-12 gap-12 md:gap-16 items-start">
+          <div className="lg:col-span-7">
             <Reveal>
               <p className="overline mb-6">Systematic Investing · Process</p>
               <h2 className="font-display font-black tracking-tighter text-white text-4xl md:text-6xl leading-[1.02] mb-14">
@@ -71,7 +71,7 @@ export const Investing = () => {
             </div>
           </div>
 
-          <Reveal delay={0.2} className="col-span-12 lg:col-span-5 lg:sticky lg:top-28">
+          <Reveal delay={0.2} className="lg:col-span-5 lg:sticky lg:top-28">
             <Terminal />
             <p className="mt-4 font-mono-ui text-[11px] text-slate-600 leading-relaxed">
               * Illustrative readout. Figures are representative of methodology, not live performance.

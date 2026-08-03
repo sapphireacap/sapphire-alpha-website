@@ -87,7 +87,7 @@ export const Navbar = () => {
       }`}
       data-testid="site-navbar"
     >
-      <nav className="w-full max-w-7xl mx-auto px-6 md:px-10 lg:px-14 flex items-center justify-between gap-4 h-20">
+      <nav className="w-full max-w-7xl mx-auto px-6 md:px-10 lg:px-14 flex items-center justify-between gap-4 h-16 md:h-20">
         <button
           onClick={() => goSection("home")}
           className="flex items-center gap-3.5 group min-w-0"

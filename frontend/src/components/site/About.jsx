@@ -29,14 +29,14 @@ export const About = () => {
   return (
     <section id="about" className="relative py-24 md:py-40" data-testid="about-section">
       <div className="container-x">
-        <div className="grid grid-cols-12 gap-8 md:gap-16 items-end mb-16 md:mb-24">
-          <Reveal className="col-span-12 md:col-span-7">
+        <div className="flex flex-col md:grid md:grid-cols-12 gap-8 md:gap-16 items-end mb-16 md:mb-24">
+          <Reveal className="md:col-span-7">
             <p className="overline mb-6">About · What We Build</p>
             <h2 className="font-display font-black tracking-tighter text-white text-4xl md:text-6xl leading-[1.02]">
               Precision at the intersection of data and markets.
             </h2>
           </Reveal>
-          <Reveal delay={0.15} className="col-span-12 md:col-span-5">
+          <Reveal delay={0.15} className="md:col-span-5">
             <p className="text-base md:text-lg font-light text-slate-400 leading-relaxed">
               Sapphire Alpha Capital is a research-first platform focused on
               systematic investing, financial markets, and quantitative analysis —

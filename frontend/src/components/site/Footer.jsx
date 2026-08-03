@@ -30,8 +30,8 @@ export const Footer = () => {
   return (
     <footer className="relative pt-28 md:pt-36 border-t border-white/10 overflow-hidden" data-testid="site-footer">
       <div className="container-x">
-        <div className="grid grid-cols-12 gap-x-8 gap-y-12 pb-24">
-          <div className="col-span-12 md:col-span-4">
+        <div className="flex flex-col md:grid md:grid-cols-12 gap-x-8 gap-y-12 pb-24">
+          <div className="md:col-span-4">
             <div className="flex items-center gap-3.5 mb-6">
               <span className="logo-pill p-2 flex items-center justify-center">
                 <img src={LOGO} alt="Sapphire Alpha Capital" className="h-8 w-8 object-contain" />
@@ -62,48 +62,50 @@ export const Footer = () => {
             </div>
           </div>
 
-          <div className="col-span-6 md:col-span-3 md:col-start-7">
-            <p className="overline !text-slate-500 mb-7">Navigation</p>
-            <ul className="space-y-4">
-              {NAV.map((n) => (
-                <li key={n.id || n.to}>
-                  {n.to ? (
-                    <Link
-                      to={n.to}
-                      className="inline-block text-sm text-slate-400 hover:text-white hover:translate-x-0.5 transition-all duration-200"
-                      data-testid={`footer-nav-${n.to.slice(1)}`}
-                    >
-                      {n.label}
-                    </Link>
-                  ) : (
-                    <button
-                      onClick={() => scrollToId(n.id)}
-                      className="inline-block text-sm text-slate-400 hover:text-white hover:translate-x-0.5 transition-all duration-200"
-                      data-testid={`footer-nav-${n.id}`}
-                    >
-                      {n.label}
-                    </button>
-                  )}
-                </li>
-              ))}
-            </ul>
-          </div>
+          <div className="flex gap-8 md:contents">
+            <div className="flex-1 md:flex-none md:col-span-3 md:col-start-7">
+              <p className="overline !text-slate-500 mb-7">Navigation</p>
+              <ul className="space-y-4">
+                {NAV.map((n) => (
+                  <li key={n.id || n.to}>
+                    {n.to ? (
+                      <Link
+                        to={n.to}
+                        className="inline-block text-sm text-slate-400 hover:text-white hover:translate-x-0.5 transition-all duration-200"
+                        data-testid={`footer-nav-${n.to.slice(1)}`}
+                      >
+                        {n.label}
+                      </Link>
+                    ) : (
+                      <button
+                        onClick={() => scrollToId(n.id)}
+                        className="inline-block text-sm text-slate-400 hover:text-white hover:translate-x-0.5 transition-all duration-200"
+                        data-testid={`footer-nav-${n.id}`}
+                      >
+                        {n.label}
+                      </button>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            </div>
 
-          <div className="col-span-6 md:col-span-2 md:col-start-10">
-            <p className="overline !text-slate-500 mb-7">Legal</p>
-            <ul className="space-y-4">
-              {LEGAL.map((l) => (
-                <li key={l.to}>
-                  <Link
-                    to={l.to}
-                    className="inline-block text-sm text-slate-400 hover:text-white hover:translate-x-0.5 transition-all duration-200"
-                    data-testid={`footer-legal-${l.to.slice(1)}`}
-                  >
-                    {l.label}
-                  </Link>
-                </li>
-              ))}
-            </ul>
+            <div className="flex-1 md:flex-none md:col-span-2 md:col-start-10">
+              <p className="overline !text-slate-500 mb-7">Legal</p>
+              <ul className="space-y-4">
+                {LEGAL.map((l) => (
+                  <li key={l.to}>
+                    <Link
+                      to={l.to}
+                      className="inline-block text-sm text-slate-400 hover:text-white hover:translate-x-0.5 transition-all duration-200"
+                      data-testid={`footer-legal-${l.to.slice(1)}`}
+                    >
+                      {l.label}
+                    </Link>
+                  </li>
+                ))}
+              </ul>
+            </div>
           </div>
         </div>
 

@@ -55,18 +55,18 @@ export const Manifesto = () => {
           {CHAPTERS.map((c) => (
             <div
               key={c.no}
-              className="grid grid-cols-12 gap-6 md:gap-16 items-start border-t border-white/10 pt-10 md:pt-16"
+              className="flex flex-col md:grid md:grid-cols-12 gap-6 md:gap-16 items-start border-t border-white/10 pt-10 md:pt-16"
               data-testid={`manifesto-chapter-${c.no}`}
             >
-              <div className="col-span-12 md:col-span-2">
+              <div className="md:col-span-2">
                 <span className="font-mono-ui text-sm text-sapphire-light tracking-[0.2em]">/ {c.no}</span>
               </div>
-              <div className="col-span-12 md:col-span-7">
+              <div className="md:col-span-7">
                 <h3 className="font-display font-black tracking-tighter text-white text-3xl sm:text-5xl md:text-6xl leading-[0.98]">
                   <MaskedTitle>{c.title}</MaskedTitle>
                 </h3>
               </div>
-              <Reveal delay={0.15} className="col-span-12 md:col-span-3">
+              <Reveal delay={0.15} className="md:col-span-3">
                 <p className="text-base font-light text-slate-400 leading-relaxed">{c.body}</p>
               </Reveal>
             </div>

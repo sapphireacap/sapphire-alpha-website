@@ -14,7 +14,7 @@ const SIGNALS = [
 export const TrustStrip = () => (
   <section className="relative py-14 md:py-16 border-y border-white/5" data-testid="trust-strip-section">
     <div className="container-x">
-      <Reveal className="grid grid-cols-2 md:grid-cols-5 gap-8 md:gap-6">
+      <Reveal className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-5 gap-8 md:gap-6">
         {SIGNALS.map((s) => {
           const Icon = s.icon;
           return (

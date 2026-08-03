@@ -35,14 +35,14 @@ export const Contact = () => {
   };
 
   const field =
-    "w-full rounded-lg border border-white/10 bg-white/[0.02] focus:border-sapphire-light focus:bg-white/[0.04] outline-none text-white font-light px-4 py-3 placeholder:text-slate-600 transition-all duration-300 focus:shadow-[0_0_0_3px_rgba(67,126,235,0.15)]";
+    "w-full min-w-0 rounded-lg border border-white/10 bg-white/[0.02] focus:border-sapphire-light focus:bg-white/[0.04] outline-none text-white font-light px-4 py-3 placeholder:text-slate-600 transition-all duration-300 focus:shadow-[0_0_0_3px_rgba(67,126,235,0.15)]";
 
   return (
     <section id="contact" className="relative py-24 md:py-40 border-t border-white/5" data-testid="contact-section">
       <div className="absolute inset-0 grid-bg opacity-30 pointer-events-none" />
       <div className="container-x relative">
-        <div className="grid grid-cols-12 gap-12 md:gap-16">
-          <Reveal className="col-span-12 lg:col-span-5">
+        <div className="flex flex-col lg:grid lg:grid-cols-12 gap-12 md:gap-16">
+          <Reveal className="lg:col-span-5">
             <p className="overline mb-6">Contact</p>
             <h2 className="font-display font-black tracking-tighter text-white text-4xl md:text-6xl leading-[1.0]">
               Let&apos;s build something meaningful.
@@ -60,9 +60,9 @@ export const Contact = () => {
             </a>
           </Reveal>
 
-          <Reveal delay={0.15} className="col-span-12 lg:col-span-7">
-            <form onSubmit={submit} className="glass rounded-3xl p-8 md:p-14 space-y-8" data-testid="contact-form">
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-8">
+          <Reveal delay={0.15} className="lg:col-span-7">
+            <form onSubmit={submit} className="w-full min-w-0 glass rounded-3xl p-8 md:p-14 space-y-8" data-testid="contact-form">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-8 min-w-0">
                 <div>
                   <label className="overline !text-slate-500 block mb-2.5">Name</label>
                   <input value={form.name} onChange={set("name")} placeholder="Jane Doe" className={field} data-testid="contact-name" />

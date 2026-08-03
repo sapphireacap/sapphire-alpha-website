@@ -47,7 +47,7 @@ export const Hero = () => {
       <div className="absolute top-1/3 -left-40 w-[500px] h-[500px] rounded-full bg-sapphire/10 blur-[120px] pointer-events-none" />
       <div className="absolute inset-0 bg-gradient-to-b from-void/0 via-void/0 to-void pointer-events-none" />
 
-      <motion.div style={{ y, opacity }} className="container-x relative z-10 pt-32 pb-20 lg:pt-28">
+      <motion.div style={{ y, opacity }} className="container-x relative z-10 pt-24 pb-14 sm:pt-28 sm:pb-20 lg:pt-28">
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-16 lg:gap-10 items-center">
           <div className="lg:col-span-6">
             <motion.div
@@ -60,7 +60,9 @@ export const Hero = () => {
                 <span className="absolute inline-flex h-full w-full rounded-full bg-sapphire-light opacity-75 animate-ping" />
                 <span className="relative inline-flex h-2 w-2 rounded-full bg-sapphire-light" />
               </span>
-              <span className="overline">Quantitative Research · Currently in Development</span>
+              <span className="overline">
+                Quantitative Research ·<br className="sm:hidden" /> Currently in Development
+              </span>
               <ChevronRight size={14} className="text-slate-500" />
             </motion.div>
 

@@ -87,15 +87,15 @@ export const HeroDashboardMockup = () => {
         </div>
 
         <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2 px-6 py-4 border-b border-white/10">
+          <div className="flex items-center gap-2 px-4 py-3 sm:px-6 sm:py-4 border-b border-white/10">
             <span className="h-2.5 w-2.5 rounded-full bg-red-500/70" />
             <span className="h-2.5 w-2.5 rounded-full bg-yellow-500/70" />
             <span className="h-2.5 w-2.5 rounded-full bg-emerald-500/70" />
             <span className="ml-3 font-mono-ui text-xs text-slate-500">sac_engine · live</span>
           </div>
 
-          <div className="p-6">
-            <div className="flex items-center justify-between mb-4">
+          <div className="p-4 sm:p-6">
+            <div className="flex items-center justify-between mb-3 sm:mb-4">
               <div className="flex items-center gap-2">
                 <p className="text-sm font-medium text-white">Market Overview</p>
                 <span className="flex items-center gap-1.5 font-mono-ui text-[10px] text-emerald-400">
@@ -111,14 +111,14 @@ export const HeroDashboardMockup = () => {
               </div>
             </div>
 
-            <div className="grid grid-cols-3 gap-3 font-mono-ui">
+            <div className="grid grid-cols-3 gap-2 sm:gap-3 font-mono-ui">
               {INDICES.map((idx) => {
                 const s = spots[idx];
                 const negative = s?.change?.startsWith("-");
                 return (
-                  <div key={idx} className="rounded-lg border border-white/10 bg-white/[0.02] px-3.5 py-3.5">
+                  <div key={idx} className="rounded-lg border border-white/10 bg-white/[0.02] px-2.5 py-2.5 sm:px-3.5 sm:py-3.5">
                     <p className="text-[9px] uppercase tracking-[0.1em] text-slate-500">{idx}</p>
-                    <p className="text-base text-white mt-1.5 truncate">{s?.spot ?? "—"}</p>
+                    <p className="text-sm sm:text-base text-white mt-1.5 truncate">{s?.spot ?? "—"}</p>
                     {s?.change_pct && (
                       <p className={`text-[11px] mt-1 ${negative ? "text-red-400" : "text-emerald-400"}`}>
                         {s.change_pct}%
@@ -142,24 +142,24 @@ export const HeroDashboardMockup = () => {
               ) : signals.length === 0 ? (
                 <div className="py-8 text-center text-xs text-slate-600 font-mono-ui">No signals right now</div>
               ) : (
-                <table className="w-full font-mono-ui text-[11px]">
+                <table className="w-full font-mono-ui text-[10px] sm:text-[11px]">
                   <thead>
                     <tr className="text-slate-500 border-b border-white/10">
-                      <th className="text-left font-medium pb-2.5">Symbol</th>
-                      <th className="text-left font-medium pb-2.5">Volume</th>
-                      <th className="text-left font-medium pb-2.5">Strength</th>
-                      <th className="text-left font-medium pb-2.5">Direction</th>
-                      <th className="text-right font-medium pb-2.5">Updated</th>
+                      <th className="text-left font-medium pb-2 sm:pb-2.5">Symbol</th>
+                      <th className="text-left font-medium pb-2 sm:pb-2.5">Volume</th>
+                      <th className="text-left font-medium pb-2 sm:pb-2.5">Strength</th>
+                      <th className="text-left font-medium pb-2 sm:pb-2.5">Direction</th>
+                      <th className="hidden sm:table-cell text-right font-medium pb-2.5">Updated</th>
                     </tr>
                   </thead>
                   <tbody>
                     {signals.map((s) => (
                       <tr key={s.id} className="border-b border-white/5 last:border-0">
-                        <td className="py-3 text-white font-medium">{s.ticker}</td>
-                        <td className="py-3 text-slate-400">{s.volume}</td>
-                        <td className="py-3"><StrengthMeter score={s.momentum_score} /></td>
-                        <td className={`py-3 ${DIRECTION_COLOR[s.bias] || "text-slate-300"}`}>{s.bias}</td>
-                        <td className="py-3 text-right text-slate-500">{timeAgo(s.created_at)}</td>
+                        <td className="py-2.5 sm:py-3 text-white font-medium">{s.ticker}</td>
+                        <td className="py-2.5 sm:py-3 text-slate-400">{s.volume}</td>
+                        <td className="py-2.5 sm:py-3"><StrengthMeter score={s.momentum_score} /></td>
+                        <td className={`py-2.5 sm:py-3 ${DIRECTION_COLOR[s.bias] || "text-slate-300"}`}>{s.bias}</td>
+                        <td className="hidden sm:table-cell py-3 text-right text-slate-500">{timeAgo(s.created_at)}</td>
                       </tr>
                     ))}
                   </tbody>
