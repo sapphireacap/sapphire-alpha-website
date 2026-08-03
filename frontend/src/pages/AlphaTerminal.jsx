@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import axios from "axios";
 import { motion, AnimatePresence } from "framer-motion";
 import { Link } from "react-router-dom";
-import { ArrowUpRight, TrendingUp, TrendingDown, Minus, ExternalLink, X, Lock } from "lucide-react";
+import { ArrowUpRight, TrendingUp, TrendingDown, Minus, ExternalLink, X, Lock, Globe } from "lucide-react";
 import Navbar from "../components/site/Navbar";
 import Footer from "../components/site/Footer";
 import ParticleField from "../components/site/ParticleField";
@@ -484,6 +484,91 @@ const DirectoryCard = ({ module, index, onAbout }) => {
   );
 };
 
+/* ------------------------------ Market selector ------------------------------ */
+// Adding a future market only requires a new entry here — nothing else in
+// this file branches on a specific market id.
+const MARKETS = [
+  { id: "india", flag: "🇮🇳", name: "Indian Markets", available: true },
+  { id: "us", flag: "🇺🇸", name: "US Markets", available: false },
+  { id: "forex", flag: "💱", name: "Forex", available: false },
+  { id: "crypto", flag: "₿", name: "Crypto", available: false },
+];
+
+const MarketSelector = ({ active, onChange }) => (
+  <motion.div
+    initial={{ opacity: 0, y: 16 }}
+    animate={{ opacity: 1, y: 0 }}
+    transition={{ duration: 0.7, ease: EASE, delay: 0.3 }}
+    className="flex justify-center mt-10"
+  >
+    <div
+      role="tablist"
+      aria-label="Select market"
+      className="inline-flex flex-wrap items-center justify-center gap-1 rounded-full border border-white/10 bg-white/[0.04] backdrop-blur-xl p-1"
+      data-testid="market-selector"
+    >
+      {MARKETS.map((m) => {
+        const isActive = active === m.id;
+        return (
+          <button
+            key={m.id}
+            type="button"
+            role="tab"
+            aria-selected={isActive}
+            onClick={() => onChange(m.id)}
+            className={`relative rounded-full px-4 py-2 font-mono-ui text-[11px] md:text-[12px] uppercase tracking-wider whitespace-nowrap transition-colors duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sapphire-light/60 ${
+              isActive ? "text-white" : "text-slate-400 hover:text-slate-200"
+            }`}
+            data-testid={`market-tab-${m.id}`}
+          >
+            {isActive && (
+              <motion.span
+                layoutId="market-selector-pill"
+                className="absolute inset-0 rounded-full bg-sapphire -z-10"
+                transition={{ duration: 0.2, ease: EASE }}
+              />
+            )}
+            <span className="relative z-10 inline-flex items-center gap-2">
+              <span aria-hidden="true">{m.flag}</span>
+              {m.name}
+            </span>
+          </button>
+        );
+      })}
+    </div>
+  </motion.div>
+);
+
+const UnavailableMarket = ({ market }) => (
+  <motion.div
+    key={market.id}
+    initial={{ opacity: 0 }}
+    animate={{ opacity: 1 }}
+    exit={{ opacity: 0 }}
+    transition={{ duration: 0.25, ease: EASE }}
+    className="flex flex-col items-center justify-center text-center py-20 md:py-28"
+    data-testid={`market-unavailable-${market.id}`}
+  >
+    <span className="inline-flex h-16 w-16 items-center justify-center rounded-2xl border border-white/10 bg-white/[0.03] text-slate-500 mb-6">
+      <Globe size={28} />
+    </span>
+    <h2 className="font-display text-2xl md:text-3xl font-bold text-white tracking-tight mb-3">
+      Not Available in Your Country
+    </h2>
+    <p className="text-sm font-light text-slate-500 max-w-sm mb-8">
+      This market is currently unavailable in your region.
+    </p>
+    <button
+      type="button"
+      disabled
+      className="rounded-full border border-white/10 bg-white/[0.03] px-6 py-2.5 text-sm font-medium text-slate-500 cursor-not-allowed"
+      data-testid={`market-notify-${market.id}`}
+    >
+      Notify Me When Available
+    </button>
+  </motion.div>
+);
+
 // Small popup, not a page section — triggered by a directory card's "About
 // Module" badge. Deliberately the only place Overview copy (purpose/what it
 // measures/how to interpret) shows up at all; the module's own detail page
@@ -538,7 +623,9 @@ const AboutModuleModal = ({ module, onClose }) => (
 /* --------------------------------- Directory --------------------------------- */
 export default function AlphaTerminal() {
   const [aboutModule, setAboutModule] = useState(null);
+  const [activeMarket, setActiveMarket] = useState("india");
   useEffect(() => { window.scrollTo(0, 0); }, []);
+  const market = MARKETS.find((m) => m.id === activeMarket) || MARKETS[0];
 
   return (
     <>
@@ -576,14 +663,29 @@ export default function AlphaTerminal() {
             >
               Proprietary quantitative models, systematic screening engines and market intelligence built for disciplined investors.
             </motion.p>
+            <MarketSelector active={activeMarket} onChange={setActiveMarket} />
           </div>
         </section>
 
         <section className="relative pb-24 md:pb-32">
           <div className="container-x">
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5" data-testid="module-directory">
-              {MODULES.map((m, i) => <DirectoryCard key={m.slug} module={m} index={i} onAbout={setAboutModule} />)}
-            </div>
+            <AnimatePresence mode="wait">
+              {market.available ? (
+                <motion.div
+                  key={market.id}
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  exit={{ opacity: 0 }}
+                  transition={{ duration: 0.25, ease: EASE }}
+                  className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5"
+                  data-testid="module-directory"
+                >
+                  {MODULES.map((m, i) => <DirectoryCard key={m.slug} module={m} index={i} onAbout={setAboutModule} />)}
+                </motion.div>
+              ) : (
+                <UnavailableMarket market={market} />
+              )}
+            </AnimatePresence>
           </div>
         </section>
       </main>
