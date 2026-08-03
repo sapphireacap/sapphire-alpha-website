@@ -1,11 +1,36 @@
 import { useEffect, useState } from "react";
 import axios from "axios";
 import { toast } from "sonner";
+import { motion } from "framer-motion";
 import { ArrowRight, Check, Loader2 } from "lucide-react";
 import Reveal from "./Reveal";
 import ParticleField from "./ParticleField";
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
+
+// Purely decorative -- no text, just a slowly-rotating wireframe globe to
+// balance the card's right side at wide viewports.
+const WireframeGlobe = () => (
+  <motion.div
+    animate={{ rotate: 360 }}
+    transition={{ duration: 50, repeat: Infinity, ease: "linear" }}
+    className="hidden lg:block absolute right-14 top-1/2 -translate-y-1/2 w-72 h-72 pointer-events-none"
+    aria-hidden="true"
+  >
+    <svg viewBox="0 0 200 200" className="w-full h-full opacity-60">
+      <circle cx="100" cy="100" r="90" fill="none" stroke="rgba(67,126,235,0.3)" strokeWidth="1" />
+      <ellipse cx="100" cy="100" rx="90" ry="28" fill="none" stroke="rgba(67,126,235,0.22)" strokeWidth="1" />
+      <ellipse cx="100" cy="100" rx="90" ry="55" fill="none" stroke="rgba(67,126,235,0.22)" strokeWidth="1" />
+      <ellipse cx="100" cy="100" rx="28" ry="90" fill="none" stroke="rgba(67,126,235,0.22)" strokeWidth="1" />
+      <ellipse cx="100" cy="100" rx="55" ry="90" fill="none" stroke="rgba(67,126,235,0.22)" strokeWidth="1" />
+      <circle cx="100" cy="10" r="2.5" fill="#437EEB" />
+      <circle cx="172" cy="72" r="2" fill="#437EEB" />
+      <circle cx="38" cy="148" r="2" fill="#437EEB" />
+      <circle cx="150" cy="162" r="2" fill="#437EEB" />
+      <circle cx="26" cy="60" r="2" fill="#437EEB" />
+    </svg>
+  </motion.div>
+);
 
 export const ComingSoon = () => {
   const [email, setEmail] = useState("");
@@ -53,6 +78,7 @@ export const ComingSoon = () => {
           <ParticleField density={0.00006} />
           <div className="absolute -right-20 -top-20 w-[420px] h-[420px] rounded-full bg-sapphire/15 blur-[120px] pointer-events-none" />
           <div className="absolute -left-24 -bottom-24 w-[320px] h-[320px] rounded-full bg-sapphire-light/10 blur-[100px] pointer-events-none" />
+          <WireframeGlobe />
           <div className="relative z-10 max-w-3xl">
             <p className="overline mb-6">Coming Soon</p>
             <h2 className="font-display font-black tracking-tighter text-white text-4xl md:text-6xl leading-[1.02]">

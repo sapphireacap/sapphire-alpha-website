@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Menu, X, ChevronDown } from "lucide-react";
+import { Menu, X, ChevronDown, Ticket, NotebookText, LineChart, Mail, User } from "lucide-react";
 import { useNavigate, useLocation } from "react-router-dom";
 import { scrollToId } from "./SmoothScroll";
 // Dark mode toggle is hidden for now (2026-08-03) -- ThemeToggle.jsx and
@@ -12,26 +12,25 @@ import { scrollToId } from "./SmoothScroll";
 const LOGO = "https://customer-assets-agu9un31.emergentagent.net/job_systematic-alpha-1/artifacts/oys5xiox_SAC%20Logo%202.1.png";
 const EASE = [0.16, 1, 0.3, 1];
 
-// Kept visible: the page's own identity anchors (About/Contact) plus the
-// core product pages. Tucked into "More": pages that are either paused
-// (Research, Journal) or not yet public (P&F Studio), plus IPOs -- keeps
-// the primary bar minimal instead of nine items wide.
+// Kept visible: the core product pages. Tucked into "More": the page's
+// own identity anchors (About/Contact) plus IPOs, Journal, and P&F
+// Studio -- keeps the primary bar to four items instead of nine wide.
 const PRIMARY_LINKS = [
-  { label: "About", id: "about" },
+  { label: "Research", to: "/research" },
   { label: "Alpha Terminal", to: "/alpha-terminal" },
   { label: "The Black Box", to: "/black-box" },
   { label: "Pricing", to: "/pricing" },
-  { label: "Contact", id: "contact" },
 ];
 
 const MORE_LINKS = [
-  { label: "Research", to: "/research" },
-  { label: "IPOs", to: "/ipos" },
-  { label: "Journal", to: "/journal" },
+  { label: "IPOs", to: "/ipos", icon: Ticket },
+  { label: "Journal", to: "/journal", icon: NotebookText },
   // Not the real admin-gated tool at /alpha-terminal/pnf -- this route is
   // a public placeholder (see NotAvailablePage), same one Login/Sign Up
   // points to below.
-  { label: "P&F Studio", to: "/not-available" },
+  { label: "P&F Studio", to: "/not-available", icon: LineChart },
+  { label: "Contact", id: "contact", icon: Mail },
+  { label: "About", id: "about", icon: User },
 ];
 
 const ALL_LINKS = [...PRIMARY_LINKS, ...MORE_LINKS];
@@ -140,16 +139,20 @@ export const Navbar = () => {
                   className="absolute top-full right-0 mt-3 w-52 rounded-xl border border-white/10 bg-void/95 backdrop-blur-xl p-2 shadow-2xl shadow-black/50"
                   data-testid="nav-more-menu"
                 >
-                  {MORE_LINKS.map((l) => (
-                    <button
-                      key={l.to}
-                      onClick={() => handleLink(l)}
-                      className="w-full text-left px-3.5 py-2.5 rounded-lg text-sm text-slate-300 hover:text-white hover:bg-white/5 transition-colors duration-200"
-                      data-testid={`nav-more-${testId(l)}-link`}
-                    >
-                      {l.label}
-                    </button>
-                  ))}
+                  {MORE_LINKS.map((l) => {
+                    const Icon = l.icon;
+                    return (
+                      <button
+                        key={l.id || l.to}
+                        onClick={() => handleLink(l)}
+                        className="w-full flex items-center gap-3 text-left px-3.5 py-2.5 rounded-lg text-sm text-slate-300 hover:text-white hover:bg-white/5 transition-colors duration-200"
+                        data-testid={`nav-more-${testId(l)}-link`}
+                      >
+                        <Icon size={15} className="text-slate-500" />
+                        {l.label}
+                      </button>
+                    );
+                  })}
                 </motion.div>
               )}
             </AnimatePresence>

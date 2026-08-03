@@ -7,6 +7,7 @@ import { ThemeProvider, useTheme } from "@/contexts/ThemeContext";
 import SmoothScroll from "@/components/site/SmoothScroll";
 import Navbar from "@/components/site/Navbar";
 import Hero from "@/components/site/Hero";
+import TrustStrip from "@/components/site/TrustStrip";
 import EditorialMarquee from "@/components/site/EditorialMarquee";
 import ComingSoon from "@/components/site/ComingSoon";
 import PausedFeature from "@/components/site/PausedFeature";
@@ -43,6 +44,7 @@ const Landing = () => (
     <Navbar />
     <main className="relative">
       <Hero />
+      <TrustStrip />
       <EditorialMarquee />
       <ComingSoon />
       <About />

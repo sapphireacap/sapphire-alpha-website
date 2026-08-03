@@ -1,9 +1,18 @@
 import { useRef } from "react";
 import { motion, useScroll, useTransform } from "framer-motion";
-import { ArrowDown, ArrowUpRight } from "lucide-react";
+import { ArrowDown, ArrowUpRight, ChevronRight, PlayCircle, TrendingUp, ShieldCheck, ExternalLink } from "lucide-react";
 import ParticleField from "./ParticleField";
 import { scrollToId } from "./SmoothScroll";
 import HeroDashboardMockup from "./HeroDashboardMockup";
+
+// Short trust-signal row under the hero CTAs -- new UI, own short labels
+// (not paragraphs), echoing the site's own three Manifesto principles
+// rather than inventing unrelated marketing claims.
+const TRUST_SIGNALS = [
+  { icon: TrendingUp, label: "Evidence-Led", sub: "Research-first process" },
+  { icon: ShieldCheck, label: "No Black Box", sub: "Fully systematic" },
+  { icon: ExternalLink, label: "Built to Compound", sub: "Discipline over prediction" },
+];
 
 const EASE = [0.16, 1, 0.3, 1];
 
@@ -39,19 +48,20 @@ export const Hero = () => {
       <div className="absolute inset-0 bg-gradient-to-b from-void/0 via-void/0 to-void pointer-events-none" />
 
       <motion.div style={{ y, opacity }} className="container-x relative z-10 pt-32 pb-20 lg:pt-28">
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-16 lg:gap-8 items-center">
-          <div className="lg:col-span-7">
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-16 lg:gap-10 items-center">
+          <div className="lg:col-span-6">
             <motion.div
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               transition={{ delay: 0.15, duration: 0.8 }}
-              className="flex items-center gap-3 mb-8"
+              className="inline-flex items-center gap-3 mb-8 rounded-full border border-white/10 bg-white/[0.02] pl-4 pr-3.5 py-2"
             >
               <span className="relative flex h-2 w-2">
                 <span className="absolute inline-flex h-full w-full rounded-full bg-sapphire-light opacity-75 animate-ping" />
                 <span className="relative inline-flex h-2 w-2 rounded-full bg-sapphire-light" />
               </span>
               <span className="overline">Quantitative Research · Currently in Development</span>
+              <ChevronRight size={14} className="text-slate-500" />
             </motion.div>
 
             <h1 className="font-display font-black tracking-tighter leading-[0.95] text-white text-5xl sm:text-6xl md:text-7xl lg:text-6xl xl:text-7xl">
@@ -94,8 +104,33 @@ export const Hero = () => {
                 Get Notified <ArrowUpRight size={16} />
               </button>
               <button onClick={() => scrollToId("about")} className="btn-ghost" data-testid="hero-learn-btn">
-                Learn More
+                Learn More <PlayCircle size={16} />
               </button>
+            </motion.div>
+
+            {/* Trust-signal row -- new UI, own labels, echoing the site's
+                existing Manifesto principles rather than new marketing copy */}
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 1.2, duration: 0.9, ease: EASE }}
+              className="mt-12 flex flex-wrap gap-x-8 gap-y-5"
+              data-testid="hero-trust-signals"
+            >
+              {TRUST_SIGNALS.map((t) => {
+                const Icon = t.icon;
+                return (
+                  <div key={t.label} className="flex items-center gap-3">
+                    <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-white/10 bg-white/[0.02]">
+                      <Icon size={16} className="text-sapphire-light" />
+                    </span>
+                    <div className="leading-tight">
+                      <p className="text-sm font-medium text-white">{t.label}</p>
+                      <p className="text-xs text-slate-500">{t.sub}</p>
+                    </div>
+                  </div>
+                );
+              })}
             </motion.div>
 
             {/* Data readout ticker */}
@@ -103,7 +138,7 @@ export const Hero = () => {
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               transition={{ delay: 1.3, duration: 1 }}
-              className="mt-16 flex flex-wrap gap-x-10 gap-y-3 font-mono-ui text-xs text-slate-500"
+              className="mt-10 flex flex-wrap gap-x-10 gap-y-3 font-mono-ui text-xs text-slate-500"
             >
               <span><span className="text-sapphire-light">//</span> SIGNAL_STRENGTH: <span className="text-emerald-400">0.847</span></span>
               <span><span className="text-sapphire-light">//</span> REGIME: <span className="text-emerald-400">RISK_ON</span></span>
@@ -111,7 +146,7 @@ export const Hero = () => {
             </motion.div>
           </div>
 
-          <div className="hidden lg:flex lg:col-span-5 items-center justify-center">
+          <div className="flex lg:col-span-6 items-center justify-center">
             <HeroDashboardMockup />
           </div>
         </div>
