@@ -9,6 +9,7 @@ import ParticleField from "../components/site/ParticleField";
 import BiasBadge from "../components/site/BiasBadge";
 import LivePulseDot from "../components/site/LivePulseDot";
 import { MODULES } from "./alphaterminal/modules";
+import CryptoDashboard from "./alphaterminal/CryptoDashboard";
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 const EASE = [0.16, 1, 0.3, 1];
@@ -491,7 +492,7 @@ const MARKETS = [
   { id: "india", flag: "🇮🇳", name: "Indian Markets", available: true },
   { id: "us", flag: "🇺🇸", name: "US Markets", available: false },
   { id: "forex", flag: "💱", name: "Forex", available: false },
-  { id: "crypto", flag: "₿", name: "Crypto", available: false },
+  { id: "crypto", flag: "₿", name: "Crypto", available: true },
 ];
 
 const MarketSelector = ({ active, onChange }) => (
@@ -670,7 +671,19 @@ export default function AlphaTerminal() {
         <section className="relative pb-24 md:pb-32">
           <div className="container-x">
             <AnimatePresence mode="wait">
-              {market.available ? (
+              {!market.available ? (
+                <UnavailableMarket market={market} />
+              ) : market.id === "crypto" ? (
+                <motion.div
+                  key={market.id}
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  exit={{ opacity: 0 }}
+                  transition={{ duration: 0.25, ease: EASE }}
+                >
+                  <CryptoDashboard />
+                </motion.div>
+              ) : (
                 <motion.div
                   key={market.id}
                   initial={{ opacity: 0 }}
@@ -682,8 +695,6 @@ export default function AlphaTerminal() {
                 >
                   {MODULES.map((m, i) => <DirectoryCard key={m.slug} module={m} index={i} onAbout={setAboutModule} />)}
                 </motion.div>
-              ) : (
-                <UnavailableMarket market={market} />
               )}
             </AnimatePresence>
           </div>
