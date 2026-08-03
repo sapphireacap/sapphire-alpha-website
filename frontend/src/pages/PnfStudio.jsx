@@ -31,11 +31,12 @@ const loadRazorpayScript = () => {
 };
 
 const FEATURES = [
-  "Unlimited Point & Figure charts",
+  "Unlimited Point & Figure workspaces",
   "Complete pattern library",
+  "Advanced indicator library",
   "Multi-timeframe analysis",
-  "Advanced charting tools",
-  "Professional workspace",
+  "Custom box size and reversal settings",
+  "Professional charting workspace",
 ];
 
 // Same figures as Pricing.jsx's P&F Studio plan -- kept in sync manually,
@@ -143,8 +144,8 @@ export default function PnfStudio() {
               transition={{ duration: 0.9, ease: EASE, delay: 0.1 }}
               className="mt-6 text-base md:text-lg font-light text-slate-400 leading-relaxed max-w-2xl"
             >
-              Institutional-grade Point &amp; Figure charting with the complete pattern and indicator library.
-              Available to subscribers — sign in and activate a plan to open the workspace.
+              Built for traders and investors who rely on Point &amp; Figure charts. Analyze market structure with
+              advanced charting tools, pattern recognition, and a complete research workspace.
             </motion.p>
           </div>
         </section>

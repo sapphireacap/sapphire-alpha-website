@@ -9,6 +9,7 @@ import bisect
 import hashlib
 import hmac
 import secrets
+import time
 import httpx
 import bcrypt
 import jwt
@@ -1200,6 +1201,73 @@ async def get_live_spot(index: str = "NIFTY"):
         return await definedge.spot_quote(index)
     except DefinedgeError:
         return {"spot": None}
+
+
+# ---------------------------------------------------------------------------
+# External quote proxy — SPX / XAUUSD have no CORS-accessible free public
+# API (verified live, 2026-08-04: Yahoo Finance's chart endpoint has real
+# data but sends no Access-Control-Allow-Origin header, so a direct browser
+# call to it fails silently). Proxied server-side instead, with a short
+# in-memory cache shared across every visitor so this never hammers Yahoo's
+# unofficial endpoint once per client poll cycle. Crypto (Binance) needs no
+# such proxy — Binance itself sends a wildcard CORS header and is called
+# directly from the frontend.
+# ---------------------------------------------------------------------------
+EXTERNAL_QUOTE_SYMBOLS = {"SPX": "%5EGSPC", "GOLD": "GC=F"}  # GOLD is COMEX gold
+# futures (GC=F), not true spot XAUUSD -- verified live: Yahoo's XAUUSD=X
+# and XAU=X forex-style symbols both 404, GC=F is the closest real, freely-
+# available USD gold price. Labeled "Gold" on the frontend, never "XAUUSD",
+# so the instrument shown always matches what it actually is.
+_external_quote_cache = {}  # symbol -> {"data": {...}, "fetched_at": float}
+EXTERNAL_QUOTE_CACHE_TTL = 20  # seconds
+
+
+@api_router.get("/terminal/external-spot")
+async def get_external_spot(symbol: str):
+    """SPX / XAUUSD spot via a server-side Yahoo Finance proxy (see module
+    note above). Fails open (null spot), same convention as /terminal/spot
+    — never surfaces an error to site visitors, and falls back to the last
+    real cached value (rather than null) if a refresh attempt fails."""
+    if symbol not in EXTERNAL_QUOTE_SYMBOLS:
+        raise HTTPException(status_code=400, detail=f"Unknown symbol. Must be one of {list(EXTERNAL_QUOTE_SYMBOLS)}.")
+
+    cached = _external_quote_cache.get(symbol)
+    now = time.monotonic()
+    if cached and (now - cached["fetched_at"]) < EXTERNAL_QUOTE_CACHE_TTL:
+        return cached["data"]
+
+    yahoo_symbol = EXTERNAL_QUOTE_SYMBOLS[symbol]
+    url = f"https://query1.finance.yahoo.com/v8/finance/chart/{yahoo_symbol}"
+    try:
+        async with httpx.AsyncClient(timeout=10) as c:
+            r = await c.get(url, params={"range": "1d", "interval": "5m"}, headers={
+                # Yahoo's unofficial endpoint blocks curl/bare-client user
+                # agents outright (verified live: 429 with the default UA,
+                # 200 with a real browser UA) -- not spoofing identity, just
+                # matching what any real browser already sends automatically.
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36",
+            })
+        r.raise_for_status()
+        result = r.json()["chart"]["result"][0]
+        meta = result["meta"]
+        price = meta.get("regularMarketPrice")
+        prev_close = meta.get("previousClose") or meta.get("chartPreviousClose")
+        data = {"spot": None, "change": None, "change_pct": None}
+        if price is not None and prev_close:
+            change = price - prev_close
+            change_pct = (change / prev_close) * 100
+            data = {
+                "spot": f"{price:,.2f}",
+                "change": f"{'+' if change >= 0 else ''}{change:.2f}",
+                "change_pct": f"{'+' if change_pct >= 0 else ''}{change_pct:.2f}",
+            }
+        _external_quote_cache[symbol] = {"data": data, "fetched_at": now}
+        return data
+    except Exception as e:  # noqa: BLE001 — best-effort external proxy, never break the homepage
+        logger.warning("External quote proxy failed for %s: %s", symbol, e)
+        if cached:
+            return cached["data"]  # stale-but-real beats nothing
+        return {"spot": None, "change": None, "change_pct": None}
 
 
 @api_router.get("/admin/terminal/track-record")

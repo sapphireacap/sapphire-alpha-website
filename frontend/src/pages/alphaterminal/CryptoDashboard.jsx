@@ -516,7 +516,11 @@ const MomentumModule = () => {
 
 /* ---------------------------------- Dashboard ---------------------------------- */
 export default function CryptoDashboard() {
-  const [activeModule, setActiveModule] = useState("chart");
+  // No module pre-selected -- the default view is just the directory grid,
+  // same as the Indian Markets tab (whose cards link out to a separate
+  // page rather than expanding inline). A live module's content only shows
+  // once its card is actually clicked.
+  const [activeModule, setActiveModule] = useState(null);
 
   return (
     <div data-testid="crypto-dashboard">
@@ -530,9 +534,11 @@ export default function CryptoDashboard() {
       {activeModule === "exitline" && <ExitlineModule />}
       {activeModule === "momentum" && <MomentumModule />}
 
-      <p className="text-xs font-light text-slate-500 leading-relaxed mt-6 max-w-2xl" data-testid="crypto-disclaimer">
-        Live market data via Binance, refreshed every few seconds. For informational purposes only — not investment advice.
-      </p>
+      {activeModule && (
+        <p className="text-xs font-light text-slate-500 leading-relaxed mt-6 max-w-2xl" data-testid="crypto-disclaimer">
+          Live market data via Binance, refreshed every few seconds. For informational purposes only — not investment advice.
+        </p>
+      )}
     </div>
   );
 }

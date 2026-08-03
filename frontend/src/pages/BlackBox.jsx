@@ -131,13 +131,13 @@ const InfoRow = ({ label, value }) => (
   </div>
 );
 
-const StrategyCard = ({ strategy, index, onView }) => (
+const StrategyCard = ({ strategy, index, onView, className = "" }) => (
   <motion.div
     initial={{ opacity: 0, y: 24 }}
     whileInView={{ opacity: 1, y: 0 }}
     viewport={{ once: true, margin: "-60px" }}
     transition={{ duration: 0.7, ease: EASE, delay: (index % 3) * 0.1 }}
-    className={`${SURFACE} p-6 md:p-7 flex flex-col h-full transition-all duration-500 hover:border-sapphire/30 hover:shadow-[0_0_44px_rgba(31,95,208,0.12)]`}
+    className={`${SURFACE} p-6 md:p-7 flex flex-col h-full transition-all duration-500 hover:border-sapphire/30 hover:shadow-[0_0_44px_rgba(31,95,208,0.12)] ${className}`}
     data-testid={`black-box-strategy-${strategy.slug}`}
   >
     <div className="flex items-center justify-between mb-5">
@@ -419,9 +419,20 @@ export default function BlackBox() {
 
         <section className="relative pb-20 md:pb-28">
           <div className="container-x">
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6" data-testid="black-box-strategies">
+            {/* flex-wrap + justify-center (not a plain grid) so a partial
+                last row centers itself instead of sitting flush-left with
+                empty trailing columns -- each card's width is set to match
+                what a 3-column grid cell would be at each breakpoint, so
+                full rows look identical to a real grid either way. */}
+            <div className="flex flex-wrap justify-center gap-6" data-testid="black-box-strategies">
               {STRATEGIES.map((s, i) => (
-                <StrategyCard key={s.slug} strategy={s} index={i} onView={setViewingStrategy} />
+                <StrategyCard
+                  key={s.slug}
+                  strategy={s}
+                  index={i}
+                  onView={setViewingStrategy}
+                  className="w-full md:w-[calc(50%-0.75rem)] lg:w-[calc(33.333%-1rem)]"
+                />
               ))}
             </div>
           </div>

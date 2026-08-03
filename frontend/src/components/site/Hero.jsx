@@ -1,6 +1,6 @@
 import { useRef } from "react";
 import { motion, useScroll, useTransform } from "framer-motion";
-import { ArrowDown, ArrowUpRight, ChevronRight, PlayCircle, TrendingUp, ShieldCheck, ExternalLink } from "lucide-react";
+import { ArrowDown, ArrowUpRight, ChevronRight, PlayCircle, TrendingUp, ShieldCheck, ShieldAlert, ExternalLink } from "lucide-react";
 import ParticleField from "./ParticleField";
 import { scrollToId } from "./SmoothScroll";
 import HeroDashboardMockup from "./HeroDashboardMockup";
@@ -11,6 +11,7 @@ import HeroDashboardMockup from "./HeroDashboardMockup";
 const TRUST_SIGNALS = [
   { icon: TrendingUp, label: "Evidence-Led", sub: "Research-first process" },
   { icon: ShieldCheck, label: "Systematic Execution", sub: "Rules over emotions." },
+  { icon: ShieldAlert, label: "Risk Managed", sub: "Capital preservation first." },
   { icon: ExternalLink, label: "Built to Compound", sub: "Discipline over prediction" },
 ];
 
