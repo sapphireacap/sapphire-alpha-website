@@ -163,10 +163,17 @@ export const Navbar = () => {
           {/* <ThemeToggle /> -- hidden for now, see the import comment above */}
           <button
             onClick={() => navigate("/not-available")}
-            className="hidden sm:inline-flex text-sm text-slate-300 hover:text-white transition-colors duration-200"
+            className="hidden lg:inline-flex text-sm text-slate-300 hover:text-white transition-colors duration-200"
             data-testid="nav-login-btn"
           >
-            Log In / Sign Up
+            Log In
+          </button>
+          <button
+            onClick={() => navigate("/not-available")}
+            className="hidden lg:inline-flex text-sm text-slate-300 hover:text-white transition-colors duration-200"
+            data-testid="nav-signup-btn"
+          >
+            Sign Up
           </button>
           <button
             onClick={() => goSection("waitlist")}

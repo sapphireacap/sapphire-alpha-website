@@ -19,6 +19,14 @@ const REFRESH_MS = 30000;
 const RAIL_ICONS = [LayoutGrid, LineChart, Target, FileText, Box, Settings];
 const DIRECTION_COLOR = { Bullish: "text-emerald-400", Bearish: "text-red-400", Neutral: "text-amber-400" };
 
+const timeAgo = (iso) => {
+  if (!iso) return "—";
+  const diffMin = Math.max(0, Math.floor((Date.now() - new Date(iso).getTime()) / 60000));
+  if (diffMin < 1) return "now";
+  if (diffMin < 60) return `${diffMin}m ago`;
+  return `${Math.floor(diffMin / 60)}h ago`;
+};
+
 const StrengthMeter = ({ score }) => {
   const filled = Math.round((Number(score) || 0) / 20); // 0-100 -> 0-5 segments
   return (
@@ -134,13 +142,14 @@ export const HeroDashboardMockup = () => {
               ) : signals.length === 0 ? (
                 <div className="py-8 text-center text-xs text-slate-600 font-mono-ui">No signals right now</div>
               ) : (
-                <table className="w-full font-mono-ui text-xs">
+                <table className="w-full font-mono-ui text-[11px]">
                   <thead>
                     <tr className="text-slate-500 border-b border-white/10">
                       <th className="text-left font-medium pb-2.5">Symbol</th>
                       <th className="text-left font-medium pb-2.5">Volume</th>
                       <th className="text-left font-medium pb-2.5">Strength</th>
-                      <th className="text-right font-medium pb-2.5">Direction</th>
+                      <th className="text-left font-medium pb-2.5">Direction</th>
+                      <th className="text-right font-medium pb-2.5">Updated</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -149,7 +158,8 @@ export const HeroDashboardMockup = () => {
                         <td className="py-3 text-white font-medium">{s.ticker}</td>
                         <td className="py-3 text-slate-400">{s.volume}</td>
                         <td className="py-3"><StrengthMeter score={s.momentum_score} /></td>
-                        <td className={`py-3 text-right ${DIRECTION_COLOR[s.bias] || "text-slate-300"}`}>{s.bias}</td>
+                        <td className={`py-3 ${DIRECTION_COLOR[s.bias] || "text-slate-300"}`}>{s.bias}</td>
+                        <td className="py-3 text-right text-slate-500">{timeAgo(s.created_at)}</td>
                       </tr>
                     ))}
                   </tbody>
