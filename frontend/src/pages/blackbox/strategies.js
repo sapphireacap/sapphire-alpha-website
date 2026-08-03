@@ -13,6 +13,12 @@
 // Order below is deliberate: Convexity Window / Gamma Backspread lead
 // (they're the only strategies currently running -- see PAUSED note on the
 // legacy three), not just appended at the end.
+// Fields added 2026-08-04 for the redesigned public Black Box page
+// (card grid + "View Strategy" modal): objective/marketLabel/tradingStyle/
+// automation/status/estimatedRelease/riskManagement/brokerIntegration.
+// Purely additive -- summary/methodology/internalStatus/capitalValue/
+// apiPath/kind stay exactly as other consumers (StrategyDetail.jsx,
+// Admin.jsx's StrategyReportAccordion) already expect them.
 export const STRATEGIES = [
   {
     slug: "convexity-window",
@@ -24,6 +30,14 @@ export const STRATEGIES = [
     subtitle: "Rule-based options buying",
     assetClass: "Index Options",
     tags: ["Rule-Based", "Long Options"],
+    objective: "Captures cheap-convexity setups using proprietary volatility and price filters.",
+    marketLabel: "NIFTY Options",
+    tradingStyle: "Intraday",
+    automation: "Fully Automated",
+    status: "In Validation",
+    estimatedRelease: "Q4 2026",
+    riskManagement: "Built-in",
+    brokerIntegration: "Supported",
     summary: {
       what: "Convexity Window buys a single near-the-money NIFTY or BANK NIFTY option only when a set of volatility and price filters suggest convexity is cheap relative to the underlying's recent behavior — never on discretion.",
       market: "NIFTY & BANK NIFTY Weekly Options",
@@ -46,6 +60,14 @@ export const STRATEGIES = [
     subtitle: "Rule-based near-zero-theta options structure",
     assetClass: "Index Options",
     tags: ["Rule-Based", "Options Structure"],
+    objective: "Holds long convexity across multiple sessions while keeping time decay near zero.",
+    marketLabel: "NIFTY Options",
+    tradingStyle: "Multi-Day",
+    automation: "Fully Automated",
+    status: "In Validation",
+    estimatedRelease: "Q4 2026",
+    riskManagement: "Built-in",
+    brokerIntegration: "Supported",
     summary: {
       what: "Gamma Backspread sells one at-the-money option and buys two further out-of-the-money options of the same type and expiry, sized so the package carries close to zero time decay while staying net long Gamma — entered only when implied volatility is cheap on its own trailing history.",
       market: "NIFTY & BANK NIFTY Options",
@@ -76,6 +98,14 @@ export const STRATEGIES = [
     internalStatus: "Operational",
     capitalValue: 500000,
     tags: ["Quantitative", "Momentum", "Adaptive"],
+    objective: "Captures momentum breakouts using proprietary quantitative filters.",
+    marketLabel: "NIFTY Options",
+    tradingStyle: "Intraday",
+    automation: "Fully Automated",
+    status: "In Validation",
+    estimatedRelease: "Q4 2026",
+    riskManagement: "Built-in",
+    brokerIntegration: "Supported",
     summary: {
       what: "Prism Alpha trades NIFTY weekly at-the-money options, using an internally developed pattern-recognition engine to time entries and exits within the session.",
       market: "NIFTY Weekly Options (NFO)",
@@ -99,6 +129,14 @@ export const STRATEGIES = [
     internalStatus: "Calibration",
     capitalValue: 500000,
     tags: ["Quantitative", "Comparison Track"],
+    objective: "Isolates the marginal edge of Prism Alpha's confirming indicator as a comparison track.",
+    marketLabel: "NIFTY Options",
+    tradingStyle: "Intraday",
+    automation: "Fully Automated",
+    status: "Coming Soon",
+    estimatedRelease: "Q1 2027",
+    riskManagement: "Built-in",
+    brokerIntegration: "Supported",
     summary: {
       what: "Prism Alpha II runs the same core options engine as Prism Alpha without its confirming indicator gate, kept as an internal comparison track while its standalone edge is validated.",
       market: "NIFTY Weekly Options (NFO)",
@@ -121,6 +159,14 @@ export const STRATEGIES = [
     assetClass: "ETF",
     internalStatus: "Operational",
     tags: ["Systematic", "Trend-Following", "Long-Term"],
+    objective: "Shifts monthly ETF contributions between invested and cash phases using a systematic trend model.",
+    marketLabel: "NIFTYBEES & GOLDBEES",
+    tradingStyle: "Systematic",
+    automation: "Fully Automated",
+    status: "In Validation",
+    estimatedRelease: "Q4 2026",
+    riskManagement: "Built-in",
+    brokerIntegration: "Supported",
     summary: {
       what: "Lumen SIP allocates a fixed monthly contribution between NIFTYBEES and GOLDBEES, shifting each instrument between an invested and cash phase using an internally developed trend model.",
       market: "NIFTYBEES & GOLDBEES (NSE ETFs)",
