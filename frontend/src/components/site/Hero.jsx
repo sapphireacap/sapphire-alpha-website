@@ -54,15 +54,13 @@ export const Hero = () => {
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               transition={{ delay: 0.15, duration: 0.8 }}
-              className="inline-flex items-center gap-3 mb-8 rounded-full border border-white/10 bg-white/[0.02] pl-4 pr-3.5 py-2"
+              className="inline-flex items-center gap-3 mb-8 rounded-xl border border-white/10 bg-white/[0.02] pl-4 pr-3.5 py-2.5"
             >
               <span className="relative flex h-2 w-2">
                 <span className="absolute inline-flex h-full w-full rounded-full bg-sapphire-light opacity-75 animate-ping" />
                 <span className="relative inline-flex h-2 w-2 rounded-full bg-sapphire-light" />
               </span>
-              <span className="overline">
-                Quantitative Research ·<br className="sm:hidden" /> Currently in Development
-              </span>
+              <span className="overline">Quantitative Research</span>
               <ChevronRight size={14} className="text-slate-500" />
             </motion.div>
 

@@ -8,8 +8,8 @@ module.exports = {
   theme: {
     extend: {
       fontFamily: {
-        display: ["'Cabinet Grotesk'", 'sans-serif'],
-        sans: ["'Satoshi'", "'Inter'", 'sans-serif'],
+        display: ["'Inter'", 'sans-serif'],
+        sans: ["'Inter'", 'sans-serif'],
         mono: ["'JetBrains Mono'", 'monospace'],
       },
       borderRadius: {

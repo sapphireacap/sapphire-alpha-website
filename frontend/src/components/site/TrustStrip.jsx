@@ -14,12 +14,14 @@ const SIGNALS = [
 export const TrustStrip = () => (
   <section className="relative py-14 md:py-16 border-y border-white/5" data-testid="trust-strip-section">
     <div className="container-x">
-      <Reveal className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-5 gap-8 md:gap-6">
+      <Reveal
+        className="rounded-2xl border border-white/10 bg-white/[0.02] p-6 md:p-8 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-5 gap-8 md:gap-6"
+      >
         {SIGNALS.map((s) => {
           const Icon = s.icon;
           return (
-            <div key={s.label} className="flex flex-col items-center text-center gap-3" data-testid={`trust-signal-${s.label.toLowerCase().replace(/\s+/g, "-")}`}>
-              <span className="flex h-11 w-11 items-center justify-center rounded-xl border border-white/10 bg-white/[0.02]">
+            <div key={s.label} className="flex items-center gap-3.5" data-testid={`trust-signal-${s.label.toLowerCase().replace(/\s+/g, "-")}`}>
+              <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-white/10 bg-white/[0.02]">
                 <Icon size={19} className="text-sapphire-light" />
               </span>
               <div>

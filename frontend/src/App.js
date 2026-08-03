@@ -117,8 +117,8 @@ const AppShell = () => {
         theme={theme}
         toastOptions={{
           style: isDark
-            ? { background: "#0A0D18", border: "1px solid rgba(255,255,255,0.1)", color: "#fff", fontFamily: "'Satoshi', sans-serif" }
-            : { background: "#ffffff", border: "1px solid rgba(10,15,31,0.1)", color: "#0a0f1f", fontFamily: "'Satoshi', sans-serif" },
+            ? { background: "#0A0D18", border: "1px solid rgba(255,255,255,0.1)", color: "#fff", fontFamily: "'Inter', sans-serif" }
+            : { background: "#ffffff", border: "1px solid rgba(10,15,31,0.1)", color: "#0a0f1f", fontFamily: "'Inter', sans-serif" },
         }}
       />
     </div>

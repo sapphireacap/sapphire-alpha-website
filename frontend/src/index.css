@@ -1,4 +1,4 @@
-@import url('https://api.fontshare.com/v2/css?f[]=cabinet-grotesk@400,500,700,800,900&f[]=satoshi@400,500,700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap');
 @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&display=swap');
 
 @tailwind base;
@@ -184,14 +184,14 @@ body {
     margin: 0;
     background: var(--void);
     color: #ffffff;
-    font-family: 'Satoshi', 'Inter', sans-serif;
+    font-family: 'Inter', sans-serif;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
     overflow-x: hidden;
 }
 
 .font-display {
-    font-family: 'Cabinet Grotesk', sans-serif;
+    font-family: 'Inter', sans-serif;
 }
 .font-mono-ui {
     font-family: 'JetBrains Mono', monospace;
@@ -325,7 +325,7 @@ body {
 .marquee-text {
     -webkit-text-stroke: 1px rgba(255, 255, 255, 0.12);
     color: transparent;
-    font-family: 'Cabinet Grotesk', sans-serif;
+    font-family: 'Inter', sans-serif;
     font-weight: 900;
 }
 
