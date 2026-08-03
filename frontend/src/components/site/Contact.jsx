@@ -35,7 +35,7 @@ export const Contact = () => {
   };
 
   const field =
-    "w-full bg-transparent border-b border-white/15 focus:border-sapphire-light outline-none text-white font-light py-3 placeholder:text-slate-600 transition-colors duration-300";
+    "w-full rounded-lg border border-white/10 bg-white/[0.02] focus:border-sapphire-light focus:bg-white/[0.04] outline-none text-white font-light px-4 py-3 placeholder:text-slate-600 transition-all duration-300 focus:shadow-[0_0_0_3px_rgba(67,126,235,0.15)]";
 
   return (
     <section id="contact" className="relative py-24 md:py-40 border-t border-white/5" data-testid="contact-section">
@@ -53,7 +53,7 @@ export const Contact = () => {
             </p>
             <a
               href="mailto:sapphirealphacapital@gmail.com"
-              className="mt-10 inline-flex items-center gap-3 text-sapphire-light hover:text-white transition-colors font-mono-ui text-sm"
+              className="mt-10 inline-flex items-center gap-3 text-sapphire-light hover:text-white hover:translate-x-1 transition-all duration-200 font-mono-ui text-sm"
               data-testid="contact-email-link"
             >
               <Mail size={16} /> sapphirealphacapital@gmail.com
@@ -61,23 +61,23 @@ export const Contact = () => {
           </Reveal>
 
           <Reveal delay={0.15} className="col-span-12 lg:col-span-7">
-            <form onSubmit={submit} className="glass rounded-3xl p-8 md:p-12 space-y-8" data-testid="contact-form">
+            <form onSubmit={submit} className="glass rounded-3xl p-8 md:p-14 space-y-8" data-testid="contact-form">
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-8">
                 <div>
-                  <label className="overline !text-slate-500 block mb-2">Name</label>
+                  <label className="overline !text-slate-500 block mb-2.5">Name</label>
                   <input value={form.name} onChange={set("name")} placeholder="Jane Doe" className={field} data-testid="contact-name" />
                 </div>
                 <div>
-                  <label className="overline !text-slate-500 block mb-2">Email</label>
+                  <label className="overline !text-slate-500 block mb-2.5">Email</label>
                   <input type="email" value={form.email} onChange={set("email")} placeholder="jane@firm.com" className={field} data-testid="contact-email" />
                 </div>
               </div>
               <div>
-                <label className="overline !text-slate-500 block mb-2">Company <span className="normal-case tracking-normal">(optional)</span></label>
+                <label className="overline !text-slate-500 block mb-2.5">Company <span className="normal-case tracking-normal">(optional)</span></label>
                 <input value={form.company} onChange={set("company")} placeholder="Firm / Fund" className={field} data-testid="contact-company" />
               </div>
               <div>
-                <label className="overline !text-slate-500 block mb-2">Message</label>
+                <label className="overline !text-slate-500 block mb-2.5">Message</label>
                 <textarea value={form.message} onChange={set("message")} placeholder="Tell us what you're interested in…" rows={4} className={`${field} resize-none`} data-testid="contact-message" />
               </div>
               <button type="submit" disabled={loading} className="btn-sapphire w-full sm:w-auto disabled:opacity-70" data-testid="contact-submit-btn">

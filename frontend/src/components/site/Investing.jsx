@@ -17,7 +17,11 @@ const Terminal = () => {
     return () => clearInterval(t);
   }, []);
   return (
-    <div className="font-mono-ui text-xs md:text-sm rounded-xl border border-white/10 bg-black/60 overflow-hidden" data-testid="terminal-readout">
+    <div
+      className="font-mono-ui text-xs md:text-sm rounded-xl border border-white/10 bg-black/60 overflow-hidden"
+      style={{ boxShadow: "0 20px 50px -20px rgba(0,0,0,0.6), 0 0 60px -20px rgba(31,95,208,0.25)" }}
+      data-testid="terminal-readout"
+    >
       <div className="flex items-center gap-2 px-4 py-3 border-b border-white/10">
         <span className="h-2.5 w-2.5 rounded-full bg-red-500/70" />
         <span className="h-2.5 w-2.5 rounded-full bg-yellow-500/70" />

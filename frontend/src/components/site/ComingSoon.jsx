@@ -48,9 +48,11 @@ export const ComingSoon = () => {
   return (
     <section id="waitlist" className="relative py-24 md:py-40 overflow-hidden" data-testid="coming-soon-section">
       <div className="container-x">
-        <Reveal className="relative glass rounded-3xl overflow-hidden px-6 py-14 md:px-20 md:py-24">
+        <Reveal className="relative rounded-[2rem] p-px bg-gradient-to-br from-sapphire-light/40 via-white/10 to-transparent">
+        <div className="relative glass rounded-[2rem] overflow-hidden px-6 py-16 md:px-20 md:py-28">
           <ParticleField density={0.00006} />
           <div className="absolute -right-20 -top-20 w-[420px] h-[420px] rounded-full bg-sapphire/15 blur-[120px] pointer-events-none" />
+          <div className="absolute -left-24 -bottom-24 w-[320px] h-[320px] rounded-full bg-sapphire-light/10 blur-[100px] pointer-events-none" />
           <div className="relative z-10 max-w-3xl">
             <p className="overline mb-6">Coming Soon</p>
             <h2 className="font-display font-black tracking-tighter text-white text-4xl md:text-6xl leading-[1.02]">
@@ -97,6 +99,7 @@ export const ComingSoon = () => {
               {count !== null ? `${count.toLocaleString()} on the waitlist` : "Private beta · No spam, ever."}
             </p>
           </div>
+        </div>
         </Reveal>
       </div>
     </section>

@@ -61,8 +61,9 @@ const HexDiagram = () => {
       <motion.polygon
         points="200,20 355,110 355,290 200,380 45,290 45,110"
         fill="none"
-        stroke="rgba(255,255,255,0.1)"
+        stroke="rgba(255,255,255,0.12)"
         strokeWidth="1"
+        style={{ filter: "drop-shadow(0 0 14px rgba(67,126,235,0.25))" }}
         variants={draw}
         custom={0}
         initial="hidden"
@@ -111,15 +112,15 @@ export const Research = () => {
               emphasizes evidence, structure, and long-term thinking.
             </p>
 
-            <div className="space-y-px bg-white/10 rounded-xl overflow-hidden">
+            <div className="space-y-px bg-white/10 rounded-2xl overflow-hidden border border-white/10">
               {CARDS.map((c, i) => (
                 <Reveal
                   key={c.title}
                   delay={i * 0.1}
-                  className="card-hover bg-void p-6 md:p-7"
+                  className="card-hover relative bg-void p-7 md:p-8 border-l-2 border-l-transparent hover:border-l-sapphire-light"
                   data-testid={`research-card-${i}`}
                 >
-                  <p className="overline mb-2 !text-slate-500">{c.tag}</p>
+                  <p className="overline mb-2.5 !text-slate-500">{c.tag}</p>
                   <h3 className="font-display text-xl font-bold text-white mb-1.5">{c.title}</h3>
                   <p className="text-sm font-light text-slate-400 leading-relaxed">{c.body}</p>
                 </Reveal>

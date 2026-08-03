@@ -45,21 +45,23 @@ export const About = () => {
           </Reveal>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-3 border-t border-l border-white/10">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-5 md:gap-6">
           {PILLARS.map((p, i) => {
             const Icon = p.icon;
             return (
               <Reveal
                 key={p.no}
                 delay={i * 0.12}
-                className="card-hover group relative border-r border-b border-white/10 p-8 md:p-12"
+                className="card-hover group relative rounded-2xl border border-white/10 bg-white/[0.02] p-8 md:p-10"
                 data-testid={`pillar-card-${p.no}`}
               >
-                <div className="flex items-center justify-between mb-14 md:mb-20">
+                <div className="flex items-center justify-between mb-14 md:mb-16">
                   <span className="font-mono-ui text-xs tracking-[0.2em] text-slate-500 uppercase">
                     {p.no} / {p.tag}
                   </span>
-                  <Icon className="text-sapphire-light opacity-70 group-hover:opacity-100 transition-opacity" size={22} />
+                  <span className="flex h-11 w-11 items-center justify-center rounded-xl bg-gradient-to-br from-sapphire-light/20 to-sapphire/5 border border-sapphire-light/20 group-hover:from-sapphire-light/30 group-hover:to-sapphire/10 transition-colors duration-300">
+                    <Icon className="text-sapphire-light" size={20} />
+                  </span>
                 </div>
                 <h3 className="font-display text-2xl md:text-3xl font-bold text-white mb-4">{p.title}</h3>
                 <p className="text-sm md:text-base font-light text-slate-400 leading-relaxed">{p.body}</p>

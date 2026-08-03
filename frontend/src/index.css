@@ -236,11 +236,13 @@ body {
     }
 
     .card-hover {
-        transition: border-color 0.4s ease, background-color 0.4s ease, transform 0.4s ease;
+        transition: border-color 0.3s ease, background-color 0.3s ease, transform 0.3s ease, box-shadow 0.3s ease;
     }
     .card-hover:hover {
         border-color: rgba(31, 95, 208, 0.5);
         background-color: rgba(31, 95, 208, 0.04);
+        transform: translateY(-3px);
+        box-shadow: 0 16px 40px -20px rgba(31, 95, 208, 0.45);
     }
 
     .text-stroke {
@@ -248,25 +250,36 @@ body {
         color: transparent;
     }
 
+    /* Premium CTA: gradient fill (vs. the old flat color), softer/wider
+       glow, and a scale response on hover/active rather than just a color
+       swap — shared across the whole site (Hero, waitlist, contact, nav)
+       so every "Get Notified"/"Send Message"-style button gets the same
+       upgrade at once. */
     .btn-sapphire {
-        @apply inline-flex items-center justify-center gap-2 rounded-full bg-[#1F5FD0] px-7 py-3 text-sm font-semibold text-white;
-        transition: box-shadow 0.4s ease, background-color 0.3s ease, transform 0.15s ease;
+        @apply inline-flex items-center justify-center gap-2 rounded-full px-8 py-3.5 text-sm font-semibold text-white;
+        background: linear-gradient(135deg, #437EEB 0%, #1F5FD0 100%);
+        box-shadow: 0 1px 0 rgba(255, 255, 255, 0.12) inset, 0 8px 24px -12px rgba(31, 95, 208, 0.6);
+        transition: box-shadow 0.25s ease, transform 0.25s ease, background-position 0.25s ease;
     }
     .btn-sapphire:hover {
-        box-shadow: 0 0 32px rgba(31, 95, 208, 0.55);
-        background-color: #2a6ee0;
+        box-shadow: 0 1px 0 rgba(255, 255, 255, 0.16) inset, 0 0 40px rgba(67, 126, 235, 0.55), 0 12px 32px -12px rgba(31, 95, 208, 0.65);
+        transform: scale(1.03);
     }
     .btn-sapphire:active {
         transform: scale(0.97);
     }
 
     .btn-ghost {
-        @apply inline-flex items-center justify-center gap-2 rounded-full border border-white/15 px-7 py-3 text-sm font-semibold text-white;
-        transition: border-color 0.3s ease, background-color 0.3s ease;
+        @apply inline-flex items-center justify-center gap-2 rounded-full border border-white/15 px-8 py-3.5 text-sm font-semibold text-white;
+        transition: border-color 0.25s ease, background-color 0.25s ease, transform 0.25s ease;
     }
     .btn-ghost:hover {
-        border-color: rgba(255, 255, 255, 0.4);
-        background-color: rgba(255, 255, 255, 0.04);
+        border-color: rgba(255, 255, 255, 0.45);
+        background-color: rgba(255, 255, 255, 0.05);
+        transform: scale(1.03);
+    }
+    .btn-ghost:active {
+        transform: scale(0.97);
     }
 }
 

@@ -28,13 +28,13 @@ const SOCIAL = [
 
 export const Footer = () => {
   return (
-    <footer className="relative pt-24 md:pt-32 border-t border-white/10 overflow-hidden" data-testid="site-footer">
+    <footer className="relative pt-28 md:pt-36 border-t border-white/10 overflow-hidden" data-testid="site-footer">
       <div className="container-x">
-        <div className="grid grid-cols-12 gap-10 md:gap-8 pb-20">
-          <div className="col-span-12 md:col-span-5">
-            <div className="flex items-center gap-3 mb-6">
-              <span className="logo-pill p-1.5 flex items-center justify-center">
-                <img src={LOGO} alt="Sapphire Alpha Capital" className="h-7 w-7 object-contain" />
+        <div className="grid grid-cols-12 gap-x-8 gap-y-12 pb-24">
+          <div className="col-span-12 md:col-span-4">
+            <div className="flex items-center gap-3.5 mb-6">
+              <span className="logo-pill p-2 flex items-center justify-center">
+                <img src={LOGO} alt="Sapphire Alpha Capital" className="h-8 w-8 object-contain" />
               </span>
               <span className="font-display font-extrabold text-white text-lg tracking-tight">SAPPHIRE ALPHA CAPITAL</span>
             </div>
@@ -52,7 +52,7 @@ export const Footer = () => {
                     target={s.href ? "_blank" : undefined}
                     rel={s.href ? "noopener noreferrer" : undefined}
                     aria-label={s.label}
-                    className="h-10 w-10 rounded-full border border-white/10 flex items-center justify-center text-slate-400 hover:text-white hover:border-sapphire-light hover:bg-sapphire/10 transition-colors duration-300"
+                    className="h-11 w-11 rounded-full border border-white/10 flex items-center justify-center text-slate-400 hover:text-white hover:border-sapphire-light hover:bg-sapphire/10 hover:scale-105 transition-all duration-300"
                     data-testid={`social-${s.label.split(" ")[0].toLowerCase()}`}
                   >
                     <Icon size={16} />
@@ -62,15 +62,15 @@ export const Footer = () => {
             </div>
           </div>
 
-          <div className="col-span-6 md:col-span-3 md:col-start-8">
-            <p className="overline !text-slate-500 mb-6">Navigation</p>
-            <ul className="space-y-3">
+          <div className="col-span-6 md:col-span-3 md:col-start-7">
+            <p className="overline !text-slate-500 mb-7">Navigation</p>
+            <ul className="space-y-4">
               {NAV.map((n) => (
                 <li key={n.id || n.to}>
                   {n.to ? (
                     <Link
                       to={n.to}
-                      className="text-sm text-slate-400 hover:text-white transition-colors"
+                      className="inline-block text-sm text-slate-400 hover:text-white hover:translate-x-0.5 transition-all duration-200"
                       data-testid={`footer-nav-${n.to.slice(1)}`}
                     >
                       {n.label}
@@ -78,7 +78,7 @@ export const Footer = () => {
                   ) : (
                     <button
                       onClick={() => scrollToId(n.id)}
-                      className="text-sm text-slate-400 hover:text-white transition-colors"
+                      className="inline-block text-sm text-slate-400 hover:text-white hover:translate-x-0.5 transition-all duration-200"
                       data-testid={`footer-nav-${n.id}`}
                     >
                       {n.label}
@@ -89,14 +89,14 @@ export const Footer = () => {
             </ul>
           </div>
 
-          <div className="col-span-6 md:col-span-2">
-            <p className="overline !text-slate-500 mb-6">Legal</p>
-            <ul className="space-y-3">
+          <div className="col-span-6 md:col-span-2 md:col-start-10">
+            <p className="overline !text-slate-500 mb-7">Legal</p>
+            <ul className="space-y-4">
               {LEGAL.map((l) => (
                 <li key={l.to}>
                   <Link
                     to={l.to}
-                    className="text-sm text-slate-400 hover:text-white transition-colors"
+                    className="inline-block text-sm text-slate-400 hover:text-white hover:translate-x-0.5 transition-all duration-200"
                     data-testid={`footer-legal-${l.to.slice(1)}`}
                   >
                     {l.label}

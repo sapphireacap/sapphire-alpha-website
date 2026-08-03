@@ -1,5 +1,6 @@
 import { motion } from "framer-motion";
 import Reveal from "./Reveal";
+import ParticleField from "./ParticleField";
 
 const EASE = [0.16, 1, 0.3, 1];
 
@@ -31,7 +32,7 @@ const MaskedTitle = ({ children }) => (
     <motion.span
       className="block"
       variants={{ hidden: { y: "110%" }, show: { y: 0 } }}
-      transition={{ duration: 1, ease: EASE }}
+      transition={{ duration: 0.85, ease: EASE }}
     >
       {children}
     </motion.span>
@@ -40,14 +41,17 @@ const MaskedTitle = ({ children }) => (
 
 export const Manifesto = () => {
   return (
-    <section className="relative py-24 md:py-40 bg-surface/40 border-y border-white/5" data-testid="manifesto-section">
-      <div className="absolute inset-0 grid-bg opacity-40 pointer-events-none" />
+    <section className="relative py-24 md:py-40 bg-surface/40 border-y border-white/5 overflow-hidden" data-testid="manifesto-section">
+      {/* Subtle animated financial network, very low density, in place of
+          the old static grid (removed site-wide per an earlier brand
+          direction, kept as a no-op class -- see grid-bg in index.css). */}
+      <ParticleField density={0.00003} className="opacity-60" />
       <div className="container-x relative">
         <Reveal>
-          <p className="overline mb-16 md:mb-24">Manifesto · How We Think</p>
+          <p className="overline mb-20 md:mb-28">Manifesto · How We Think</p>
         </Reveal>
 
-        <div className="space-y-16 md:space-y-28">
+        <div className="space-y-20 md:space-y-32">
           {CHAPTERS.map((c) => (
             <div
               key={c.no}
@@ -62,7 +66,7 @@ export const Manifesto = () => {
                   <MaskedTitle>{c.title}</MaskedTitle>
                 </h3>
               </div>
-              <Reveal delay={0.2} className="col-span-12 md:col-span-3">
+              <Reveal delay={0.15} className="col-span-12 md:col-span-3">
                 <p className="text-base font-light text-slate-400 leading-relaxed">{c.body}</p>
               </Reveal>
             </div>
