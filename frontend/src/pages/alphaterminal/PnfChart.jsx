@@ -7,6 +7,7 @@ import { toast } from "sonner";
 import {
   Loader2, Search, Crosshair, TrendingUp, TrendingDown, Minus,
   MousePointer2, Activity, RotateCcw, Pencil, Ruler, Type, Eraser, Radio,
+  Layers, X,
 } from "lucide-react";
 import { EmptyState } from "./QuantLab";
 import { TRADER_TOKEN_KEY } from "../Auth";
@@ -262,7 +263,7 @@ const PnfGrid = forwardRef(({ data, resetKey, showTrendLines, showMa, highlight,
   return (
     <div
       ref={frameRef}
-      className="flex rounded-lg border border-white/10 bg-[#0B1220] overflow-hidden select-none h-[360px] sm:h-[460px] lg:h-[600px]"
+      className="flex rounded-lg border border-white/10 bg-[#0B1220] overflow-hidden select-none h-full"
     >
       {/* Main pane — pans/zooms in both axes via viewBox alone; its actual
           width/height attributes never change, so this can never overflow
@@ -449,6 +450,7 @@ const PnfChart = () => {
   const [onlyMajor, setOnlyMajor] = useState(true);
   const [onlyActive, setOnlyActive] = useState(true);
   const [live, setLive] = useState(false);
+  const [showPatterns, setShowPatterns] = useState(false);
 
   const [data, setData] = useState(null);
   const [plotCount, setPlotCount] = useState(0);
@@ -552,10 +554,10 @@ const PnfChart = () => {
   const BiasIcon = BIAS_STYLE[bias].Icon;
 
   return (
-    <div className="min-h-screen bg-[#060B14] text-white flex flex-col">
+    <div className="h-[100dvh] w-screen overflow-hidden bg-[#060B14] text-white flex flex-col">
       {/* Compact toolbar — everything needed to plot a chart in one row,
           wraps on narrow screens instead of stacking into a tall block. */}
-      <div className="border-b border-white/10 bg-[#0B1220] px-3 sm:px-4 py-2.5">
+      <div className="shrink-0 border-b border-white/10 bg-[#0B1220] px-3 sm:px-4 py-2.5">
         <div className="flex flex-wrap items-center gap-2">
           <select className={compactField} value={segment} onChange={(e) => { setSegment(e.target.value); setSymbol(""); }}>
             {SEGMENTS.map((s) => <option key={s.key} value={s.key}>{s.label}</option>)}
@@ -620,6 +622,16 @@ const PnfChart = () => {
               Live
             </button>
           )}
+
+          {data && (
+            <button
+              onClick={() => setShowPatterns(true)}
+              className="xl:hidden h-[30px] px-3 rounded-md border border-white/10 text-slate-300 hover:text-white text-xs font-medium transition-colors flex items-center gap-1.5"
+            >
+              <Layers size={13} />
+              Formations ({visiblePatterns.length})
+            </button>
+          )}
         </div>
 
         {segment === "US" && (
@@ -634,7 +646,7 @@ const PnfChart = () => {
           itself gets almost the whole viewport instead of being crowded
           out by chrome above it. */}
       {data && (
-        <div className="flex flex-wrap items-center gap-x-4 gap-y-1 px-3 sm:px-4 py-2 border-b border-white/5 bg-[#080D16] text-[11px] font-mono-ui text-slate-400">
+        <div className="shrink-0 flex flex-wrap items-center gap-x-4 gap-y-1 px-3 sm:px-4 py-2 border-b border-white/5 bg-[#080D16] text-[11px] font-mono-ui text-slate-400">
           <span className="text-white font-semibold text-xs">{data.instrument.tradingsymbol}</span>
           <span>{data.params.box_pct}% × {data.params.reversal} · close-only</span>
           <span>CMP <span className="text-white">{fmtNum(data.meta.last_price)}</span></span>
@@ -656,7 +668,7 @@ const PnfChart = () => {
       )}
 
       {!data && !loading && (
-        <div className="p-4 sm:p-6">
+        <div className="flex-1 min-h-0 flex items-center justify-center p-4 sm:p-6">
           <EmptyState reason="Pick an instrument and hit Plot to build its structure chart." />
         </div>
       )}
@@ -669,8 +681,8 @@ const PnfChart = () => {
             onReset={() => gridRef.current?.resetView()}
           />
 
-          <div className="flex-1 min-w-0 flex flex-col xl:flex-row gap-3 xl:gap-4 p-3 sm:p-4">
-            <div className="flex-1 min-w-0">
+          <div className="flex-1 min-w-0 min-h-0 flex flex-col p-3 sm:p-4">
+            <div className="flex-1 min-h-0">
               <PnfGrid
                 ref={gridRef}
                 data={data}
@@ -680,25 +692,35 @@ const PnfChart = () => {
                 highlight={highlight}
                 onHoverColumn={setHoverCol}
               />
-              <div className="mt-1.5 flex items-center justify-between text-[11px] text-slate-500 font-mono-ui">
-                <span>
-                  {hoverCol
-                    ? <>Col {hoverCol.index} · {hoverCol.direction} × {hoverCol.box_count} · {fmtNum(hoverCol.bottom_price)} – {fmtNum(hoverCol.top_price)}{hoverCol.start_label && <> · {hoverCol.start_label} → {hoverCol.end_label}</>}</>
-                    : "scroll to zoom · drag to pan · drag/scroll price axis to scale · double-click to reset"}
-                </span>
-              </div>
             </div>
+            <div className="shrink-0 mt-1.5 flex items-center justify-between text-[11px] text-slate-500 font-mono-ui">
+              <span>
+                {hoverCol
+                  ? <>Col {hoverCol.index} · {hoverCol.direction} × {hoverCol.box_count} · {fmtNum(hoverCol.bottom_price)} – {fmtNum(hoverCol.top_price)}{hoverCol.start_label && <> · {hoverCol.start_label} → {hoverCol.end_label}</>}</>
+                  : "scroll to zoom · drag to pan · drag/scroll price axis to scale · double-click to reset"}
+              </span>
+            </div>
+          </div>
 
-            {/* Pattern panel — side column on desktop, stacks below the
-                chart on mobile (flex-col above xl: avoids ever forcing
-                the page wider than the viewport). */}
-            <div className="w-full xl:w-[320px] shrink-0 rounded-lg border border-white/10 bg-white/[0.02] p-4 max-h-[420px] xl:max-h-[640px] overflow-y-auto">
-              <div className="flex items-center justify-between mb-3">
-                <h2 className="font-mono-ui text-[10px] uppercase tracking-[0.18em] text-slate-500">
-                  Formations ({visiblePatterns.length})
-                </h2>
-              </div>
-              <div className="flex gap-3 mb-3">
+          {/* Pattern panel — a permanent side column on desktop (xl:), a
+              slide-up bottom-sheet drawer on mobile so the chart itself
+              gets the full screen by default instead of always sharing
+              it with a stacked list. */}
+          {showPatterns && (
+            <div className="fixed inset-0 z-20 bg-black/60 xl:hidden" onClick={() => setShowPatterns(false)} />
+          )}
+          <div
+            className={`${showPatterns ? "flex" : "hidden"} xl:flex flex-col fixed xl:static inset-x-0 bottom-0 xl:inset-auto z-30 xl:z-auto max-h-[75vh] xl:max-h-none w-full xl:w-[320px] shrink-0 rounded-t-2xl xl:rounded-none border-t xl:border-t-0 xl:border-l border-white/10 bg-[#0B1220] xl:bg-white/[0.02] p-4 overflow-y-auto`}
+          >
+            <div className="flex items-center justify-between mb-3">
+              <h2 className="font-mono-ui text-[10px] uppercase tracking-[0.18em] text-slate-500">
+                Formations ({visiblePatterns.length})
+              </h2>
+              <button onClick={() => setShowPatterns(false)} className="xl:hidden text-slate-500 hover:text-white p-1">
+                <X size={16} />
+              </button>
+            </div>
+            <div className="flex gap-3 mb-3">
                 <Toggle on={onlyMajor} set={setOnlyMajor} text="Major only" />
                 <Toggle on={onlyActive} set={setOnlyActive} text="Still valid" />
               </div>
@@ -756,11 +778,11 @@ const PnfChart = () => {
               )}
             </div>
           </div>
-        </div>
       )}
     </div>
   );
 };
+
 
 const Toggle = ({ on, set, text }) => (
   <button
