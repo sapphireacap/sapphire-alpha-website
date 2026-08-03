@@ -14,7 +14,7 @@ import About from "@/components/site/About";
 import Manifesto from "@/components/site/Manifesto";
 import Research from "@/components/site/Research";
 import Investing from "@/components/site/Investing";
-import PnfStudioGate from "@/components/site/PnfStudioGate";
+import NotAvailablePage from "@/components/site/NotAvailablePage";
 import Contact from "@/components/site/Contact";
 import Footer from "@/components/site/Footer";
 import LegalPage from "@/components/site/LegalPage";
@@ -26,6 +26,7 @@ import ModuleDetail from "@/pages/alphaterminal/ModuleDetail";
 import PnfChart from "@/pages/alphaterminal/PnfChart";
 import Ipos from "@/pages/Ipos";
 import IpoDetail from "@/pages/IpoDetail";
+import Pricing from "@/pages/Pricing";
 import Aurora from "@/pages/research/Aurora";
 import FacetView from "@/pages/research/FacetView";
 import Admin from "@/pages/Admin";
@@ -73,7 +74,10 @@ const AppShell = () => {
                 swallowed as a module slug and never reaches this page. */}
             <Route path="/alpha-terminal/pnf" element={<PnfChart />} />
             <Route path="/alpha-terminal/:slug" element={<ModuleDetail />} />
-            <Route path="/pnf-studio" element={<PnfStudioGate />} />
+            {/* Shared placeholder for every nav entry that isn't public yet
+                (P&F Studio, Log In / Sign Up) -- see NotAvailablePage. */}
+            <Route path="/not-available" element={<NotAvailablePage />} />
+            <Route path="/pricing" element={<Pricing />} />
             <Route path="/ipos" element={<Ipos />} />
             <Route path="/ipos/:id" element={<IpoDetail />} />
             {/* Research (Aurora/FacetView) paused 2026-07-29 to cut backend

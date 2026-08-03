@@ -3,7 +3,11 @@ import { motion, AnimatePresence } from "framer-motion";
 import { Menu, X } from "lucide-react";
 import { useNavigate, useLocation } from "react-router-dom";
 import { scrollToId } from "./SmoothScroll";
-import ThemeToggle from "./ThemeToggle";
+// Dark mode toggle is hidden for now (2026-08-03) -- ThemeToggle.jsx and
+// ThemeContext are untouched, just not imported/rendered here. Re-add the
+// import and drop `<ThemeToggle />` back into the actions cluster below
+// to bring it back.
+// import ThemeToggle from "./ThemeToggle";
 
 const LOGO = "https://customer-assets-agu9un31.emergentagent.net/job_systematic-alpha-1/artifacts/oys5xiox_SAC%20Logo%202.1.png";
 
@@ -15,8 +19,10 @@ const links = [
   { label: "Journal", to: "/journal" },
   { label: "The Black Box", to: "/black-box" },
   // Not the real admin-gated tool at /alpha-terminal/pnf -- this route is
-  // a public placeholder that geo-checks the visitor (see PnfStudioGate).
-  { label: "P&F Studio", to: "/pnf-studio" },
+  // a public placeholder (see NotAvailablePage), same one Login/Sign Up
+  // points to below.
+  { label: "P&F Studio", to: "/not-available" },
+  { label: "Pricing", to: "/pricing" },
   { label: "Contact", id: "contact" },
 ];
 
@@ -92,7 +98,14 @@ export const Navbar = () => {
         </div>
 
         <div className="flex items-center gap-3 shrink-0">
-          <ThemeToggle />
+          {/* <ThemeToggle /> -- hidden for now, see the import comment above */}
+          <button
+            onClick={() => navigate("/not-available")}
+            className="hidden sm:inline-flex text-sm text-slate-300 hover:text-white transition-colors duration-300"
+            data-testid="nav-login-btn"
+          >
+            Log In / Sign Up
+          </button>
           <button
             onClick={() => goSection("waitlist")}
             className="btn-sapphire hidden sm:inline-flex !px-5 !py-2.5"
@@ -132,6 +145,13 @@ export const Navbar = () => {
                   {l.label}
                 </button>
               ))}
+              <button
+                onClick={() => { setOpen(false); navigate("/not-available"); }}
+                className="text-left text-base py-1 text-slate-200"
+                data-testid="nav-mobile-login-btn"
+              >
+                Log In / Sign Up
+              </button>
               <button onClick={() => goSection("waitlist")} className="btn-sapphire mt-2 w-full">
                 Get Notified
               </button>

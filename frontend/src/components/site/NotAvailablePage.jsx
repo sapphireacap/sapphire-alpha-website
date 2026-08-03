@@ -3,10 +3,11 @@ import { Lock, ArrowUpRight } from "lucide-react";
 import Navbar from "./Navbar";
 import Footer from "./Footer";
 
-// P&F Studio isn't public yet -- this route exists only to show a "not
-// available" placeholder for every visitor, not the real (still
-// admin-gated) tool at /alpha-terminal/pnf.
-export default function PnfStudioGate() {
+// Shared "not available in your country" placeholder -- used by every nav
+// entry that isn't actually public yet (P&F Studio, Log In / Sign Up).
+// Generic on purpose: same page/route regardless of which link sent the
+// visitor here, so the copy never names a specific feature.
+export default function NotAvailablePage() {
   return (
     <>
       <Navbar />
@@ -17,10 +18,10 @@ export default function PnfStudioGate() {
             <span className="font-mono-ui text-xs uppercase tracking-wider text-slate-400">Not Available</span>
           </div>
           <h1 className="font-display font-black tracking-tighter text-white text-3xl md:text-4xl leading-[0.95] mb-4">
-            P&amp;F Studio
+            Not Available In Your Country
           </h1>
           <p className="text-sm font-light text-slate-500 leading-relaxed mb-8">
-            P&F Studio is not available for your country.
+            This feature is not available for your country.
           </p>
           <Link to="/" className="inline-flex items-center gap-1.5 text-sapphire-light hover:text-white transition-colors text-sm font-medium">
             Back to home <ArrowUpRight size={15} />
