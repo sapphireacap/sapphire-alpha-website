@@ -104,6 +104,53 @@ async def verify_index_security_ids() -> dict:
     return found
 
 
+async def equity_security_id(trading_symbol: str) -> str:
+    """Resolves an NSE equity's Dhan security ID from the live scrip master
+    -- same pattern as verify_index_security_ids() but for cash-market
+    stocks (SEM_SEGMENT == 'E', SEM_INSTRUMENT_NAME == 'EQUITY') rather
+    than the index row. Raises if not found rather than guessing."""
+    import httpx, csv, io
+    url = "https://images.dhan.co/api-data/api-scrip-master.csv"
+    async with httpx.AsyncClient(timeout=60) as c:
+        r = await c.get(url, follow_redirects=True)
+    reader = csv.DictReader(io.StringIO(r.text))
+    for row in reader:
+        if (row.get("SEM_TRADING_SYMBOL") == trading_symbol
+                and row.get("SEM_EXM_EXCH_ID") == "NSE"
+                and row.get("SEM_INSTRUMENT_NAME") == "EQUITY"):
+            return row["SEM_SMST_SECURITY_ID"]
+    raise DhanClientError(f"Could not resolve NSE equity security ID for {trading_symbol}.")
+
+
+async def equity_daily_history(security_id: str, from_date: date, to_date: date) -> list:
+    """Real daily OHLC for an NSE cash-market equity -- same chunking as
+    index_daily_history (DH-905's 90-day span cap), just exchange_segment
+    NSE_EQ / instrument_type EQUITY instead of the index row."""
+    client = _client()
+    out = []
+    cursor = from_date
+    while cursor <= to_date:
+        chunk_end = min(cursor + timedelta(days=89), to_date)
+        resp = await _call_with_retry(
+            client.historical_daily_data,
+            security_id=security_id, exchange_segment="NSE_EQ", instrument_type="EQUITY",
+            from_date=cursor.isoformat(), to_date=chunk_end.isoformat(),
+        )
+        if resp.get("status") != "success":
+            logger.warning("Dhan equity_daily_history failed for %s %s-%s: %s", security_id, cursor, chunk_end, resp.get("remarks"))
+        else:
+            d = resp.get("data") or {}
+            ts = d.get("timestamp") or []
+            for i, t in enumerate(ts):
+                out.append({
+                    "date": datetime.fromtimestamp(t, tz=IST).date().isoformat(),
+                    "open": d["open"][i], "high": d["high"][i], "low": d["low"][i], "close": d["close"][i],
+                })
+        cursor = chunk_end + timedelta(days=1)
+    out.sort(key=lambda b: b["date"])
+    return out
+
+
 async def index_daily_history(index_key: str, from_date: date, to_date: date) -> list:
     """Real daily OHLC for the underlying index -- no expiry_code (the
     index itself never expires). Chunked into <=90-day windows per the

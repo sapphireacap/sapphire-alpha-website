@@ -16,7 +16,18 @@ from relative_strength_groups import GROUPS, get_group
 logger = logging.getLogger(__name__)
 
 CACHE_COLLECTION = "rs_daily_closes"
-YEARS_BACK = 3  # enough history for a meaningful column count even at a 3% box
+# The box grid is an ABSOLUTE grid (pnf_engine.py rule 8) so the current
+# LEVEL never depends on how much history is loaded, but the current
+# DIRECTION does - it's whatever direction the last reversal set, and a 3%
+# (or even 1%) box on a ratio chart can go years between reversals. A
+# truncated window that starts mid-swing locks in a fabricated "first
+# column" (rule 4: only 1 box needed to open a column, not a full reversal)
+# that may never get corrected before "today", producing a direction that
+# diverges from Definedge's own chart (which uses full available history).
+# 20y comfortably covers a 3-box reversal at 3% for these liquid bank
+# stocks and costs nothing extra - daily_history() just returns whatever
+# actually exists if the instrument is younger.
+YEARS_BACK = 20
 
 
 def create_relative_strength_router(db, definedge) -> APIRouter:
@@ -40,10 +51,17 @@ def create_relative_strength_router(db, definedge) -> APIRouter:
         candle is finalised (same gap pnf_chart.py's _with_live_bar works
         around for the single-symbol chart), so a request made before
         market close would otherwise lock in a version missing today's
-        close for the rest of the day, even after the market closes."""
+        close for the rest of the day, even after the market closes.
+
+        Also keyed on YEARS_BACK itself (stored as `years_back` on the
+        doc) — a cache written under an older, shorter window would
+        otherwise look "fresh" forever (today's close doesn't stop being
+        in it) and never pick up the wider history a YEARS_BACK bump
+        requires. Docs from before this field existed (`years_back`
+        missing) are treated as stale too."""
         today = datetime.now(IST).date().isoformat()
         doc = await db[CACHE_COLLECTION].find_one({"symbol": symbol})
-        if doc and today in doc.get("closes", {}):
+        if doc and today in doc.get("closes", {}) and doc.get("years_back") == YEARS_BACK:
             return doc["closes"]
 
         found = definedge.resolve_symbol(master, "NSE", symbol)
@@ -58,7 +76,7 @@ def create_relative_strength_router(db, definedge) -> APIRouter:
         closes = {b["date"]: b["close"] for b in bars}
         await db[CACHE_COLLECTION].update_one(
             {"symbol": symbol},
-            {"$set": {"symbol": symbol, "last_fetched_date": today, "closes": closes}},
+            {"$set": {"symbol": symbol, "last_fetched_date": today, "years_back": YEARS_BACK, "closes": closes}},
             upsert=True,
         )
         return closes
