@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import axios from "axios";
 import { toast } from "sonner";
-import { Link, useNavigate, useSearchParams } from "react-router-dom";
+import { Link, useNavigate, useSearchParams, useLocation } from "react-router-dom";
 import { Loader2, ShieldCheck, ArrowLeft, Mail, KeyRound, UserPlus } from "lucide-react";
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
@@ -41,6 +41,7 @@ export const SignupPage = () => {
   const [form, setForm] = useState({ name: "", email: "", password: "" });
   const [loading, setLoading] = useState(false);
   const [done, setDone] = useState(false);
+  const location = useLocation();
   const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
 
   const submit = async (e) => {
@@ -59,17 +60,17 @@ export const SignupPage = () => {
 
   if (done) {
     return (
-      <AuthShell icon={UserPlus} title="Check your email" subtitle="Sapphire Trading Journal">
+      <AuthShell icon={UserPlus} title="Check your email" subtitle="Sapphire Alpha Capital">
         <p className="text-sm text-slate-400 leading-relaxed">
           We've sent a verification link to <span className="text-white">{form.email}</span>. Click it to activate your account, then sign in.
         </p>
-        <Link to="/login" className="btn-sapphire w-full mt-8 inline-flex items-center justify-center">Go to Sign In</Link>
+        <Link to="/login" state={location.state} className="btn-sapphire w-full mt-8 inline-flex items-center justify-center">Go to Sign In</Link>
       </AuthShell>
     );
   }
 
   return (
-    <AuthShell icon={UserPlus} title="Create Account" subtitle="Sapphire Trading Journal">
+    <AuthShell icon={UserPlus} title="Create Account" subtitle="Sapphire Alpha Capital">
       <form onSubmit={submit} data-testid="signup-form">
         <div className="space-y-6">
           <div>
@@ -101,15 +102,22 @@ export const LoginPage = () => {
   const [form, setForm] = useState({ email: "", password: "" });
   const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
+  const location = useLocation();
+  // Wherever the user was actually trying to go (P&F Studio, Journal, etc.)
+  // -- callers navigate here with `state: { from: "/some-path" }` (see
+  // Navbar.jsx / PnfStudio.jsx). Falls back to home, never a hardcoded
+  // product page: this login screen is shared by more than one product now,
+  // so "always land on /journal" broke P&F Studio's own login flow.
+  const from = location.state?.from || "/";
   const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
 
   useEffect(() => {
     const token = localStorage.getItem(TRADER_TOKEN_KEY);
     if (!token) return;
     axios.get(`${API}/auth/me`, { headers: { Authorization: `Bearer ${token}` } })
-      .then(() => navigate("/journal", { replace: true }))
+      .then(() => navigate(from, { replace: true }))
       .catch(() => localStorage.removeItem(TRADER_TOKEN_KEY));
-  }, [navigate]);
+  }, [navigate, from]);
 
   const submit = async (e) => {
     e.preventDefault();
@@ -118,7 +126,7 @@ export const LoginPage = () => {
       const { data } = await axios.post(`${API}/auth/login`, form, { withCredentials: true });
       localStorage.setItem(TRADER_TOKEN_KEY, data.access_token);
       toast.success("Signed in.");
-      navigate("/journal");
+      navigate(from);
     } catch (err) {
       toast.error(errMsg(err, "Login failed."));
     } finally {
@@ -127,7 +135,7 @@ export const LoginPage = () => {
   };
 
   return (
-    <AuthShell icon={ShieldCheck} title="Sign In" subtitle="Sapphire Trading Journal">
+    <AuthShell icon={ShieldCheck} title="Sign In" subtitle="Sapphire Alpha Capital">
       <form onSubmit={submit} data-testid="login-form">
         <div className="space-y-6">
           <div>
@@ -172,7 +180,7 @@ export const ForgotPasswordPage = () => {
 
   if (done) {
     return (
-      <AuthShell icon={Mail} title="Check your email" subtitle="Sapphire Trading Journal">
+      <AuthShell icon={Mail} title="Check your email" subtitle="Sapphire Alpha Capital">
         <p className="text-sm text-slate-400 leading-relaxed">
           If an account exists for <span className="text-white">{email}</span>, a reset link is on its way. The link expires in 1 hour.
         </p>
@@ -181,7 +189,7 @@ export const ForgotPasswordPage = () => {
   }
 
   return (
-    <AuthShell icon={Mail} title="Reset Password" subtitle="Sapphire Trading Journal">
+    <AuthShell icon={Mail} title="Reset Password" subtitle="Sapphire Alpha Capital">
       <form onSubmit={submit} data-testid="forgot-password-form">
         <label className="font-mono-ui text-[11px] uppercase tracking-[0.2em] text-slate-500 block mb-2">Email</label>
         <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} className={field} placeholder="you@example.com" data-testid="forgot-password-email" required />
@@ -218,7 +226,7 @@ export const ResetPasswordPage = () => {
 
   if (!token) {
     return (
-      <AuthShell icon={KeyRound} title="Invalid Link" subtitle="Sapphire Trading Journal">
+      <AuthShell icon={KeyRound} title="Invalid Link" subtitle="Sapphire Alpha Capital">
         <p className="text-sm text-slate-400">This password reset link is missing its token. Request a new one.</p>
         <Link to="/forgot-password" className="btn-sapphire w-full mt-8 inline-flex items-center justify-center">Request New Link</Link>
       </AuthShell>
@@ -227,7 +235,7 @@ export const ResetPasswordPage = () => {
 
   if (done) {
     return (
-      <AuthShell icon={KeyRound} title="Password Updated" subtitle="Sapphire Trading Journal">
+      <AuthShell icon={KeyRound} title="Password Updated" subtitle="Sapphire Alpha Capital">
         <p className="text-sm text-slate-400 mb-8">Your password has been changed.</p>
         <button onClick={() => navigate("/login")} className="btn-sapphire w-full">Sign In</button>
       </AuthShell>
@@ -235,7 +243,7 @@ export const ResetPasswordPage = () => {
   }
 
   return (
-    <AuthShell icon={KeyRound} title="Choose New Password" subtitle="Sapphire Trading Journal">
+    <AuthShell icon={KeyRound} title="Choose New Password" subtitle="Sapphire Alpha Capital">
       <form onSubmit={submit} data-testid="reset-password-form">
         <label className="font-mono-ui text-[11px] uppercase tracking-[0.2em] text-slate-500 block mb-2">New Password</label>
         <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} className={field} placeholder="••••••••" data-testid="reset-password-input" required />
@@ -262,7 +270,7 @@ export const VerifyEmailPage = () => {
   }, [token]);
 
   return (
-    <AuthShell icon={ShieldCheck} title="Email Verification" subtitle="Sapphire Trading Journal">
+    <AuthShell icon={ShieldCheck} title="Email Verification" subtitle="Sapphire Alpha Capital">
       {status === "verifying" && (
         <p className="text-sm text-slate-400 flex items-center gap-2"><Loader2 size={16} className="animate-spin" /> Verifying…</p>
       )}

@@ -178,11 +178,11 @@ export default function PnfStudio() {
                     P&amp;F Studio requires an account. Sign in if you already have one, or create one to get started.
                   </p>
                   <div className="mt-6 flex flex-col sm:flex-row gap-3">
-                    <button onClick={() => navigate("/login")} className="btn-sapphire flex-1" data-testid="pnf-studio-login-btn">
+                    <button onClick={() => navigate("/login", { state: { from: "/pnf-studio" } })} className="btn-sapphire flex-1" data-testid="pnf-studio-login-btn">
                       Log In
                     </button>
                     <button
-                      onClick={() => navigate("/signup")}
+                      onClick={() => navigate("/signup", { state: { from: "/pnf-studio" } })}
                       className="flex-1 rounded-md border border-white/15 text-white hover:border-white/30 hover:bg-white/5 transition-colors text-sm font-medium py-2.5"
                       data-testid="pnf-studio-signup-btn"
                     >
