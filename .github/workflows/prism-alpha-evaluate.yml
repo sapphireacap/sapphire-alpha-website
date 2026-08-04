@@ -12,17 +12,18 @@ name: Prism Alpha — live evaluation
 # cadence than the ideal spec.
 # 03:45-10:00 UTC = 09:15-15:30 IST, weekdays only.
 #
-# PAUSED (2026-07-29): schedule trigger removed to cut Render memory/load
-# while the free-tier instance is crash-restarting on its memory limit --
-# Prism Alpha is admin-only, internal-validation-stage, non-essential right
-# now. Nothing deleted: workflow_dispatch below still lets this be run
-# manually, and un-commenting the `schedule:` block below restores the
-# original cadence exactly.
+# RESUMED (2026-08-04), Prism Alpha 2 only: was paused 2026-07-29 to cut
+# Render memory/load while the free-tier instance was crash-restarting.
+# Re-enabled per explicit instruction ("prism alpha 2 on... I want all the
+# logs") -- backend/blackbox_prism_alpha.py's ACTIVE_LIVE_VARIANTS now
+# scopes this call to just prism_alpha_2 regardless, so this schedule
+# firing evaluates that variant only even though the endpoint's own name
+# still says "both".
 on:
-  # schedule:
-  #   - cron: "45,50,55 3 * * 1-5"
-  #   - cron: "*/5 4-9 * * 1-5"
-  #   - cron: "0 10 * * 1-5"
+  schedule:
+    - cron: "45,50,55 3 * * 1-5"
+    - cron: "*/5 4-9 * * 1-5"
+    - cron: "0 10 * * 1-5"
   workflow_dispatch: {}
 
 jobs:

@@ -34,6 +34,7 @@ ts/box_count/high_price/low_price per column, since every pattern here
 Double Top/Bottom) needs to inspect actual column structure.
 """
 import logging
+import os
 import uuid
 from datetime import datetime, timezone, timedelta
 from datetime import time as dt_time
@@ -71,6 +72,14 @@ ATM_DRIFT_POINTS = 100          # ATM is held fixed (while flat) until spot has 
                                  # points away from the anchor it was last picked at — NOT re-rounded every
                                  # poll cycle, which would re-pick after as little as a ~50-point drift (the
                                  # midpoint between two 100-strikes), not a genuine 100-point move.
+STRIKE_WINDOW_POINTS = 100      # Entries aren't restricted to the exact ATM strike -- the one strike either
+                                 # side (ATM +/- this many points) is also fair game, per explicit instruction
+                                 # (2026-08-04: "+/-100 for strike selection other than atm is fine"). Real
+                                 # example that prompted this: a qualifying Low Pole -> AFT setup fired on a
+                                 # strike one increment away from where ATM had drifted to by the time it was
+                                 # noticed, on a chart that was ATM (or one away) when the pattern itself
+                                 # formed. ATM is still checked first (see evaluate_prism_alpha's candidate
+                                 # order) -- this only widens the net, doesn't change ATM's own resolution.
 MAX_TRADES_PER_SESSION = 3      # once a trade closes, a new one may be taken the same session, up to this cap
 ENTRY_START_TIME = dt_time(9, 20)  # no new entries before 9:20 AM IST; exit-monitoring on an already-open
                                     # trade is never gated by this — only fresh entries are
@@ -607,6 +616,22 @@ VARIANT_CONFIG = {
     "prism_alpha_2": {"collection": "blackbox_prism_alpha2_trades", "require_indicators": False},
 }
 
+# Which variants the LIVE poll loop (evaluate_prism_alpha, below) actually
+# evaluates/trades -- deliberately separate from VARIANT_CONFIG itself,
+# which both backtests (blackbox_backtest.py, blackbox_csv_backtest.py)
+# still iterate over unconditionally, since a historical replay of BOTH
+# tracks costs nothing extra and stays useful for comparison regardless of
+# what's live. Defaults to Prism Alpha 2 only (2026-08-04, explicit
+# instruction: "prism alpha 2 on... only for the admin") -- the full-spec
+# "prism_alpha" variant stays paused live even though the module itself is
+# no longer memory-gated off (see server.py's DISABLED_FEATURES). Override
+# with PRISM_ALPHA_ACTIVE_VARIANTS="prism_alpha,prism_alpha_2" to bring the
+# gated variant back live without another code change.
+ACTIVE_LIVE_VARIANTS = {
+    v.strip() for v in os.environ.get("PRISM_ALPHA_ACTIVE_VARIANTS", "prism_alpha_2").split(",")
+    if v.strip()
+}
+
 
 def _analyze_option_bars(opt_bars: list, direction: str) -> dict:
     """Pure (no I/O) core of an entry check: build P&F columns from already-
@@ -658,6 +683,17 @@ def _analyze_option_bars(opt_bars: list, direction: str) -> dict:
                                  # the pole (see find_low_pole's docstring for why)
         candidate_ft = None
         for j in range(i + 1, len(columns)):
+            # A later O column making a NEW LOW below the pole's own low
+            # invalidates this pole outright -- it's no longer the
+            # significant bottom, so neither retracement nor any
+            # follow-through found after this point counts for it. Checked
+            # before the retracement/confirmation logic below (and even
+            # while still waiting on retracement) since this is about
+            # price structure, not about how far along confirmation is.
+            # The outer loop will naturally pick up the new, lower O column
+            # as its own candidate pole on a later iteration.
+            if columns[j]["direction"] == "O" and columns[j]["low_level"] < columns[i]["low_level"]:
+                break
             if not pole_confirmed:
                 if columns[j]["direction"] != "X":
                     continue
@@ -782,15 +818,23 @@ def _gate_entry(analysis: dict, require_indicators: bool) -> dict:
     }
 
 
-async def _enter_trade(db, collection_name: str, today_iso: str, direction: str, atm: int, expiry: str,
-                        option_token: str, check: dict, flagged_conflict: bool) -> dict:
+async def _enter_trade(db, collection_name: str, today_iso: str, direction: str, strike: int, expiry: str,
+                        option_token: str, check: dict, other_qualified: list) -> dict:
+    """other_qualified: the other (strike, direction) candidates that ALSO
+    qualified this cycle (across every strike in the ATM+/-STRIKE_WINDOW_POINTS
+    net, not just the same strike's opposite direction) — logged rather than
+    silently dropped, same principle as the original single-strike CE/PE
+    conflict flag, just generalized to however many candidates are in play
+    now that more than one strike is checked."""
     conditions_met = dict(check["conditions_met"])
-    if flagged_conflict:
+    if other_qualified:
         conditions_met["simultaneous_signal_conflict"] = True
-        conditions_met["other_direction_also_qualified"] = "PE" if direction == "CE" else "CE"
-        logger.warning("Prism Alpha (%s): both CE and PE qualified simultaneously on %s — taking %s "
-                        "(checked first), flagging the conflict rather than silently dropping it.",
-                        collection_name, today_iso, direction)
+        conditions_met["other_candidates_also_qualified"] = [
+            {"strike": s, "direction": d} for s, d in other_qualified
+        ]
+        logger.warning("Prism Alpha (%s): %d other candidate(s) also qualified alongside %s %s on %s — "
+                        "taking this one (checked first), flagging the rest rather than silently dropping them.",
+                        collection_name, len(other_qualified), strike, direction, today_iso)
 
     entry_price = check["entry_price"]
     target = entry_price + TARGET_POINTS  # premium terms — "60 points" = ₹60 of option premium, confirmed
@@ -799,7 +843,7 @@ async def _enter_trade(db, collection_name: str, today_iso: str, direction: str,
         "id": str(uuid.uuid4()),
         "date": today_iso,
         "direction": direction,
-        "strike": atm,
+        "strike": strike,
         "expiry": expiry,
         "option_token": option_token,
         "entry_time": datetime.now(IST).isoformat(),
@@ -843,53 +887,57 @@ def _evaluate_exit(opt_bars: list, trade: dict, now: datetime) -> dict:
     entry_dt = trade["entry_time"] if isinstance(trade["entry_time"], datetime) else datetime.fromisoformat(trade["entry_time"])
     current_stop = trade["current_stop"]
     target = trade["target"]
+    opt_since_entry = [b for b in opt_bars if b["dt"] >= entry_dt]
 
-    # 1. Trailing stop — best (never-worse) candidate across every qualifying
-    # Double Bottom Sell column formed on the option's own chart since entry.
-    entry_col_idx = None
-    for i, c in enumerate(columns):
-        if _parse_ts(c["end_ts"]) >= entry_dt:
-            entry_col_idx = i
-            break
-
-    best_candidate = None
-    if entry_col_idx is not None:
-        for j in range(entry_col_idx, len(columns)):
-            if is_double_bottom_sell(columns, j):
-                candidate = columns[j]["low_price"] - 1
-                if candidate > current_stop and (best_candidate is None or candidate > best_candidate):
-                    best_candidate = candidate
+    # Trailing-stop ratchets and the breach check must interleave in TRUE
+    # chronological order — a Double Bottom Sell column only becomes a
+    # valid trailing candidate for bars STRICTLY AFTER that column itself
+    # finished forming (its own end_ts), never applied retroactively to
+    # earlier bars. Caught live (2026-08-04): the old version scanned the
+    # WHOLE post-entry span for the single best trailing candidate FIRST,
+    # then checked the WHOLE span for a breach against that already-
+    # maximized stop — which finds an early dip using a stop level that,
+    # under true minute-by-minute polling, would not have been raised that
+    # high yet. Only bites when a trade is evaluated over a large
+    # already-elapsed span in one shot (a manually backdated entry, or
+    # catching up after a process restart/outage) — normal frequent
+    # polling never had enough elapsed history per call to expose it, but
+    # this codebase has hit real multi-hour Render restarts before (see
+    # server.py's DISABLED_FEATURES history), so it's a real live risk, not
+    # just a backfill edge case. Shared by both variants and the backtest.
+    next_col = 0
+    while next_col < len(columns) and _parse_ts(columns[next_col]["end_ts"]) < entry_dt:
+        next_col += 1
 
     shift_event = None
-    if best_candidate is not None:
-        shift_event = {
-            "timestamp": now.isoformat(),
-            "old_stop": current_stop,
-            "new_stop": best_candidate,
-            "pattern": "double_bottom_sell",
-        }
-        current_stop = best_candidate
+    for b in opt_since_entry:
+        while next_col < len(columns) and _parse_ts(columns[next_col]["end_ts"]) <= b["dt"]:
+            if is_double_bottom_sell(columns, next_col):
+                candidate = columns[next_col]["low_price"] - 1
+                if candidate > current_stop:
+                    shift_event = {
+                        "timestamp": b["dt"].isoformat(),
+                        "old_stop": current_stop,
+                        "new_stop": candidate,
+                        "pattern": "double_bottom_sell",
+                    }
+                    current_stop = candidate
+            next_col += 1
 
-    # 2. Stop/target breach — close-only, same series, same sampling as the
-    # chart itself. First 1-min close since entry that clears either level.
-    opt_since_entry = [b for b in opt_bars if b["dt"] >= entry_dt]
-    breach_bar = next((b for b in opt_since_entry if b["close"] <= current_stop or b["close"] >= target), None)
+        if b["close"] <= current_stop or b["close"] >= target:
+            exit_reason = "stop" if b["close"] <= current_stop else "target"
+            return {"action": "exited", "exit_reason": exit_reason, "exit_price": b["close"],
+                    "pnl": b["close"] - trade["entry_price"], "current_stop": current_stop, "shift_event": shift_event}
 
-    if breach_bar is None:
-        # 3. No overnight holding — force flat by 15:10 IST if neither
-        # target nor stop has hit yet. Also closes a real gap this caught:
-        # without a hard session cutoff, a position with no further exit
-        # trigger could otherwise sit open indefinitely.
-        if now.time() >= EXIT_FORCE_TIME and opt_since_entry:
-            exit_price = opt_since_entry[-1]["close"]
-            return {"action": "exited", "exit_reason": "session_end", "exit_price": exit_price,
-                    "pnl": exit_price - trade["entry_price"], "current_stop": current_stop, "shift_event": shift_event}
-        return {"action": "monitoring", "current_stop": current_stop, "shift_event": shift_event}
-
-    exit_reason = "stop" if breach_bar["close"] <= current_stop else "target"
-    exit_price = breach_bar["close"]
-    return {"action": "exited", "exit_reason": exit_reason, "exit_price": exit_price,
-            "pnl": exit_price - trade["entry_price"], "current_stop": current_stop, "shift_event": shift_event}
+    # No overnight holding — force flat by 15:10 IST if neither target nor
+    # stop has hit yet. Also closes a real gap this caught: without a hard
+    # session cutoff, a position with no further exit trigger could
+    # otherwise sit open indefinitely.
+    if now.time() >= EXIT_FORCE_TIME and opt_since_entry:
+        exit_price = opt_since_entry[-1]["close"]
+        return {"action": "exited", "exit_reason": "session_end", "exit_price": exit_price,
+                "pnl": exit_price - trade["entry_price"], "current_stop": current_stop, "shift_event": shift_event}
+    return {"action": "monitoring", "current_stop": current_stop, "shift_event": shift_event}
 
 
 async def _monitor_open_trade(db, collection_name: str, definedge, trade: dict) -> dict:
@@ -947,13 +995,21 @@ async def _resolve_atm(db, definedge, today_iso: str) -> int:
 
 
 async def evaluate_prism_alpha(db, definedge) -> dict:
-    """The single poll-cycle entry point — evaluates BOTH variants
-    ('prism_alpha' and 'prism_alpha_2', see VARIANT_CONFIG) and returns
-    {'prism_alpha': {...}, 'prism_alpha_2': {...}}. ATM/expiry/CE-PE tokens
-    are resolved at most once per cycle (only when at least one variant is
-    actually flat, under the session cap, and past the entry window) and
-    shared by both, since they watch identical underlying contracts and only
-    differ in whether the indicator gate applies. READ-ONLY Definedge
+    """The single poll-cycle entry point — evaluates whichever variants are
+    in ACTIVE_LIVE_VARIANTS (currently just 'prism_alpha_2'; VARIANT_CONFIG
+    itself still defines both) and returns one key per active variant, e.g.
+    {'prism_alpha_2': {...}}. ATM/expiry/CE-PE tokens are resolved at most
+    once per cycle (only when at least one active variant is flat, under
+    the session cap, and past the entry window) and shared across whichever
+    variants are active, since they watch identical underlying contracts
+    and only differ in whether the indicator gate applies.
+
+    Entries aren't restricted to the exact ATM strike: ATM itself plus one
+    strike either side (see STRIKE_WINDOW_POINTS) are all checked, ATM
+    preferred first, CE before PE at each strike (see the candidate order
+    built below) -- once a trade is open on some strike/direction, only
+    that exact contract is tracked until exit, same as before this widened.
+    READ-ONLY Definedge
     endpoints only:
       - GET .../sds/history/{segment}/{token}/minute/{from}/{to}  (CE/PE option bars)
       - GET .../dart/v1/quotes/NSE/{token}                        (Nifty spot LTP — ATM selection only)
@@ -966,6 +1022,8 @@ async def evaluate_prism_alpha(db, definedge) -> dict:
     pending = []  # variants that are flat, under the session cap, and past 9:20 — need a fresh entry check
 
     for variant, cfg in VARIANT_CONFIG.items():
+        if variant not in ACTIVE_LIVE_VARIANTS:
+            continue
         collection_name = cfg["collection"]
         todays_trades = await db[collection_name].find({"date": today_iso}, {"_id": 0}).to_list(MAX_TRADES_PER_SESSION + 1)
         open_trade = next((t for t in todays_trades if t["status"] == "open"), None)
@@ -991,28 +1049,43 @@ async def evaluate_prism_alpha(db, definedge) -> dict:
     if pending:
         atm = await _resolve_atm(db, definedge, today_iso)
         df = await definedge._get_master()
-        tokens = resolve_atm_option_tokens(df, atm)
+        # ATM itself, then one strike either side (see STRIKE_WINDOW_POINTS) —
+        # ATM is still checked first/preferred, this only widens the net.
+        candidate_strikes = [atm, atm - STRIKE_WINDOW_POINTS, atm + STRIKE_WINDOW_POINTS]
 
-        # Both charts analyzed ONCE, shared by every pending variant — never
-        # short-circuited — so a same-day simultaneous CE+PE qualification is
-        # actually detected instead of silently masked by whichever direction
-        # got checked first, and so Definedge isn't hit twice for the same data.
-        ce_analysis = await _analyze_option_chart(definedge, "CE", tokens["CE"])
-        pe_analysis = await _analyze_option_chart(definedge, "PE", tokens["PE"])
+        # Every candidate strike's CE and PE analyzed ONCE, shared by every
+        # pending variant — never short-circuited, so a simultaneous
+        # qualification anywhere in the net is actually detected instead of
+        # silently masked by whichever candidate got checked first, and so
+        # Definedge isn't hit twice for the same data.
+        candidates = []  # [(strike, direction, tokens), ...] in priority order
+        analyses = {}    # (strike, direction) -> analysis dict
+        for strike in candidate_strikes:
+            tokens = resolve_atm_option_tokens(df, strike)
+            for direction in ("CE", "PE"):
+                candidates.append((strike, direction, tokens))
+                analyses[(strike, direction)] = await _analyze_option_chart(definedge, direction, tokens[direction])
 
         for variant in pending:
             cfg = VARIANT_CONFIG[variant]
             collection_name = cfg["collection"]
-            ce_check = _gate_entry(ce_analysis, cfg["require_indicators"])
-            pe_check = _gate_entry(pe_analysis, cfg["require_indicators"])
-            both_qualify = ce_check["qualifies"] and pe_check["qualifies"]
+            checks = [
+                (strike, direction, tokens, _gate_entry(analyses[(strike, direction)], cfg["require_indicators"]))
+                for strike, direction, tokens in candidates
+            ]
+            qualified = [c for c in checks if c[3]["qualifies"]]
 
-            if ce_check["qualifies"]:
-                results[variant] = await _enter_trade(db, collection_name, today_iso, "CE", atm, tokens["expiry"], tokens["CE"], ce_check, both_qualify)
-            elif pe_check["qualifies"]:
-                results[variant] = await _enter_trade(db, collection_name, today_iso, "PE", atm, tokens["expiry"], tokens["PE"], pe_check, both_qualify)
+            if qualified:
+                strike, direction, tokens, check = qualified[0]
+                other_qualified = [(s, d) for s, d, _, _ in qualified[1:]]
+                results[variant] = await _enter_trade(db, collection_name, today_iso, direction, strike,
+                                                       tokens["expiry"], tokens[direction], check, other_qualified)
             else:
-                results[variant] = {"action": "flat", "reason": "no entry conditions aligned",
-                                     "ce_reason": ce_check.get("reason"), "pe_reason": pe_check.get("reason")}
+                results[variant] = {
+                    "action": "flat", "reason": "no entry conditions aligned across ATM+/-%d" % STRIKE_WINDOW_POINTS,
+                    "candidate_reasons": {
+                        f"{strike}_{direction}": check["reason"] for strike, direction, _, check in checks
+                    },
+                }
 
     return results
