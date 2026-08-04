@@ -7,7 +7,7 @@ import { toast } from "sonner";
 import {
   Loader2, Search, Crosshair, TrendingUp, TrendingDown, Minus,
   MousePointer2, Activity, RotateCcw, Pencil, Ruler, Type, Eraser, Radio,
-  Layers, X,
+  Layers, X, Zap,
 } from "lucide-react";
 import { EmptyState } from "./QuantLab";
 import { TRADER_TOKEN_KEY } from "../Auth";
@@ -138,7 +138,7 @@ const BIAS_STYLE = {
 /* The chart itself                                                       */
 /* --------------------------------------------------------------------- */
 
-const PnfGrid = forwardRef(({ data, resetKey, showTrendLines, showMa, highlight, onHoverColumn }, ref) => {
+const PnfGrid = forwardRef(({ data, resetKey, showTrendLines, showMa, showSmartTrend, highlight, onHoverColumn }, ref) => {
   const { columns, grid, trend_lines: lines, meta, indicators } = data;
   const frameRef = useRef(null);
   const mainSvgRef = useRef(null);
@@ -344,29 +344,118 @@ const PnfGrid = forwardRef(({ data, resetKey, showTrendLines, showMa, highlight,
   const pxPerRow = (axisPxH / viewH) * ROW_H;
   const labelStep = Math.max(1, Math.ceil(MIN_LABEL_GAP_PX / Math.max(pxPerRow, 1)));
 
+  // Converts a real PRICE back to a fractional row (not snapped to a box)
+  // so a price-based line sits between boxes rather than jumping between
+  // them — shared by the moving average and the smart-trend cloud below.
+  const priceToRow = useCallback((price) => {
+    const lvls = grid.levels;
+    for (let k = 0; k < lvls.length - 1; k += 1) {
+      const hi = lvls[lvls.length - 1 - k].price;
+      const lo = lvls[lvls.length - 2 - k].price;
+      if (price <= hi && price >= lo) {
+        return k + (hi - price) / (hi - lo || 1);
+      }
+    }
+    return null;
+  }, [grid.levels]);
+
   const maPoints = useMemo(() => {
     if (!showMa) return null;
     const series = indicators?.moving_average || [];
     const pts = [];
     series.forEach((price, n) => {
       if (price == null) return;
-      // Convert the average's PRICE back to a fractional row so the line
-      // sits between boxes rather than snapping to one.
-      const lvls = grid.levels;
-      let row = null;
-      for (let k = 0; k < lvls.length - 1; k += 1) {
-        const hi = lvls[lvls.length - 1 - k].price;
-        const lo = lvls[lvls.length - 2 - k].price;
-        if (price <= hi && price >= lo) {
-          row = k + (hi - price) / (hi - lo || 1);
-          break;
-        }
-      }
+      const row = priceToRow(price);
       if (row == null) return;
       pts.push(`${colX(meta.render_offset + n) + COL_W / 2},${PAD_T + row * ROW_H + ROW_H / 2}`);
     });
     return pts.length > 1 ? pts.join(" ") : null;
-  }, [showMa, indicators, grid.levels, colX, meta.render_offset]);
+  }, [showMa, indicators, priceToRow, colX, meta.render_offset]);
+
+  // The adaptive trend cloud: "walking" (slow, dampened in chop) and
+  // "running" (fast companion) lines from backend/pnf_indicators.py's
+  // smart_trend_line(), shaded between them and tinted by the current
+  // overall bias. Signal glyphs (breakout arrow / exhaustion star /
+  // trend pullback "P") are positioned separately below as an HTML
+  // overlay, not SVG <text> — see the price-axis comment on why scaled
+  // SVG text goes illegible at this app's usual zoom levels.
+  const smartTrend = useMemo(() => {
+    if (!showSmartTrend) return null;
+    const series = indicators?.smart_trend_series;
+    if (!series) return null;
+    const pt = (n, row) => [colX(meta.render_offset + n) + COL_W / 2, PAD_T + row * ROW_H + ROW_H / 2];
+    const walkPts = [];
+    series.walking.forEach((price, n) => {
+      const row = price == null ? null : priceToRow(price);
+      if (row != null) walkPts.push(pt(n, row));
+    });
+    const runPts = [];
+    series.running.forEach((price, n) => {
+      const row = price == null ? null : priceToRow(price);
+      if (row != null) runPts.push(pt(n, row));
+    });
+    // The cloud fill only makes sense where BOTH lines have a value —
+    // walking's warmup (er_period) is longer than running's (a short
+    // EMA), so early columns only ever get a running line.
+    const both = [];
+    series.walking.forEach((wPrice, n) => {
+      const rPrice = series.running[n];
+      if (wPrice == null || rPrice == null) return;
+      const wRow = priceToRow(wPrice);
+      const rRow = priceToRow(rPrice);
+      if (wRow == null || rRow == null) return;
+      both.push({ top: pt(n, wRow), bot: pt(n, rRow) });
+    });
+    const cloud = both.length > 1
+      ? [...both.map((p) => p.top), ...both.slice().reverse().map((p) => p.bot)]
+        .map((p) => p.join(",")).join(" ")
+      : null;
+    return {
+      walkLine: walkPts.length > 1 ? walkPts.map((p) => p.join(",")).join(" ") : null,
+      runLine: runPts.length > 1 ? runPts.map((p) => p.join(",")).join(" ") : null,
+      cloud,
+      bullish: indicators?.smart_trend?.bias === "bullish",
+    };
+  }, [showSmartTrend, indicators, priceToRow, colX, meta.render_offset]);
+
+  // Signal glyphs (arrow/star/pullback) positioned in real screen pixels
+  // over the main pane, exactly like the price-axis labels -- SVG text
+  // sized in viewBox units would go sub-pixel at this app's usual
+  // zoom-out levels (verified against the axis-label bug this fixed).
+  const mainRect = mainSvgRef.current?.getBoundingClientRect();
+  const mainPxW = mainRect?.width || 900;
+  const mainPxH = mainRect?.height || 620;
+  const toScreenX = useCallback((x) => ((x - vx) / viewW) * mainPxW, [vx, viewW, mainPxW]);
+  const toScreenY = useCallback((y) => ((y - vy) / viewH) * mainPxH, [vy, viewH, mainPxH]);
+
+  const smartSignals = useMemo(() => {
+    if (!showSmartTrend) return [];
+    const series = indicators?.smart_trend_series;
+    if (!series?.signals?.length) return [];
+    const byIndex = new Map(columns.map((c) => [c.index, c]));
+    const SIGNAL_STYLE = {
+      arrow: { bullish: { glyph: "▲", color: "#34D399" }, bearish: { glyph: "▼", color: "#F87171" } },
+      star: { bullish: { glyph: "★", color: "#34D399" }, bearish: { glyph: "★", color: "#F87171" } },
+      pullback: { bullish: { glyph: "P", color: "#34D399" }, bearish: { glyph: "P", color: "#F87171" } },
+    };
+    return series.signals.map((s, i) => {
+      const col = byIndex.get(s.index);
+      if (!col) return null;
+      const style = SIGNAL_STYLE[s.kind]?.[s.bias];
+      if (!style) return null;
+      // arrow/star sit past the column's OWN extreme in the signal's
+      // direction (a breakout above/exhaustion at the top, or the mirror
+      // below); pullback sits on the retracing column's own extreme.
+      const aboveTop = s.kind === "pullback" ? s.bias === "bearish" : s.bias === "bullish";
+      const level = aboveTop ? col.top_level : col.bottom_level;
+      return {
+        key: `${s.kind}-${s.index}-${i}`,
+        x: colX(col.index) + COL_W / 2,
+        y: PAD_T + rowOf(level) * ROW_H + (aboveTop ? -ROW_H * 0.7 : ROW_H * 1.7),
+        ...style,
+      };
+    }).filter(Boolean);
+  }, [showSmartTrend, indicators, columns, colX, rowOf]);
 
   return (
     <div
@@ -375,13 +464,17 @@ const PnfGrid = forwardRef(({ data, resetKey, showTrendLines, showMa, highlight,
     >
       {/* Main pane — pans/zooms in both axes via viewBox alone; its actual
           width/height attributes never change, so this can never overflow
-          its own box the way a resized SVG in a scrolling div could. */}
+          its own box the way a resized SVG in a scrolling div could. Wrapped
+          in a plain positioned div so the signal-glyph overlay below can sit
+          on top of it at the same size without affecting the SVG's own
+          layout math. */}
+      <div style={{ position: "relative", width: `calc(100% - ${AXIS_W}px)`, height: "100%" }}>
       <svg
         ref={mainSvgRef}
         viewBox={`${vx} ${vy} ${viewW} ${viewH}`}
         preserveAspectRatio="none"
         style={{
-          width: `calc(100% - ${AXIS_W}px)`, height: "100%",
+          width: "100%", height: "100%",
           touchAction: "none", cursor: dragging ? "grabbing" : "grab",
         }}
         className="block font-mono-ui"
@@ -413,6 +506,25 @@ const PnfGrid = forwardRef(({ data, resetKey, showTrendLines, showMa, highlight,
         {/* column moving average */}
         {maPoints && (
           <polyline points={maPoints} fill="none" stroke="#38BDF8" strokeWidth="1.5" opacity="0.8" vectorEffect="non-scaling-stroke" />
+        )}
+
+        {/* adaptive smart-trend cloud (walking/running lines + fill) */}
+        {smartTrend && (
+          <>
+            {smartTrend.cloud && (
+              <polygon
+                points={smartTrend.cloud}
+                fill={smartTrend.bullish ? "#34D399" : "#F87171"}
+                fillOpacity="0.12" stroke="none"
+              />
+            )}
+            {smartTrend.runLine && (
+              <polyline points={smartTrend.runLine} fill="none" stroke="#38BDF8" strokeWidth="1" strokeDasharray="2 2" opacity="0.7" vectorEffect="non-scaling-stroke" />
+            )}
+            {smartTrend.walkLine && (
+              <polyline points={smartTrend.walkLine} fill="none" stroke="#FBBF24" strokeWidth="1.75" opacity="0.9" vectorEffect="non-scaling-stroke" />
+            )}
+          </>
         )}
 
         {/* the X/O boxes */}
@@ -463,6 +575,35 @@ const PnfGrid = forwardRef(({ data, resetKey, showTrendLines, showMa, highlight,
           );
         })()}
       </svg>
+
+      {/* Smart-trend signal glyphs (arrow/star/pullback) — plain HTML
+          positioned by real screen pixels, not SVG <text>, for the same
+          reason the price-axis labels are: sized-in-viewBox-units text
+          goes sub-pixel and unreadable once a column's box height is
+          heavily compressed. pointerEvents:none so they never intercept
+          the pan/zoom gestures on the SVG underneath. */}
+      {showSmartTrend && smartSignals.length > 0 && (
+        <div style={{ position: "absolute", inset: 0, overflow: "hidden", pointerEvents: "none" }}>
+          {smartSignals.map((s) => {
+            const left = toScreenX(s.x);
+            const top = toScreenY(s.y);
+            if (left < -20 || left > mainPxW + 20 || top < -20 || top > mainPxH + 20) return null;
+            return (
+              <div
+                key={s.key}
+                style={{
+                  position: "absolute", left, top, transform: "translate(-50%, -50%)",
+                  fontSize: 11, fontWeight: 700, lineHeight: 1, color: s.color,
+                  textShadow: "0 0 3px rgba(0,0,0,0.85), 0 0 3px rgba(0,0,0,0.85)",
+                }}
+              >
+                {s.glyph}
+              </div>
+            );
+          })}
+        </div>
+      )}
+      </div>
 
       {/* Price axis — a separate fixed-width pane so it stays put while the
           main pane pans left/right through history; its vertical window
@@ -539,12 +680,16 @@ const RailButton = ({ icon: Icon, active, disabled, title, onClick }) => (
   </button>
 );
 
-const ToolRail = ({ showTrendLines, setShowTrendLines, showMa, setShowMa, onReset }) => (
+const ToolRail = ({
+  showTrendLines, setShowTrendLines, showMa, setShowMa,
+  showSmartTrend, setShowSmartTrend, onReset,
+}) => (
   <div className="hidden lg:flex flex-col items-center gap-1 w-12 shrink-0 border-r border-white/10 bg-[#0B1220] py-3">
     <RailButton icon={MousePointer2} active title="Cursor" onClick={() => {}} />
     <div className="w-6 h-px bg-white/10 my-1.5" />
     <RailButton icon={TrendingUp} active={showTrendLines} title="45° Trend Lines" onClick={() => setShowTrendLines((v) => !v)} />
     <RailButton icon={Activity} active={showMa} title="Moving Average" onClick={() => setShowMa((v) => !v)} />
+    <RailButton icon={Zap} active={showSmartTrend} title="Smart Trend Cloud" onClick={() => setShowSmartTrend((v) => !v)} />
     <RailButton icon={RotateCcw} title="Reset View" onClick={onReset} />
     <div className="w-6 h-px bg-white/10 my-1.5" />
     <RailButton icon={Pencil} disabled title="Draw Trendline" />
@@ -575,6 +720,7 @@ const PnfChart = () => {
   const [boxPct, setBoxPct] = useState(0.25);
   const [showTrendLines, setShowTrendLines] = useState(true);
   const [showMa, setShowMa] = useState(true);
+  const [showSmartTrend, setShowSmartTrend] = useState(true);
   const [onlyMajor, setOnlyMajor] = useState(true);
   const [onlyActive, setOnlyActive] = useState(true);
   const [live, setLive] = useState(false);
@@ -825,6 +971,7 @@ const PnfChart = () => {
           <ToolRail
             showTrendLines={showTrendLines} setShowTrendLines={setShowTrendLines}
             showMa={showMa} setShowMa={setShowMa}
+            showSmartTrend={showSmartTrend} setShowSmartTrend={setShowSmartTrend}
             onReset={() => gridRef.current?.resetView()}
           />
 
@@ -836,6 +983,7 @@ const PnfChart = () => {
                 resetKey={plotCount}
                 showTrendLines={showTrendLines}
                 showMa={showMa}
+                showSmartTrend={showSmartTrend}
                 highlight={highlight}
                 onHoverColumn={setHoverCol}
               />

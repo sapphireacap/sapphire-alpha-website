@@ -170,6 +170,18 @@ def _serialise_pattern(p: pf.Pattern, settings: BoxSettings, anchor: float,
     return out
 
 
+def _serialise_smart_trend(result: dict, start: int) -> dict:
+    """Trims the adaptive trend line's per-column series to the rendered
+    window like moving_average/xo_zone_series do, but keeps `signals` at
+    their FULL-column-list indices (same convention as patterns/trend_lines)
+    -- the caller already has render_offset to map them onto what's drawn."""
+    return {
+        "walking": [None if v is None else round(v, 4) for v in result["walking"][start:]],
+        "running": [None if v is None else round(v, 4) for v in result["running"][start:]],
+        "signals": result["signals"],
+    }
+
+
 def build_chart(bars: list, box_pct: Optional[float] = DEFAULT_BOX_PCT,
                 box_value: Optional[float] = None,
                 reversal: int = DEFAULT_REVERSAL,
@@ -283,6 +295,7 @@ def build_chart(bars: list, box_pct: Optional[float] = DEFAULT_BOX_PCT,
                 None if v is None else round(v, 4)
                 for v in pi.column_moving_average(columns, settings, ma_period)[start:]
             ],
+            "smart_trend_series": _serialise_smart_trend(pi.smart_trend_line(columns, settings), start),
         },
         "summary": _summarise(columns, last, active, ser_patterns, settings, anchor),
     }

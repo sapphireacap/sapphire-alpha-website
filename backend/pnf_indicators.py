@@ -571,6 +571,152 @@ def count_to_price(count: Count, settings: BoxSettings, anchor: float) -> dict:
 
 
 # ---------------------------------------------------------------------------
+# Adaptive trend line + breakout/pullback/exhaustion signals
+#
+# NOT from the book, and NOT a reproduction of any vendor's proprietary
+# indicator. This exists because a user asked for a specific vendor study
+# (a Renko/P&F-adaptive trend line marketed as reacting fast in a clean
+# trend and slowing down in chop, with breakout/pullback/exhaustion
+# markers) whose actual calculation that vendor does not publish anywhere
+# -- their own docs and forum explicitly call the formula proprietary.
+# Rather than guess at someone else's undocumented formula, this builds
+# the same BEHAVIOUR from a real, public, well-documented technique:
+# Kaufman's Adaptive Moving Average (KAMA), whose whole premise is
+# exactly "move fast when price is making clean directional progress
+# (high Efficiency Ratio), move slow when it's chopping sideways (low
+# ER)" -- applied here to one price per COLUMN (this file's Ch. 4 rule),
+# not per bar. Treat this as an original, honestly-sourced approximation
+# of that *idea*, never as a match to any specific vendor's real output.
+# ---------------------------------------------------------------------------
+
+DEFAULT_SMART_TREND_CHANNEL = 10   # Donchian-style breakout lookback, columns
+DEFAULT_SMART_TREND_ER_PERIOD = 10  # KAMA efficiency-ratio window, columns
+DEFAULT_SMART_TREND_FAST = 2        # KAMA fastest smoothing constant, per Kaufman's own default
+DEFAULT_SMART_TREND_SLOW = 30       # KAMA slowest smoothing constant, per Kaufman's own default
+DEFAULT_SMART_TREND_RUNNING = 3     # the fast companion line's EMA period
+
+
+def _kama_levels(levels: list, er_period: int = DEFAULT_SMART_TREND_ER_PERIOD,
+                 fast: int = DEFAULT_SMART_TREND_FAST, slow: int = DEFAULT_SMART_TREND_SLOW) -> list:
+    """Kaufman's Adaptive Moving Average. Seeded with a plain average of
+    the first `er_period + 1` values, same seeding convention as `ema()`
+    above, then walked forward with KAMA's own recursive smoothing
+    constant: `SC = (ER * (fastSC - slowSC) + slowSC) ** 2`, where ER is
+    the ratio of net directional change to total path length over the
+    lookback -- 1.0 for a straight run, near 0 for pure noise."""
+    n = len(levels)
+    out = [None] * n
+    if n <= er_period:
+        return out
+    fast_sc = 2.0 / (fast + 1)
+    slow_sc = 2.0 / (slow + 1)
+    prev = sum(levels[:er_period + 1]) / (er_period + 1)
+    out[er_period] = prev
+    for i in range(er_period + 1, n):
+        change = abs(levels[i] - levels[i - er_period])
+        volatility = sum(abs(levels[j] - levels[j - 1]) for j in range(i - er_period + 1, i + 1))
+        er = change / volatility if volatility else 0.0
+        sc = (er * (fast_sc - slow_sc) + slow_sc) ** 2
+        prev = prev + sc * (levels[i] - prev)
+        out[i] = prev
+    return out
+
+
+def _donchian_prior(columns: list, i: int, lookback: int) -> tuple[Optional[int], Optional[int]]:
+    """Highest top / lowest bottom over the `lookback` columns strictly
+    BEFORE column i -- excludes the column being tested so a breakout can
+    actually be measured against what came before it."""
+    window = columns[max(0, i - lookback):i]
+    if not window:
+        return None, None
+    return max(top(c) for c in window), min(bottom(c) for c in window)
+
+
+def smart_trend_line(columns: list, settings: BoxSettings,
+                     channel_lookback: int = DEFAULT_SMART_TREND_CHANNEL,
+                     er_period: int = DEFAULT_SMART_TREND_ER_PERIOD,
+                     fast: int = DEFAULT_SMART_TREND_FAST, slow: int = DEFAULT_SMART_TREND_SLOW,
+                     running_period: int = DEFAULT_SMART_TREND_RUNNING) -> dict:
+    """The adaptive trend line (see module note above) plus three signal
+    types, all keyed by column index:
+
+      "walking" -- the KAMA line itself: the primary trend line, slow in
+        chop and fast once columns are making clean directional progress.
+      "running" -- a fixed-speed fast EMA of the same per-column price,
+        always the quicker of the two; the band between the two lines is
+        the "cloud" to shade when rendering.
+      bias per column: "bullish" if that column's close-method price
+        (this file's `column_close_levels` -- an X column's high, an O
+        column's low) is above the walking line, "bearish" if below.
+      signals:
+        "arrow"    -- continuation: the column breaks beyond the prior
+                      `channel_lookback` columns' high/low in its own
+                      direction while bias agrees.
+        "pullback" -- a column against the prevailing bias (an O column
+                      while price is still above the walking line, or an
+                      X column while still below it) -- a retracement
+                      inside an intact trend, not a reversal.
+        "star"     -- exhaustion: anchored on the column that just made a
+                      new `channel_lookback`-column extreme, the moment
+                      the NEXT column confirms a reversal away from it.
+    """
+    n = len(columns)
+    if n == 0:
+        return {"walking": [], "running": [], "bias": [], "signals": []}
+
+    anchor = columns[0].anchor
+    closes = column_close_levels(columns)
+    walking_levels = _kama_levels(closes, er_period, fast, slow)
+    running_levels = ema(closes, running_period)
+
+    bias = [None] * n
+    signals = []
+    for i in range(n):
+        wl = walking_levels[i]
+        if wl is None:
+            continue
+        bias[i] = "bullish" if closes[i] > wl else ("bearish" if closes[i] < wl else None)
+        if bias[i] is None:
+            continue
+
+        up_i = is_up(columns[i])
+        upper_prior, lower_prior = _donchian_prior(columns, i, channel_lookback)
+        if up_i and bias[i] == "bullish" and upper_prior is not None and top(columns[i]) > upper_prior:
+            signals.append({"index": i, "kind": "arrow", "bias": "bullish"})
+        elif (not up_i) and bias[i] == "bearish" and lower_prior is not None and bottom(columns[i]) < lower_prior:
+            signals.append({"index": i, "kind": "arrow", "bias": "bearish"})
+        elif (not up_i) and bias[i] == "bullish":
+            signals.append({"index": i, "kind": "pullback", "bias": "bullish"})
+        elif up_i and bias[i] == "bearish":
+            signals.append({"index": i, "kind": "pullback", "bias": "bearish"})
+
+        if i > 0 and is_up(columns[i]) != is_up(columns[i - 1]):
+            prev_upper, prev_lower = _donchian_prior(columns, i - 1, channel_lookback)
+            if is_up(columns[i - 1]) and prev_upper is not None and top(columns[i - 1]) > prev_upper:
+                signals.append({"index": i - 1, "kind": "star", "bias": "bearish"})
+            elif (not is_up(columns[i - 1])) and prev_lower is not None and bottom(columns[i - 1]) < prev_lower:
+                signals.append({"index": i - 1, "kind": "star", "bias": "bullish"})
+
+    return {
+        "walking": [None if lv is None else settings.price_at(round(lv), anchor) for lv in walking_levels],
+        "running": [None if lv is None else settings.price_at(round(lv), anchor) for lv in running_levels],
+        "bias": bias,
+        "signals": signals,
+    }
+
+
+def smart_trend_state(columns: list, settings: BoxSettings, **kwargs) -> dict:
+    """Snapshot for display/signal-gating: current bias and the most
+    recent signal, if any landed on the newest column."""
+    result = smart_trend_line(columns, settings, **kwargs)
+    if not result["bias"]:
+        return {"bias": None, "latest_signal": None}
+    last_i = len(columns) - 1
+    latest = next((s for s in reversed(result["signals"]) if s["index"] == last_i), None)
+    return {"bias": result["bias"][-1], "latest_signal": latest}
+
+
+# ---------------------------------------------------------------------------
 # Combined snapshot
 # ---------------------------------------------------------------------------
 
@@ -589,6 +735,7 @@ def indicator_snapshot(columns: list, settings: BoxSettings,
         "xo_zone": xo_zone_state(columns, xo_lookback),
         "xo_count": (xo_count(columns, xo_lookback) or [None])[-1],
         "rsi": rsi_series[-1] if rsi_series else None,
+        "smart_trend": smart_trend_state(columns, settings),
         "column_count": len(columns),
         "current_direction": "up" if is_up(columns[-1]) else "down",
     }
