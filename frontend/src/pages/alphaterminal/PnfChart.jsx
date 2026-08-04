@@ -114,6 +114,14 @@ const PnfGrid = forwardRef(({ data, resetKey, showTrendLines, showMa, highlight,
   const [panX, setPanX] = useState(0);
   const [panY, setPanY] = useState(0);
   const [dragging, setDragging] = useState(false);
+  // Mirrors TradingView/TradePoint's "autoscale" price axis: by default the
+  // Y window always re-fits itself to whatever columns are horizontally in
+  // view, so the visible price band fills the pane instead of sitting in a
+  // fixed window sized for the entire history (which leaves most of the
+  // pane empty once you've panned into a narrower slice of it). Any manual
+  // zoom/drag on the price axis switches this off — same as TradingView —
+  // until the user double-clicks the axis to turn it back on.
+  const [autoScaleY, setAutoScaleY] = useState(true);
 
   // Level -> row index, counted from the TOP of the grid so that higher
   // prices render higher on screen.
@@ -123,17 +131,58 @@ const PnfGrid = forwardRef(({ data, resetKey, showTrendLines, showMa, highlight,
   const plotW = PAD_L + columns.length * COL_W + PAD_R;
   const contentH = PAD_T * 2 + (grid.max_level - grid.min_level + 1) * ROW_H;
 
+  // Given a horizontal window (in content units), returns the {yZoom, panY}
+  // that frames exactly the price range spanned by the columns inside that
+  // window, plus a little breathing room top/bottom.
+  const fitYToWindow = useCallback((vxVal, viewWVal) => {
+    const visible = columns.filter((c) => {
+      const x = colX(c.index);
+      return x + COL_W > vxVal && x < vxVal + viewWVal;
+    });
+    if (!visible.length) return null;
+    let minLevel = Infinity;
+    let maxLevel = -Infinity;
+    visible.forEach((c) => c.levels.forEach((lvl) => {
+      if (lvl < minLevel) minLevel = lvl;
+      if (lvl > maxLevel) maxLevel = lvl;
+    }));
+    const rowTop = rowOf(maxLevel);
+    const rowBottom = rowOf(minLevel);
+    const padRows = Math.max(1.5, (rowBottom - rowTop) * 0.08);
+    const desiredViewH = (rowBottom - rowTop + padRows * 2) * ROW_H + PAD_T * 2;
+    const nz = clampNum(contentH / desiredViewH, MIN_Y_ZOOM, MAX_Y_ZOOM);
+    const nViewH = contentH / nz;
+    const centerY = PAD_T + ((rowTop + rowBottom) / 2) * ROW_H + ROW_H / 2;
+    const panYval = clampNum(centerY - nViewH / 2, 0, Math.max(0, contentH - nViewH));
+    return { yZoom: nz, panY: panYval };
+  }, [columns, colX, rowOf, contentH]);
+
   const resetView = useCallback(() => {
     const pxW = mainSvgRef.current?.getBoundingClientRect().width || plotW;
     const initViewW = Math.min(plotW, pxW);
     const initXZoom = clampNum(plotW / initViewW, MIN_X_ZOOM, MAX_X_ZOOM);
+    const initPanX = Math.max(0, plotW - plotW / initXZoom);
     setXZoom(initXZoom);
-    setPanX(Math.max(0, plotW - plotW / initXZoom));
-    setYZoom(1);
-    setPanY(0);
-  }, [plotW]);
+    setPanX(initPanX);
+    setAutoScaleY(true);
+    const fit = fitYToWindow(initPanX, plotW / initXZoom);
+    if (fit) { setYZoom(fit.yZoom); setPanY(fit.panY); }
+    else { setYZoom(1); setPanY(0); }
+  }, [plotW, fitYToWindow]);
 
   useImperativeHandle(ref, () => ({ resetView }), [resetView]);
+
+  // Keep the price axis auto-fitted to whatever's horizontally in view --
+  // re-running on every pan/zoom of X (and on new columns arriving from a
+  // live refresh) for as long as autoscale hasn't been manually overridden.
+  useEffect(() => {
+    if (!autoScaleY) return;
+    const vw = plotW / xZoom;
+    const vxNow = clampNum(panX, 0, Math.max(0, plotW - vw));
+    const fit = fitYToWindow(vxNow, vw);
+    if (fit) { setYZoom(fit.yZoom); setPanY(fit.panY); }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoScaleY, panX, xZoom, plotW, fitYToWindow]);
 
   // Reset the camera only when resetKey changes (a fresh manual "Plot" —
   // see the page component), NOT on every `data` update. A live auto-
@@ -167,6 +216,7 @@ const PnfGrid = forwardRef(({ data, resetKey, showTrendLines, showMa, highlight,
       const overAxis = axisSvgRef.current?.contains(e.target);
       const factor = e.deltaY < 0 ? WHEEL_ZOOM_STEP : 1 / WHEEL_ZOOM_STEP;
       if (overAxis) {
+        setAutoScaleY(false);
         const rect = axisSvgRef.current.getBoundingClientRect();
         const frac = clampNum((e.clientY - rect.top) / rect.height, 0, 1);
         const nz = clampNum(yZoom * factor, MIN_Y_ZOOM, MAX_Y_ZOOM);
@@ -198,6 +248,7 @@ const PnfGrid = forwardRef(({ data, resetKey, showTrendLines, showMa, highlight,
   };
   const onAxisPointerDown = (e) => {
     e.currentTarget.setPointerCapture(e.pointerId);
+    setAutoScaleY(false);
     dragRef.current = { mode: "yzoom", startY: e.clientY, yZoom0: yZoom, centerY0: vy + viewH / 2 };
     setDragging(true);
   };
@@ -207,9 +258,14 @@ const PnfGrid = forwardRef(({ data, resetKey, showTrendLines, showMa, highlight,
     if (d.mode === "pan") {
       const rect = mainSvgRef.current.getBoundingClientRect();
       const dContentX = -(e.clientX - d.startX) * (viewW / rect.width);
-      const dContentY = -(e.clientY - d.startY) * (viewH / rect.height);
       setPanX(clampNum(d.panX0 + dContentX, 0, Math.max(0, plotW - viewW)));
-      setPanY(clampNum(d.panY0 + dContentY, 0, Math.max(0, contentH - viewH)));
+      // While autoscale is on, the price axis re-fits itself off the new
+      // panX (see the effect above) — a manual Y nudge here would just get
+      // overwritten a tick later, so only hand-pan Y once it's overridden.
+      if (!autoScaleY) {
+        const dContentY = -(e.clientY - d.startY) * (viewH / rect.height);
+        setPanY(clampNum(d.panY0 + dContentY, 0, Math.max(0, contentH - viewH)));
+      }
     } else if (d.mode === "yzoom") {
       const deltaPx = e.clientY - d.startY;
       const nz = clampNum(d.yZoom0 * Math.exp(-deltaPx * AXIS_DRAG_SENSITIVITY), MIN_Y_ZOOM, MAX_Y_ZOOM);
@@ -359,7 +415,9 @@ const PnfGrid = forwardRef(({ data, resetKey, showTrendLines, showMa, highlight,
           mirrors the main pane's (vy/viewH) so labels line up with rows,
           and dragging or scrolling on it re-scales price only — the
           TradingView "pinch the Y axis" gesture (no touch pinch on
-          desktop, so drag is the equivalent here). */}
+          desktop, so drag is the equivalent here). Double-click re-enables
+          autoscale (fitting to whatever's currently in view) without
+          touching the X pan, same as TradingView's own axis double-click. */}
       <svg
         ref={axisSvgRef}
         viewBox={`0 ${vy} ${AXIS_W} ${viewH}`}
@@ -370,7 +428,7 @@ const PnfGrid = forwardRef(({ data, resetKey, showTrendLines, showMa, highlight,
         onPointerMove={onPointerMove}
         onPointerUp={onPointerUp}
         onPointerCancel={onPointerUp}
-        onDoubleClick={resetView}
+        onDoubleClick={() => setAutoScaleY(true)}
       >
         {grid.levels.map(({ level, price }) => {
           const y = PAD_T + rowOf(level) * ROW_H;
@@ -697,7 +755,7 @@ const PnfChart = () => {
               <span>
                 {hoverCol
                   ? <>Col {hoverCol.index} · {hoverCol.direction} × {hoverCol.box_count} · {fmtNum(hoverCol.bottom_price)} – {fmtNum(hoverCol.top_price)}{hoverCol.start_label && <> · {hoverCol.start_label} → {hoverCol.end_label}</>}</>
-                  : "scroll to zoom · drag to pan · drag/scroll price axis to scale · double-click to reset"}
+                  : "scroll to zoom · drag to pan · drag/scroll price axis to scale (double-click axis to auto-fit again) · double-click chart to reset"}
               </span>
             </div>
           </div>
