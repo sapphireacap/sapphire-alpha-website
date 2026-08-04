@@ -50,6 +50,40 @@ const LIVE_REFRESH_MS = {
 // history (no real intraday index data) — see backend/alpha_vantage_client.py.
 const US_INTERVALS = ["daily", "weekly", "monthly"];
 
+// Crypto bars are fetched straight from the browser, not proxied through
+// the backend -- Binance's public klines API sends a wildcard CORS header
+// (same as the Crypto Markets dashboard already relies on), but more
+// importantly, calling it FROM the backend gets geo-blocked (verified
+// live, 2026-08-04: identical request works from a real browser, 502s
+// from the Render-hosted server). The backend still does 100% of the
+// actual P&F construction/pattern work -- this only fetches raw OHLC and
+// hands it to POST /pnf/chart/crypto (see backend/pnf_routes.py) to run
+// the engine. Mirrors backend/binance_client.py's interval map; keep the
+// two in sync if either changes.
+const BINANCE_API = "https://api.binance.com/api/v3";
+const BINANCE_INTERVAL = {
+  "1": "1m", "5": "5m", "15": "15m", "30": "30m", "60": "1h",
+  daily: "1d", weekly: "1w", monthly: "1M",
+};
+
+const fetchCryptoBars = async (symbol, interval) => {
+  const { data } = await axios.get(`${BINANCE_API}/klines`, {
+    params: { symbol, interval: BINANCE_INTERVAL[interval], limit: 1000 },
+  });
+  const isDailyPlus = interval === "daily" || interval === "weekly" || interval === "monthly";
+  return data.map((k) => {
+    const t = new Date(k[0]);
+    const row = { open: parseFloat(k[1]), high: parseFloat(k[2]), low: parseFloat(k[3]), close: parseFloat(k[4]) };
+    if (isDailyPlus) {
+      row.date = t.toISOString().slice(0, 10);
+    } else {
+      const pad = (n) => String(n).padStart(2, "0");
+      row.ts = `${pad(t.getUTCDate())}${pad(t.getUTCMonth() + 1)}${t.getUTCFullYear()}${pad(t.getUTCHours())}${pad(t.getUTCMinutes())}`;
+    }
+    return row;
+  });
+};
+
 // The book's own commonly-used box sizes. Percentage boxes (not absolute)
 // are the default because they keep the box a constant *proportion* of
 // price, which is what makes one parameter set usable across instruments
@@ -599,14 +633,23 @@ const PnfChart = () => {
     if (!symbol) return;
     if (!silent) { setLoading(true); setHighlight(null); }
     try {
-      const { data: d } = await axios.get(`${API}/pnf/chart`, {
-        params: {
-          symbol, segment, interval, box_pct: boxPct,
-          ...(segment === "FUT" || segment === "OPT" ? { expiry } : {}),
-          ...(segment === "OPT" ? { strike, option_type: optionType } : {}),
-        },
-        ...authHeaders(),
-      });
+      let d;
+      if (segment === "CRYPTO") {
+        const bars = await fetchCryptoBars(symbol, interval);
+        ({ data: d } = await axios.post(`${API}/pnf/chart/crypto`, { symbol, bars }, {
+          params: { interval, box_pct: boxPct },
+          ...authHeaders(),
+        }));
+      } else {
+        ({ data: d } = await axios.get(`${API}/pnf/chart`, {
+          params: {
+            symbol, segment, interval, box_pct: boxPct,
+            ...(segment === "FUT" || segment === "OPT" ? { expiry } : {}),
+            ...(segment === "OPT" ? { strike, option_type: optionType } : {}),
+          },
+          ...authHeaders(),
+        }));
+      }
       setData(d);
       if (!silent) setPlotCount((n) => n + 1);
     } catch (e) {

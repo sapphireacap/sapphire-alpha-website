@@ -379,7 +379,11 @@ async def fetch_bars(definedge, segment: str, token: str, interval: str,
         return resample_daily(bars, interval)
 
     minutes = int(interval)
-    now = datetime.now()
+    # Must be IST, not server-local time -- this backend runs on a UTC host
+    # (Render), and a bare datetime.now() silently caps `to` 5.5 hours
+    # behind real IST wall-clock time, which is exactly why intraday charts
+    # were plateauing mid-morning instead of tracking the live session.
+    now = datetime.now(IST)
     frm = (now - timedelta(days=days)).strftime("%d%m%Y0000")
     to = now.strftime("%d%m%Y%H%M")
     bars = await definedge.minute_ohlc(segment, token, frm=frm, to=to)

@@ -14,9 +14,10 @@ and its session mechanics directly, and that attribution must never
 reach a response body.
 """
 import logging
-from typing import Optional
+from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel
 
 import alpha_vantage_client as av
 import binance_client as bn
@@ -111,6 +112,9 @@ def create_pnf_router(db, definedge, get_current_subscriber) -> APIRouter:
         except pnf_chart.PnfError as e:
             raise HTTPException(status_code=400, detail=str(e))
         except av.AlphaVantageError as e:
+            if "not configured" in str(e).lower():
+                raise HTTPException(status_code=503,
+                                    detail="US index data isn't configured on this deployment yet.")
             logger.warning("Alpha Vantage fetch failed for %s: %s", sym, e)
             raise HTTPException(status_code=502,
                                 detail="Chart data is temporarily unavailable — please try again shortly.")
@@ -120,38 +124,6 @@ def create_pnf_router(db, definedge, get_current_subscriber) -> APIRouter:
             "symbol": sym,
             "selector_segment": "US",
             "tradingsymbol": f"{info['label']} (tracked via {info['proxy']})",
-        }
-        return payload
-
-    async def _chart_crypto(symbol: str, interval: str, box_pct: Optional[float],
-                            box_value: Optional[float], cfg, xo_lookback: int,
-                            ma_period: int) -> dict:
-        """Crypto branch: same build_chart() as every other segment — only
-        the bar-fetching differs (Binance's public klines instead of
-        Definedge). No P&F construction rule changes. Unlike the US branch,
-        every interval the platform offers is real native exchange data
-        here, intraday included."""
-        sym = symbol.strip().upper()
-        if sym not in bn.CRYPTO_SYMBOLS:
-            raise HTTPException(status_code=404, detail=f"No instrument found for {symbol}.")
-        try:
-            raw_bars = await bn.bars(sym, interval)
-            payload = pnf_chart.build_chart(
-                raw_bars, box_pct=box_pct, box_value=box_value,
-                reversal=pnf_chart.DEFAULT_REVERSAL, cfg=cfg,
-                xo_lookback=xo_lookback, ma_period=ma_period,
-            )
-        except pnf_chart.PnfError as e:
-            raise HTTPException(status_code=400, detail=str(e))
-        except bn.BinanceError as e:
-            logger.warning("Binance fetch failed for %s: %s", sym, e)
-            raise HTTPException(status_code=502,
-                                detail="Chart data is temporarily unavailable — please try again shortly.")
-        payload["params"]["interval"] = interval
-        payload["instrument"] = {
-            "symbol": sym,
-            "selector_segment": "CRYPTO",
-            "tradingsymbol": f"{bn.CRYPTO_SYMBOLS[sym]} ({sym})",
         }
         return payload
 
@@ -189,7 +161,8 @@ def create_pnf_router(db, definedge, get_current_subscriber) -> APIRouter:
         if segment == "US":
             return await _chart_us(symbol, interval, box_pct, box_value, cfg, xo_lookback, ma_period)
         if segment == "CRYPTO":
-            return await _chart_crypto(symbol, interval, box_pct, box_value, cfg, xo_lookback, ma_period)
+            raise HTTPException(status_code=400,
+                                detail="Crypto charts are built from client-fetched bars — use POST /pnf/chart/crypto.")
 
         found = await _resolve(segment, symbol, expiry, strike, option_type)
         try:
@@ -208,6 +181,66 @@ def create_pnf_router(db, definedge, get_current_subscriber) -> APIRouter:
             "symbol": symbol.upper(),
             "selector_segment": segment,
             "tradingsymbol": found["tradingsymbol"],
+        }
+        return payload
+
+    # -- crypto (bars fetched client-side, see module docstring in
+    #    binance_client.py for why) -----------------------------------------
+
+    class CryptoBar(BaseModel):
+        date: Optional[str] = None
+        ts: Optional[str] = None
+        open: float
+        high: float
+        low: float
+        close: float
+
+    class CryptoChartRequest(BaseModel):
+        symbol: str
+        bars: List[CryptoBar]
+
+    @router.post("/chart/crypto")
+    async def chart_crypto(req: CryptoChartRequest, interval: str = "daily",
+                           box_pct: Optional[float] = pnf_chart.DEFAULT_BOX_PCT,
+                           box_value: Optional[float] = None,
+                           xo_lookback: int = DEFAULT_XO_LOOKBACK, ma_period: int = 20,
+                           pole_min_boxes: int = 5, turtle_columns: int = 10,
+                           anchor_min_boxes: int = 15, triangle_50_rule: bool = False,
+                           user: dict = Depends(get_current_subscriber)):
+        """Same chart payload as GET /chart, built from OHLC bars the
+        caller already fetched (from Binance, client-side) rather than
+        this backend fetching them itself — Binance geo-blocks this
+        backend's own server (see binance_client.py). Every other segment
+        still uses the normal GET /chart flow; only Crypto works this way."""
+        sym = req.symbol.strip().upper()
+        if sym not in bn.CRYPTO_SYMBOLS:
+            raise HTTPException(status_code=404, detail=f"No instrument found for {req.symbol}.")
+        if not req.bars:
+            raise HTTPException(status_code=400, detail="No bars provided.")
+        if len(req.bars) > bn.MAX_BARS:
+            raise HTTPException(status_code=400, detail=f"Too many bars (max {bn.MAX_BARS}).")
+        if box_value is not None:
+            box_pct = None
+        cfg = pnf_chart.pf.PatternConfig(
+            pole_min_boxes=pole_min_boxes,
+            turtle_columns=turtle_columns,
+            anchor_min_boxes=anchor_min_boxes,
+            triangle_50_rule=triangle_50_rule,
+        )
+        bars = [b.model_dump(exclude_none=True) for b in req.bars]
+        try:
+            payload = pnf_chart.build_chart(
+                bars, box_pct=box_pct, box_value=box_value,
+                reversal=pnf_chart.DEFAULT_REVERSAL, cfg=cfg,
+                xo_lookback=xo_lookback, ma_period=ma_period,
+            )
+        except pnf_chart.PnfError as e:
+            raise HTTPException(status_code=400, detail=str(e))
+        payload["params"]["interval"] = interval
+        payload["instrument"] = {
+            "symbol": sym,
+            "selector_segment": "CRYPTO",
+            "tradingsymbol": f"{bn.CRYPTO_SYMBOLS[sym]} ({sym})",
         }
         return payload
 
