@@ -90,9 +90,9 @@ export const Hero = () => {
               className="mt-8 max-w-xl text-base md:text-lg font-light text-slate-400 leading-relaxed"
               data-testid="hero-description"
             >
-              Sapphire Alpha Capital is building a quantitative research platform
-              focused on research, technology and analytical tools for the
-              capital markets.
+              Sapphire Alpha Capital builds quantitative tools and market
+              intelligence for traders and investors who want structure
+              before conviction.
             </motion.p>
 
             <motion.div

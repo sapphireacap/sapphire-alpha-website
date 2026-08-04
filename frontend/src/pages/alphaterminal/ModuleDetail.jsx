@@ -377,7 +377,7 @@ const ScannerTrackRecord = ({ scannerKey }) => {
                         <td className="px-4 py-2.5 text-sm font-bold text-white whitespace-nowrap">{r.ticker}</td>
                         <td className="px-4 py-2.5 text-sm whitespace-nowrap">
                           <span className={r.bias === "Bullish" ? "text-emerald-400" : "text-red-400"}>
-                            {r.bias === "Bullish" ? "🟢 Bullish" : "🔴 Bearish"}
+                            {r.bias}
                           </span>
                         </td>
                         <td className="px-4 py-2.5 font-mono-ui text-sm text-right text-slate-300 whitespace-nowrap">₹{fmtNum(r.entry_price)}</td>

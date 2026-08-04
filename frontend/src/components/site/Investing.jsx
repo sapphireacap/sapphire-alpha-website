@@ -1,4 +1,3 @@
-import { useEffect, useState } from "react";
 import { Search, FlaskConical, RefreshCw } from "lucide-react";
 import Reveal from "./Reveal";
 
@@ -8,37 +7,33 @@ const STEPS = [
   { no: "03", icon: RefreshCw, title: "Improve", body: "Continuously refine ideas through observation, learning, and iteration." },
 ];
 
-const Terminal = () => {
-  const [signal, setSignal] = useState(0.847);
-  useEffect(() => {
-    const t = setInterval(() => {
-      setSignal((0.6 + Math.random() * 0.39));
-    }, 2200);
-    return () => clearInterval(t);
-  }, []);
-  return (
-    <div
-      className="font-mono-ui text-xs md:text-sm rounded-xl border border-white/10 bg-black/60 overflow-hidden"
-      style={{ boxShadow: "0 20px 50px -20px rgba(0,0,0,0.6), 0 0 60px -20px rgba(31,95,208,0.25)" }}
-      data-testid="terminal-readout"
-    >
-      <div className="flex items-center gap-2 px-4 py-3 border-b border-white/10">
-        <span className="h-2.5 w-2.5 rounded-full bg-red-500/70" />
-        <span className="h-2.5 w-2.5 rounded-full bg-yellow-500/70" />
-        <span className="h-2.5 w-2.5 rounded-full bg-emerald-500/70" />
-        <span className="ml-3 text-slate-500">sac_engine · live</span>
-      </div>
-      <div className="p-5 space-y-2 leading-relaxed">
-        <p className="text-slate-500">$ evaluate --strategy=core</p>
-        <p className="text-slate-300">SIGNAL_STRENGTH: <span className="text-emerald-400">{signal.toFixed(3)}</span></p>
-        <p className="text-slate-300">REGIME: <span className="text-sapphire-light">RISK_ON</span></p>
-        <p className="text-slate-300">CONFIDENCE: <span className="text-emerald-400">HIGH</span></p>
-        <p className="text-slate-300">SHARPE_EST: <span className="text-emerald-400">1.62</span></p>
-        <p className="text-slate-500">→ iterating<span className="animate-pulse">_</span></p>
-      </div>
+// Illustrates the three steps above as a command sequence, in the same
+// terminal chrome used elsewhere on the site -- deliberately NOT a live or
+// randomized readout (no fabricated signal strength, confidence, or Sharpe
+// figures). What actually runs through this pipeline is proprietary and
+// isn't shown; the sequence itself is real.
+const Terminal = () => (
+  <div
+    className="font-mono-ui text-xs md:text-sm rounded-xl border border-white/10 bg-black/60 overflow-hidden"
+    style={{ boxShadow: "0 20px 50px -20px rgba(0,0,0,0.6), 0 0 60px -20px rgba(31,95,208,0.25)" }}
+    data-testid="terminal-readout"
+  >
+    <div className="flex items-center gap-2 px-4 py-3 border-b border-white/10">
+      <span className="h-2.5 w-2.5 rounded-full bg-red-500/70" />
+      <span className="h-2.5 w-2.5 rounded-full bg-yellow-500/70" />
+      <span className="h-2.5 w-2.5 rounded-full bg-emerald-500/70" />
+      <span className="ml-3 text-slate-500">sac_engine</span>
     </div>
-  );
-};
+    <div className="p-5 space-y-2 leading-relaxed">
+      <p className="text-slate-300">$ research --idea=core-thesis</p>
+      <p className="text-slate-600 pl-4">→ structured analysis, not a hunch</p>
+      <p className="text-slate-300">$ evaluate --against=historical-data</p>
+      <p className="text-slate-600 pl-4">→ assumptions tested, not assumed</p>
+      <p className="text-slate-300">$ improve --on=observed-results</p>
+      <p className="text-slate-600 pl-4">→ iteration, not a one-time build</p>
+    </div>
+  </div>
+);
 
 export const Investing = () => {
   return (
@@ -73,9 +68,6 @@ export const Investing = () => {
 
           <Reveal delay={0.2} className="lg:col-span-5 lg:sticky lg:top-28">
             <Terminal />
-            <p className="mt-4 font-mono-ui text-[11px] text-slate-600 leading-relaxed">
-              * Illustrative readout. Figures are representative of methodology, not live performance.
-            </p>
           </Reveal>
         </div>
       </div>

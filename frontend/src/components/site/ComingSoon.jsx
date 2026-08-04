@@ -85,8 +85,8 @@ export const ComingSoon = () => {
               Platform launching soon.
             </h2>
             <p className="mt-6 text-base md:text-lg font-light text-slate-400 max-w-xl">
-              Join the waitlist for early access. Be among the first to explore our
-              quantitative research, systematic frameworks, and market insights.
+              Join the waitlist for early access to our research, systematic
+              frameworks, and market tools.
             </p>
 
             <form onSubmit={submit} className="mt-10 flex flex-col sm:flex-row gap-4 max-w-xl" data-testid="waitlist-form">
