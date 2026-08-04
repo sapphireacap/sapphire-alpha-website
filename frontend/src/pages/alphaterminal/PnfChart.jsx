@@ -20,6 +20,7 @@ const SEGMENTS = [
   { key: "FUT", label: "Futures" },
   { key: "OPT", label: "Options" },
   { key: "US", label: "US Indices" },
+  { key: "CRYPTO", label: "Crypto" },
 ];
 
 const INTERVALS = [
@@ -735,6 +736,11 @@ const PnfChart = () => {
         {segment === "US" && (
           <p className="text-[11px] text-slate-500 mt-2 max-w-3xl">
             Nasdaq 100 and S&amp;P 500 are plotted from their most liquid tracking ETF (QQQ / SPY) — daily/weekly/monthly only, no intraday.
+          </p>
+        )}
+        {segment === "CRYPTO" && (
+          <p className="text-[11px] text-slate-500 mt-2 max-w-3xl">
+            Spot USDT pairs, live and intraday included — these markets trade 24/7, so there's no session close to wait on.
           </p>
         )}
       </div>

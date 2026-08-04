@@ -19,6 +19,7 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException
 
 import alpha_vantage_client as av
+import binance_client as bn
 import pnf_chart
 from definedge_service import DefinedgeError
 from exitline import list_expiries, list_strikes, list_symbols, resolve_instrument
@@ -26,7 +27,7 @@ from pnf_indicators import DEFAULT_XO_LOOKBACK
 
 logger = logging.getLogger(__name__)
 
-VALID_SEGMENTS = ("NSE", "FUT", "OPT", "US")
+VALID_SEGMENTS = ("NSE", "FUT", "OPT", "US", "CRYPTO")
 US_INTERVALS = ("daily", "weekly", "monthly")  # no real intraday index data on the free AV tier
 MAX_SCAN_SYMBOLS = 40
 
@@ -44,7 +45,7 @@ def create_pnf_router(db, definedge, get_current_subscriber) -> APIRouter:
     def _check_segment(segment: str) -> str:
         segment = segment.strip().upper()
         if segment not in VALID_SEGMENTS:
-            raise HTTPException(status_code=400, detail="segment must be one of NSE, FUT, OPT")
+            raise HTTPException(status_code=400, detail=f"segment must be one of {', '.join(VALID_SEGMENTS)}")
         return segment
 
     async def _resolve(segment: str, symbol: str, expiry: Optional[str],
@@ -69,6 +70,11 @@ def create_pnf_router(db, definedge, get_current_subscriber) -> APIRouter:
             q = (query or "").strip().upper()
             syms = [k for k in av.US_INDEX_PROXIES
                     if q in k or q in av.US_INDEX_PROXIES[k]["label"].upper()]
+            return {"symbols": syms}
+        if segment == "CRYPTO":
+            q = (query or "").strip().upper()
+            syms = [k for k in bn.CRYPTO_SYMBOLS
+                    if q in k or q in bn.CRYPTO_SYMBOLS[k].upper()]
             return {"symbols": syms}
         try:
             master = await definedge._get_all_master()
@@ -117,6 +123,38 @@ def create_pnf_router(db, definedge, get_current_subscriber) -> APIRouter:
         }
         return payload
 
+    async def _chart_crypto(symbol: str, interval: str, box_pct: Optional[float],
+                            box_value: Optional[float], cfg, xo_lookback: int,
+                            ma_period: int) -> dict:
+        """Crypto branch: same build_chart() as every other segment — only
+        the bar-fetching differs (Binance's public klines instead of
+        Definedge). No P&F construction rule changes. Unlike the US branch,
+        every interval the platform offers is real native exchange data
+        here, intraday included."""
+        sym = symbol.strip().upper()
+        if sym not in bn.CRYPTO_SYMBOLS:
+            raise HTTPException(status_code=404, detail=f"No instrument found for {symbol}.")
+        try:
+            raw_bars = await bn.bars(sym, interval)
+            payload = pnf_chart.build_chart(
+                raw_bars, box_pct=box_pct, box_value=box_value,
+                reversal=pnf_chart.DEFAULT_REVERSAL, cfg=cfg,
+                xo_lookback=xo_lookback, ma_period=ma_period,
+            )
+        except pnf_chart.PnfError as e:
+            raise HTTPException(status_code=400, detail=str(e))
+        except bn.BinanceError as e:
+            logger.warning("Binance fetch failed for %s: %s", sym, e)
+            raise HTTPException(status_code=502,
+                                detail="Chart data is temporarily unavailable — please try again shortly.")
+        payload["params"]["interval"] = interval
+        payload["instrument"] = {
+            "symbol": sym,
+            "selector_segment": "CRYPTO",
+            "tradingsymbol": f"{bn.CRYPTO_SYMBOLS[sym]} ({sym})",
+        }
+        return payload
+
     @router.get("/chart")
     async def chart(symbol: str, segment: str = "NSE", interval: str = "daily",
                     box_pct: Optional[float] = pnf_chart.DEFAULT_BOX_PCT,
@@ -150,6 +188,8 @@ def create_pnf_router(db, definedge, get_current_subscriber) -> APIRouter:
 
         if segment == "US":
             return await _chart_us(symbol, interval, box_pct, box_value, cfg, xo_lookback, ma_period)
+        if segment == "CRYPTO":
+            return await _chart_crypto(symbol, interval, box_pct, box_value, cfg, xo_lookback, ma_period)
 
         found = await _resolve(segment, symbol, expiry, strike, option_type)
         try:
