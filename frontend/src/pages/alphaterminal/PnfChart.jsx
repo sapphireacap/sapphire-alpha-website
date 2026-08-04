@@ -133,7 +133,16 @@ const PnfGrid = forwardRef(({ data, resetKey, showTrendLines, showMa, highlight,
 
   // Given a horizontal window (in content units), returns the {yZoom, panY}
   // that frames exactly the price range spanned by the columns inside that
-  // window, plus a little breathing room top/bottom.
+  // window, plus a little breathing room top/bottom. This scales Y
+  // independently of X on purpose: checked against the actual reference
+  // terminal this was modeled after (TradePoint, TCS daily 0.25% box) and
+  // its own boxes are NOT square when a column runs long -- O's render as
+  // overlapping ellipses and X's as a compressed woven texture so the
+  // full visible price range always fits the pane, rather than a fixed
+  // square box size clipping most of it off-screen. Matching that took
+  // priority over the "COL_W === ROW_H is a true square lattice" framing
+  // this file used to lead with; a locked 1:1 scale was tried and reverted
+  // after the reference showed it isn't how the real tool behaves.
   const fitYToWindow = useCallback((vxVal, viewWVal) => {
     const visible = columns.filter((c) => {
       const x = colX(c.index);
@@ -353,13 +362,14 @@ const PnfGrid = forwardRef(({ data, resetKey, showTrendLines, showMa, highlight,
               key={n} x1={x1} y1={y1} x2={x2} y2={y2}
               stroke={ln.direction === "bullish" ? "#34D399" : "#F87171"}
               strokeWidth="1.25" strokeDasharray="4 3" opacity="0.65"
+              vectorEffect="non-scaling-stroke"
             />
           );
         })}
 
         {/* column moving average */}
         {maPoints && (
-          <polyline points={maPoints} fill="none" stroke="#38BDF8" strokeWidth="1.5" opacity="0.8" />
+          <polyline points={maPoints} fill="none" stroke="#38BDF8" strokeWidth="1.5" opacity="0.8" vectorEffect="non-scaling-stroke" />
         )}
 
         {/* the X/O boxes */}
@@ -383,12 +393,12 @@ const PnfGrid = forwardRef(({ data, resetKey, showTrendLines, showMa, highlight,
                 const cy = y + ROW_H / 2;
                 const r = ROW_H * 0.32;
                 return isX ? (
-                  <g key={lvl} stroke={stroke} strokeWidth="1.5" strokeLinecap="round">
-                    <line x1={cx - r} y1={cy - r} x2={cx + r} y2={cy + r} />
-                    <line x1={cx - r} y1={cy + r} x2={cx + r} y2={cy - r} />
+                  <g key={lvl} stroke={stroke} strokeWidth="1.5" strokeLinecap="round" vectorEffect="non-scaling-stroke">
+                    <line x1={cx - r} y1={cy - r} x2={cx + r} y2={cy + r} vectorEffect="non-scaling-stroke" />
+                    <line x1={cx - r} y1={cy + r} x2={cx + r} y2={cy - r} vectorEffect="non-scaling-stroke" />
                   </g>
                 ) : (
-                  <circle key={lvl} cx={cx} cy={cy} r={r} fill="none" stroke={stroke} strokeWidth="1.5" />
+                  <circle key={lvl} cx={cx} cy={cy} r={r} fill="none" stroke={stroke} strokeWidth="1.5" vectorEffect="non-scaling-stroke" />
                 );
               })}
             </g>
@@ -405,6 +415,7 @@ const PnfGrid = forwardRef(({ data, resetKey, showTrendLines, showMa, highlight,
             <rect
               x={a} y={PAD_T} width={Math.max(b - a, COL_W)} height={contentH - PAD_T * 2}
               fill={tone} fillOpacity="0.07" stroke={tone} strokeOpacity="0.5" strokeWidth="1" rx="3"
+              vectorEffect="non-scaling-stroke"
             />
           );
         })()}
@@ -418,29 +429,45 @@ const PnfGrid = forwardRef(({ data, resetKey, showTrendLines, showMa, highlight,
           desktop, so drag is the equivalent here). Double-click re-enables
           autoscale (fitting to whatever's currently in view) without
           touching the X pan, same as TradingView's own axis double-click. */}
-      <svg
+      <div
         ref={axisSvgRef}
-        viewBox={`0 ${vy} ${AXIS_W} ${viewH}`}
-        preserveAspectRatio="none"
-        style={{ width: AXIS_W, height: "100%", touchAction: "none", cursor: "ns-resize", flexShrink: 0 }}
-        className="block font-mono-ui border-l border-white/5"
+        style={{
+          width: AXIS_W, height: "100%", touchAction: "none", cursor: "ns-resize",
+          flexShrink: 0, position: "relative", overflow: "hidden",
+        }}
+        className="font-mono-ui border-l border-white/5"
         onPointerDown={onAxisPointerDown}
         onPointerMove={onPointerMove}
         onPointerUp={onPointerUp}
         onPointerCancel={onPointerUp}
         onDoubleClick={() => setAutoScaleY(true)}
       >
+        {/* Labels are plain absolutely-positioned HTML, not scaled SVG <text> —
+            a chart spanning years of daily data at a tight box size can need
+            hundreds of price rows squeezed into one pane, and SVG text sized
+            in viewBox units shrinks right along with that geometry, going
+            sub-pixel and unreadable exactly when there's the most history to
+            label. Positioning by real screen pixels keeps every label at a
+            constant, legible size no matter how compressed the row scale is. */}
         {grid.levels.map(({ level, price }) => {
           const y = PAD_T + rowOf(level) * ROW_H;
           const isLabel = (grid.max_level - level) % labelStep === 0;
           if (!isLabel) return null;
+          const topPx = ((y + ROW_H / 2 - vy) / viewH) * axisPxH;
+          if (topPx < -20 || topPx > axisPxH + 20) return null;
           return (
-            <text key={level} x={10} y={y + ROW_H / 2 + 3.5} fill="#94A3B8" fontSize="10.5">
+            <div
+              key={level}
+              style={{
+                position: "absolute", left: 10, top: topPx, transform: "translateY(-50%)",
+                fontSize: 10.5, lineHeight: 1, color: "#94A3B8", whiteSpace: "nowrap",
+              }}
+            >
               {fmtNum(price, price < 100 ? 2 : 1)}
-            </text>
+            </div>
           );
         })}
-      </svg>
+      </div>
     </div>
   );
 });
