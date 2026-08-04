@@ -12,6 +12,7 @@ import { getModule } from "./modules";
 import EwmaCrossoverTool from "./EwmaCrossover";
 import SharpeDashboardTool from "./SharpeDashboard";
 import ExitlineTool from "./Exitline";
+import RelativeStrengthMatrix from "./RelativeStrengthMatrix";
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 const EASE = [0.16, 1, 0.3, 1];
@@ -212,6 +213,7 @@ const LiveDashboard = ({ module, signals }) => (
     {module.kind === "ewma" && <EwmaCrossoverTool />}
     {module.kind === "sharpe" && <SharpeDashboardTool />}
     {module.kind === "exitline" && <ExitlineTool />}
+    {module.kind === "matrix" && <RelativeStrengthMatrix />}
   </Section>
 );
 
@@ -474,7 +476,7 @@ export default function ModuleDetail() {
           {module.live ? (
             <>
               <LiveDashboard module={module} signals={signals} />
-              {module.kind !== "exitline" && (
+              {module.kind !== "exitline" && module.kind !== "matrix" && (
                 <HistoricalPerformance module={module} />
               )}
             </>
