@@ -25,10 +25,23 @@ def pair_bias(closes_num: list, closes_den: list, box_pct: float) -> str | None:
     """Bullish for the numerator, bearish for the denominator, or None if
     there isn't enough ratio movement to plot even one column at this box
     size (never guessed — an unresolved pair is left out of both
-    instruments' scores rather than counted as a coin flip)."""
+    instruments' scores rather than counted as a coin flip).
+
+    The ratio is scaled x1000 before construction — NOT cosmetic. Verified
+    live against a real Definedge ratio chart (PNB/IDFCFIRSTB, 2026-08-04):
+    pnf_engine's box grid is a fixed ABSOLUTE grid anchored at price=1.0
+    (see pnf_engine.py's rule 8), and a raw ratio sits right around 1.0 by
+    construction (two similarly-priced stocks). Scaling by a non-integer
+    factor shifts every box boundary by a fractional box-width in log
+    space, which is enough to flip a close call. Unscaled, this pair
+    computed "down"; x1000-scaled, it computed "up" with a column range of
+    1317.54-1324.14, formed 2026-08-04 — an exact match (to the cent) with
+    Definedge's own live chart, which is not a coincidence. x1000 matches
+    how Definedge itself displays a price ratio (e.g. "CMP: 1325.47" for a
+    raw ratio of 1.32547)."""
     if len(closes_num) != len(closes_den) or len(closes_num) < 2:
         return None
-    ratio = [n / d for n, d in zip(closes_num, closes_den) if d]
+    ratio = [1000 * n / d for n, d in zip(closes_num, closes_den) if d]
     if len(ratio) < 2:
         return None
     settings = BoxSettings(reversal_boxes=DEFAULT_REVERSAL, box_pct=box_pct / 100.0)
