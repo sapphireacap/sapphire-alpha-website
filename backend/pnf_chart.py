@@ -26,6 +26,7 @@ from dataclasses import replace
 from datetime import datetime, timedelta
 from typing import Optional
 
+from definedge_service import IST, DefinedgeError
 import pnf_indicators as pi
 import pnf_patterns as pf
 from pnf_engine import BoxSettings, build_columns
@@ -336,11 +337,37 @@ def _summarise(columns: list, last, active: list, all_patterns: list,
 # ---------------------------------------------------------------------------
 
 
+async def _with_live_bar(definedge, segment: str, token: str, bars: list) -> list:
+    """Appends a synthetic bar for TODAY, priced off a live LTP quote, so a
+    daily/weekly/monthly P&F chart's current column tracks the live
+    session instead of freezing at yesterday's close.
+
+    Definedge's day-history endpoint only grows a TODAY row once that
+    day's candle is actually finalised (observed live, 2026-08-04: a
+    request mid-pre-market still ended at yesterday's date even though the
+    request window's `to` was "now") -- unlike intraday minute history,
+    which already carries a fresh in-progress bar. Close-only construction
+    means all this needs is a close price, so a same-OHLC synthetic bar is
+    enough to drive the engine; it's discarded the moment Definedge's own
+    history actually contains today's date (real OHLC wins), and it's
+    best-effort -- a live quote failure just leaves the chart at its last
+    real close rather than breaking the request."""
+    today = datetime.now(IST).date().isoformat()
+    if bars and bars[-1]["date"] == today:
+        return bars
+    try:
+        ltp = await definedge.equity_quote(segment, token)
+    except DefinedgeError:
+        return bars
+    return bars + [{"date": today, "open": ltp, "high": ltp, "low": ltp, "close": ltp}]
+
+
 async def fetch_bars(definedge, segment: str, token: str, interval: str,
                      years: int = 10, days: int = 30) -> list:
     """Bars at the requested interval. Daily/weekly/monthly come from
-    Definedge's day history (rolled up locally); intraday comes from
-    minute history aggregated into the requested bucket.
+    Definedge's day history (rolled up locally, plus a live bar for
+    today -- see _with_live_bar); intraday comes from minute history
+    aggregated into the requested bucket.
 
     Minute history only reaches back ~6 months upstream (verified), so a
     long intraday window silently returns whatever really exists rather
@@ -348,6 +375,7 @@ async def fetch_bars(definedge, segment: str, token: str, interval: str,
     rather than assuming the requested one."""
     if interval in ("daily", "weekly", "monthly"):
         bars = await definedge.daily_history(segment, token, years=years)
+        bars = await _with_live_bar(definedge, segment, token, bars)
         return resample_daily(bars, interval)
 
     minutes = int(interval)

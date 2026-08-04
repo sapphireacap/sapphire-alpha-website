@@ -32,10 +32,18 @@ const INTERVALS = [
   { key: "5", label: "5 min" },
   { key: "1", label: "1 min" },
 ];
-const INTRADAY_INTERVALS = new Set(["60", "30", "15", "5", "1"]);
 // Poll cadence scales with bar size -- no point re-fetching a 60-min chart
 // every 15s, and a 1-min chart every 60s would visibly lag the tape.
-const LIVE_REFRESH_MS = { "1": 15000, "5": 20000, "15": 30000, "30": 45000, "60": 60000 };
+// Daily/weekly/monthly still move during the session too: the backend
+// synthesizes today's still-forming bar off a live LTP quote (see
+// backend/pnf_chart.py's _with_live_bar) precisely so the CURRENT column
+// isn't frozen at yesterday's close until Definedge finalizes the day
+// candle at EOD -- polling less aggressively than intraday since the
+// underlying quote itself is only refreshed once per request, not ticking.
+const LIVE_REFRESH_MS = {
+  "1": 15000, "5": 20000, "15": 30000, "30": 45000, "60": 60000,
+  daily: 60000, weekly: 60000, monthly: 60000,
+};
 
 // US indices come from a free-tier data source that only has daily
 // history (no real intraday index data) — see backend/alpha_vantage_client.py.
@@ -544,7 +552,10 @@ const PnfChart = () => {
   const [hoverCol, setHoverCol] = useState(null);
   const gridRef = useRef(null);
 
-  const isIntraday = INTRADAY_INTERVALS.has(interval) && segment !== "US";
+  // Every interval can go live now (see LIVE_REFRESH_MS) -- only US index
+  // proxies can't, since Alpha Vantage's free tier has no live quote at
+  // all, just cached daily history.
+  const canGoLive = segment !== "US";
 
   // Symbol search
   useEffect(() => {
@@ -611,21 +622,23 @@ const PnfChart = () => {
     fetchChart();
   };
 
-  // Live auto-refresh: only meaningful once a chart is on screen and an
-  // intraday timeframe is selected -- daily+ bars don't move within a
-  // session, so polling them would just be wasted requests.
+  // Live auto-refresh: only meaningful once a chart is on screen and the
+  // segment actually has a live quote to poll (see canGoLive). Daily+
+  // charts still move during the session -- the backend synthesizes
+  // today's still-forming bar off a live LTP quote, so this isn't wasted
+  // for them the way it would be if Definedge's day bar only updated
+  // post-EOD.
   useEffect(() => {
-    if (!live || !data || !isIntraday) return undefined;
+    if (!live || !data || !canGoLive) return undefined;
     const ms = LIVE_REFRESH_MS[interval] || 30000;
     const id = setInterval(() => fetchChart({ silent: true }), ms);
     return () => clearInterval(id);
-  }, [live, data, isIntraday, interval, fetchChart]);
+  }, [live, data, canGoLive, interval, fetchChart]);
 
-  // Live only makes sense for intraday timeframes -- auto-off if the user
-  // switches to daily/weekly/monthly or a US index while it was on.
+  // Auto-off if the user switches to a US index while Live was on.
   useEffect(() => {
-    if (!isIntraday && live) setLive(false);
-  }, [isIntraday, live]);
+    if (!canGoLive && live) setLive(false);
+  }, [canGoLive, live]);
 
   const visiblePatterns = useMemo(() => {
     if (!data) return [];
@@ -695,7 +708,7 @@ const PnfChart = () => {
             Plot
           </button>
 
-          {isIntraday && data && (
+          {canGoLive && data && (
             <button
               onClick={() => setLive((v) => !v)}
               title={live ? "Auto-refreshing on this timeframe" : "Auto-refresh this chart while the market is live"}
