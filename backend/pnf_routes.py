@@ -19,9 +19,9 @@ from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
-import alpha_vantage_client as av
 import binance_client as bn
 import pnf_chart
+import yahoo_finance_client as yf
 from definedge_service import DefinedgeError
 from exitline import list_expiries, list_strikes, list_symbols, resolve_instrument
 from pnf_indicators import DEFAULT_XO_LOOKBACK
@@ -29,7 +29,7 @@ from pnf_indicators import DEFAULT_XO_LOOKBACK
 logger = logging.getLogger(__name__)
 
 VALID_SEGMENTS = ("NSE", "FUT", "OPT", "US", "CRYPTO")
-US_INTERVALS = ("daily", "weekly", "monthly")  # no real intraday index data on the free AV tier
+US_INTERVALS = ("daily", "weekly", "monthly")  # no real intraday index data on Yahoo's free chart endpoint
 MAX_SCAN_SYMBOLS = 40
 
 
@@ -69,8 +69,8 @@ def create_pnf_router(db, definedge, get_current_subscriber) -> APIRouter:
         segment = _check_segment(segment)
         if segment == "US":
             q = (query or "").strip().upper()
-            syms = [k for k in av.US_INDEX_PROXIES
-                    if q in k or q in av.US_INDEX_PROXIES[k]["label"].upper()]
+            syms = [k for k in yf.US_INDEX_SYMBOLS
+                    if q in k or q in yf.US_INDEX_SYMBOLS[k]["label"].upper()]
             return {"symbols": syms}
         if segment == "CRYPTO":
             q = (query or "").strip().upper()
@@ -93,16 +93,17 @@ def create_pnf_router(db, definedge, get_current_subscriber) -> APIRouter:
                         box_value: Optional[float], cfg, xo_lookback: int,
                         ma_period: int) -> dict:
         """US index branch: same build_chart() as every other segment —
-        only the bar-fetching differs (Alpha Vantage's cached ETF-proxy
-        history instead of Definedge). No P&F construction rule changes."""
+        only the bar-fetching differs (Yahoo Finance's free, keyless
+        daily history for the real index — see yahoo_finance_client.py).
+        No P&F construction rule changes."""
         sym = symbol.strip().upper()
-        if sym not in av.US_INDEX_PROXIES:
+        if sym not in yf.US_INDEX_SYMBOLS:
             raise HTTPException(status_code=404, detail=f"No instrument found for {symbol}.")
         if interval not in US_INTERVALS:
             raise HTTPException(status_code=400,
                                 detail="US indices are available at daily, weekly or monthly intervals only.")
         try:
-            bars = await av.daily_bars(db, sym)
+            bars = await yf.daily_bars(db, sym)
             bars = pnf_chart.resample_daily(bars, interval)
             payload = pnf_chart.build_chart(
                 bars, box_pct=box_pct, box_value=box_value,
@@ -111,19 +112,16 @@ def create_pnf_router(db, definedge, get_current_subscriber) -> APIRouter:
             )
         except pnf_chart.PnfError as e:
             raise HTTPException(status_code=400, detail=str(e))
-        except av.AlphaVantageError as e:
-            if "not configured" in str(e).lower():
-                raise HTTPException(status_code=503,
-                                    detail="US index data isn't configured on this deployment yet.")
-            logger.warning("Alpha Vantage fetch failed for %s: %s", sym, e)
+        except yf.YahooFinanceError as e:
+            logger.warning("Yahoo Finance fetch failed for %s: %s", sym, e)
             raise HTTPException(status_code=502,
                                 detail="Chart data is temporarily unavailable — please try again shortly.")
         payload["params"]["interval"] = interval
-        info = av.US_INDEX_PROXIES[sym]
+        info = yf.US_INDEX_SYMBOLS[sym]
         payload["instrument"] = {
             "symbol": sym,
             "selector_segment": "US",
-            "tradingsymbol": f"{info['label']} (tracked via {info['proxy']})",
+            "tradingsymbol": info["label"],
         }
         return payload
 

@@ -46,8 +46,8 @@ const LIVE_REFRESH_MS = {
   daily: 60000, weekly: 60000, monthly: 60000,
 };
 
-// US indices come from a free-tier data source that only has daily
-// history (no real intraday index data) — see backend/alpha_vantage_client.py.
+// US indices come from Yahoo Finance's free chart endpoint, daily history
+// only (no real intraday index data on it) — see backend/yahoo_finance_client.py.
 const US_INTERVALS = ["daily", "weekly", "monthly"];
 
 // Crypto bars are fetched straight from the browser, not proxied through
