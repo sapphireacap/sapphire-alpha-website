@@ -29,13 +29,21 @@ def create_relative_strength_router(db, definedge) -> APIRouter:
         ]}
 
     async def _closes_for(symbol: str, master) -> dict:
-        """{date: close} for one symbol, cached in Mongo for the rest of
-        the calendar day — a 8-12 symbol group means every matrix request
-        costs that many live Definedge calls otherwise, and nothing about
-        a day's already-closed daily bar changes intraday."""
+        """{date: close} for one symbol, cached in Mongo once today's own
+        close is actually in it — a 8-12 symbol group means every matrix
+        request costs that many live Definedge calls otherwise, and
+        nothing about a day's already-closed daily bar changes intraday.
+
+        Freshness is keyed on whether TODAY's date is actually a key in
+        the cached closes, not on when the cache was last written —
+        Definedge's day-history only grows a TODAY row once that day's
+        candle is finalised (same gap pnf_chart.py's _with_live_bar works
+        around for the single-symbol chart), so a request made before
+        market close would otherwise lock in a version missing today's
+        close for the rest of the day, even after the market closes."""
         today = datetime.now(IST).date().isoformat()
         doc = await db[CACHE_COLLECTION].find_one({"symbol": symbol})
-        if doc and doc.get("last_fetched_date") == today:
+        if doc and today in doc.get("closes", {}):
             return doc["closes"]
 
         found = definedge.resolve_symbol(master, "NSE", symbol)
