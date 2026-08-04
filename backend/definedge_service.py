@@ -611,7 +611,16 @@ class DefinedgeService:
                 })
             except ValueError:
                 continue
-        bars.sort(key=lambda b: b["ts"])
+        # ts is ddmmyyyyHHMM (day-first), which does NOT sort correctly as a
+        # raw string once the series spans more than one month -- the exact
+        # trap _sorted_ts() below exists to avoid, just not yet applied
+        # here. Confirmed live (2026-08-04): a 30-day window crossing the
+        # Jul/Aug boundary put "03082026..." before "31072026..." (since
+        # "0" < "3" lexicographically), so callers reading bars[-1] for
+        # "the latest bar" got July 31 back as if it were current -- the
+        # P&F chart's intraday view looked frozen days behind for exactly
+        # this reason.
+        bars.sort(key=lambda b: datetime.strptime(b["ts"], "%d%m%Y%H%M"))
         return bars
 
     async def daily_history(self, segment: str, token: str, years: int = 10):
