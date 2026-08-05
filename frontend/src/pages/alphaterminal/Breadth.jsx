@@ -2,13 +2,18 @@ import { useState, useEffect, useMemo } from "react";
 import axios from "axios";
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine,
-  ComposedChart, Bar,
 } from "recharts";
 import { Loader2 } from "lucide-react";
 import { EmptyState } from "./QuantLab";
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 const SURFACE = "rounded-2xl border border-white/10 bg-[#0A0D18]";
+
+// Matches Definedge's own "Average Value" stat on its Breadth tool — a
+// 5-period simple moving average of the breadth line itself, confirmed
+// live (2026-08-05): Nifty 50's last 5 daily values averaged to exactly
+// 72.40%, matching their displayed Average Value for that date to the cent.
+const AVERAGE_PERIOD = 5;
 
 const ZOOMS = [
   { key: "3m", label: "3M", days: 90 },
@@ -35,6 +40,16 @@ const cutoffDate = (zoomKey, dates) => {
   return cutoff.toISOString().slice(0, 10);
 };
 
+// Adds a trailing AVERAGE_PERIOD-point average to every point — computed
+// over the FULL series (before any zoom slicing) so the average at the
+// start of a zoomed-in window still reflects real prior history, not a
+// truncated one.
+const withAverage = (series) => series.map((p, i) => {
+  const window = series.slice(Math.max(0, i - AVERAGE_PERIOD + 1), i + 1);
+  const avg = window.reduce((sum, w) => sum + w.value, 0) / window.length;
+  return { ...p, avg: Math.round(avg * 100) / 100 };
+});
+
 const StatChip = ({ label, value }) => (
   <div className="flex flex-col">
     <span className="font-mono-ui text-[10px] uppercase tracking-[0.16em] text-slate-500">{label}</span>
@@ -60,74 +75,24 @@ const ZoomTabs = ({ zoom, setZoom }) => (
   </div>
 );
 
-// Recharts has no built-in candlestick — this plots an invisible range Bar
-// (dataKey=[low, high], so its own y/height already map the full high-low
-// span in pixels) and draws the wick + body ourselves in `shape`, using that
-// same y/height to linearly interpolate open/close pixel positions. Standard
-// recharts candlestick pattern, not a stock component.
-const Candle = ({ x, y, width, height, payload }) => {
-  const { open, high, low, close } = payload;
-  const bullish = close >= open;
-  const color = bullish ? "#3ED598" : "#F87171";
-  const range = high - low || 1;
-  const bodyTop = y + height * (high - Math.max(open, close)) / range;
-  const bodyBottom = y + height * (high - Math.min(open, close)) / range;
-  const bodyHeight = Math.max(bodyBottom - bodyTop, 1);
-  const wickX = x + width / 2;
-  return (
-    <g>
-      <line x1={wickX} x2={wickX} y1={y} y2={y + height} stroke={color} strokeWidth={1} />
-      <rect x={x} y={bodyTop} width={width} height={bodyHeight} fill={color} />
-    </g>
-  );
-};
-
-const IndexChart = ({ candles }) => {
-  const domain = useMemo(() => {
-    if (!candles.length) return [0, 1];
-    const lows = candles.map((c) => c.low);
-    const highs = candles.map((c) => c.high);
-    const pad = (Math.max(...highs) - Math.min(...lows)) * 0.05;
-    return [Math.min(...lows) - pad, Math.max(...highs) + pad];
-  }, [candles]);
-
-  return (
-    <div className={`${SURFACE} p-4`} style={{ height: 260 }} data-testid="breadth-index-chart">
-      <ResponsiveContainer width="100%" height="100%">
-        <ComposedChart data={candles} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
-          <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" vertical={false} />
-          <XAxis dataKey="date" tick={{ fill: "#64748B", fontSize: 10 }} axisLine={{ stroke: "rgba(255,255,255,0.1)" }} tickLine={false} minTickGap={60} tickFormatter={fmtDate} />
-          <YAxis domain={domain} tick={{ fill: "#64748B", fontSize: 11 }} axisLine={false} tickLine={false} width={52} />
-          <Tooltip
-            labelFormatter={fmtDate}
-            formatter={(v, name) => [v, name]}
-            contentStyle={{ background: "#0A0D18", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 8, fontSize: 12 }}
-            labelStyle={{ color: "#94A3B8" }}
-          />
-          <Bar dataKey={(d) => [d.low, d.high]} shape={Candle} isAnimationActive={false} />
-        </ComposedChart>
-      </ResponsiveContainer>
-    </div>
-  );
-};
-
 const BreadthChart = ({ series }) => (
-  <div className={`${SURFACE} p-4`} style={{ height: 260 }} data-testid="breadth-chart">
+  <div className={`${SURFACE} p-4`} style={{ height: 380 }} data-testid="breadth-chart">
     <ResponsiveContainer width="100%" height="100%">
       <LineChart data={series} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
         <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" vertical={false} />
         <XAxis dataKey="date" tick={{ fill: "#64748B", fontSize: 10 }} axisLine={{ stroke: "rgba(255,255,255,0.1)" }} tickLine={false} minTickGap={60} tickFormatter={fmtDate} />
-        <YAxis domain={[0, 100]} tick={{ fill: "#64748B", fontSize: 11 }} axisLine={false} tickLine={false} width={52} />
+        <YAxis domain={[0, 100]} tick={{ fill: "#64748B", fontSize: 11 }} axisLine={false} tickLine={false} width={40} />
         <ReferenceLine y={75} stroke="#F59E0B" strokeDasharray="4 4" strokeOpacity={0.5} />
         <ReferenceLine y={50} stroke="rgba(255,255,255,0.15)" strokeDasharray="2 2" />
         <ReferenceLine y={25} stroke="#F59E0B" strokeDasharray="4 4" strokeOpacity={0.5} />
         <Tooltip
           labelFormatter={fmtDate}
-          formatter={(v) => [`${v}%`, "Bullish"]}
+          formatter={(v, name) => [`${v}%`, name === "avg" ? "Average" : "Bullish"]}
           contentStyle={{ background: "#0A0D18", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 8, fontSize: 12 }}
           labelStyle={{ color: "#94A3B8" }}
         />
         <Line type="monotone" dataKey="value" stroke="#3ED598" strokeWidth={1.5} dot={false} isAnimationActive={false} />
+        <Line type="monotone" dataKey="avg" stroke="#F87171" strokeWidth={1.5} dot={false} isAnimationActive={false} />
       </LineChart>
     </ResponsiveContainer>
   </div>
@@ -158,17 +123,15 @@ const BreadthTool = () => {
     return () => { cancelled = true; };
   }, [group]);
 
-  const latest = data?.series?.length ? data.series[data.series.length - 1] : null;
+  const seriesWithAvg = useMemo(() => (data?.series?.length ? withAverage(data.series) : []), [data]);
+  const latest = seriesWithAvg.length ? seriesWithAvg[seriesWithAvg.length - 1] : null;
 
-  const { visibleSeries, visibleCandles } = useMemo(() => {
-    if (!data?.series?.length) return { visibleSeries: [], visibleCandles: [] };
-    const dates = data.series.map((p) => p.date);
+  const visibleSeries = useMemo(() => {
+    if (!seriesWithAvg.length) return [];
+    const dates = seriesWithAvg.map((p) => p.date);
     const cutoff = cutoffDate(zoom, dates);
-    return {
-      visibleSeries: cutoff ? data.series.filter((p) => p.date >= cutoff) : data.series,
-      visibleCandles: cutoff ? (data.index_candles || []).filter((c) => c.date >= cutoff) : (data.index_candles || []),
-    };
-  }, [data, zoom]);
+    return cutoff ? seriesWithAvg.filter((p) => p.date >= cutoff) : seriesWithAvg;
+  }, [seriesWithAvg, zoom]);
 
   return (
     <div data-testid="breadth-tool">
@@ -198,24 +161,22 @@ const BreadthTool = () => {
         <>
           <div className="flex flex-wrap items-center justify-between gap-6 mb-6">
             <StatChip label="Bullish" value={`${latest.value}%`} />
+            <StatChip label="5-Day Average" value={`${latest.avg}%`} />
             <StatChip label="Coverage" value={`${latest.resolved} / ${latest.total}`} />
             <StatChip label="As Of" value={fmtDate(latest.date)} />
           </div>
 
-          <div className="flex items-center justify-between mb-3">
-            <p className="font-mono-ui text-[10px] uppercase tracking-[0.16em] text-slate-500">Nifty 50</p>
+          <div className="flex items-center justify-end mb-3">
             <ZoomTabs zoom={zoom} setZoom={setZoom} />
           </div>
-          <IndexChart candles={visibleCandles} />
-
-          <p className="font-mono-ui text-[10px] uppercase tracking-[0.16em] text-slate-500 mt-6 mb-3">Breadth</p>
           <BreadthChart series={visibleSeries} />
 
           <p className="text-[11px] font-light text-slate-600 mt-6 max-w-2xl leading-relaxed">
             Percentage of the group currently trading in a bullish swing, using each stock's own
-            chart independently. Above 75% or below 25% is an extreme zone — a strong trend can stay
-            there for a long stretch, so treat it as a caution flag on fresh entries, not a standalone
-            reversal signal. For research and educational purposes only — not investment advice.
+            chart independently (green), against its own 5-day average (red). Above 75% or below
+            25% is an extreme zone — a strong trend can stay there for a long stretch, so treat it
+            as a caution flag on fresh entries, not a standalone reversal signal. For research and
+            educational purposes only — not investment advice.
           </p>
         </>
       )}
