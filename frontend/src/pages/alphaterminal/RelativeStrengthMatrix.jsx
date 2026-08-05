@@ -7,9 +7,9 @@ const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 const SURFACE = "rounded-2xl border border-white/10 bg-[#0A0D18]";
 
 const BOX_SIZES = [
-  { key: "0.25", label: "Short-Term", sub: "0.25% box" },
-  { key: "1", label: "Medium-Term", sub: "1% box" },
-  { key: "3", label: "Long-Term", sub: "3% box" },
+  { key: "0.25", label: "Short-Term", short: "Short" },
+  { key: "1", label: "Medium-Term", short: "Medium" },
+  { key: "3", label: "Long-Term", short: "Long" },
 ];
 
 const fmtDate = (iso) => {
@@ -29,7 +29,7 @@ const RankingTable = ({ ranking, groupSize }) => {
               <th className="px-5 py-4 text-left font-mono-ui text-[11px] uppercase tracking-[0.18em] text-slate-500 font-semibold">Scrip</th>
               {BOX_SIZES.map((b) => (
                 <th key={b.key} className="px-4 py-4 text-right font-mono-ui text-[11px] uppercase tracking-[0.18em] text-slate-500 font-semibold whitespace-nowrap">
-                  {b.sub}
+                  {b.short}
                 </th>
               ))}
               <th className="px-5 py-4 text-right font-mono-ui text-[11px] uppercase tracking-[0.18em] text-sapphire-light font-semibold">Total</th>
@@ -171,7 +171,7 @@ const RelativeStrengthMatrix = () => {
                   boxTab === b.key ? "bg-sapphire-light/20 text-sapphire-light" : "text-slate-500 hover:text-slate-300"
                 }`}
               >
-                {b.label} <span className="text-slate-600">({b.sub})</span>
+                {b.label}
               </button>
             ))}
           </div>

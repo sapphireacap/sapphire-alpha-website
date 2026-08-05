@@ -110,17 +110,19 @@ def create_relative_strength_router(db, definedge) -> APIRouter:
         closes_maps = await asyncio.gather(*[_closes_for(s, master) for s in symbols])
         per_symbol = dict(zip(symbols, closes_maps))
 
-        # Align to dates every symbol in the group actually has a close
-        # for — a ratio needs both sides priced the same day, so a date
-        # missing for even one symbol (holiday mismatch, late listing) is
-        # dropped for the whole group rather than silently comparing
-        # mismatched days.
+        # NOT truncated to a group-wide date intersection — rsm.compute_matrix
+        # aligns each PAIR to its own common dates. A group-wide intersection
+        # here would clip every pair's history down to the group's youngest
+        # listing (e.g. BANDHANBNK, 2018), starving pairs of two long-listed
+        # stocks (e.g. HDFCBANK vs PNB) of history they actually have for no
+        # reason connected to that pair — confirmed live (2026-08-05) as
+        # exactly what was producing scores off by 1-2 vs Definedge's real
+        # scanner for symbols involved with a newer-listed peer.
         common_dates = sorted(set.intersection(*(set(c.keys()) for c in closes_maps)))
         if len(common_dates) < 2:
             raise HTTPException(status_code=400, detail="Not enough overlapping price history for this group yet.")
-        closes_by_symbol = {s: [per_symbol[s][d] for d in common_dates] for s in symbols}
 
-        result = rsm.compute_ranking(symbols, closes_by_symbol, values)
+        result = rsm.compute_ranking(symbols, per_symbol, values)
 
         return {
             "group": group,
