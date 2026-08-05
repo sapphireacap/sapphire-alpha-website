@@ -115,9 +115,9 @@ def create_relative_strength_router(db, definedge) -> APIRouter:
         # here would clip every pair's history down to the group's youngest
         # listing (e.g. BANDHANBNK, 2018), starving pairs of two long-listed
         # stocks (e.g. HDFCBANK vs PNB) of history they actually have for no
-        # reason connected to that pair — confirmed live (2026-08-05) as
-        # exactly what was producing scores off by 1-2 vs Definedge's real
-        # scanner for symbols involved with a newer-listed peer.
+        # reason connected to that pair. See relative_strength_matrix.py's
+        # module docstring for what this did and didn't turn out to fix when
+        # checked live.
         common_dates = sorted(set.intersection(*(set(c.keys()) for c in closes_maps)))
         if len(common_dates) < 2:
             raise HTTPException(status_code=400, detail="Not enough overlapping price history for this group yet.")

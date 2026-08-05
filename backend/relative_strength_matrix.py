@@ -11,9 +11,28 @@ favor it — a higher score means it's outperforming more of its peers
 right now, not just a single benchmark.
 
 Deliberately pure — no I/O, same discipline as pnf_chart.build_chart().
-Callers hand in already-aligned (same trading dates, same length) close
-price lists; alignment is the I/O layer's job (see relative_strength_routes.py).
-"""
+Callers hand in raw {date: close} per symbol (not pre-aligned lists) —
+alignment happens PER PAIR in compute_matrix, not once across the whole
+group. That distinction matters: a group basket almost always has one
+newer listing in it (BANDHANBNK IPO'd 2018, AUBANK 2017, IDFCFIRSTB's
+current form dates to the 2018 Capital First merger). Intersecting dates
+across the WHOLE group before computing any single pair would truncate
+every pair's history to that youngest member's listing date, even a pair
+of two other stocks that have both traded for 20 years — starving their
+box chart of history it actually has, for no reason connected to that
+pair at all.
+
+Verified live (2026-08-05, real Dhan daily closes as an independent
+source, Nifty Bank basket): fixing this did NOT move the aggregate
+scores for that specific basket — several long-listed pairs (e.g.
+HDFCBANK/PNB) DO get a different verdict on full history vs the
+BANDHANBNK-truncated window, but liquid 1%/3% ratio charts had already
+gone through a fresh 3-box reversal within the truncated window anyway,
+so the extra pre-2018 history happened to be moot for THIS group's
+current state. The fix is still correct on its own terms (group-wide
+truncation for a reason unconnected to the pair is never right) and will
+matter for other groups/box-size combinations even where it was a no-op
+here."""
 from __future__ import annotations
 
 from pnf_engine import BoxSettings, build_columns
@@ -58,14 +77,20 @@ def compute_matrix(symbols: list, closes_by_symbol: dict, box_pct: float) -> dic
     a rising A/B ratio is mathematically the same movement as a falling
     B/A ratio (1/x is strictly monotonic-decreasing for x>0), so the
     lower triangle is the exact mirror image, not a second computation.
-    """
+
+    `closes_by_symbol[s]` is {date: close} — each pair aligns to ITS OWN
+    common dates here, not a group-wide intersection (see module
+    docstring for why that distinction is load-bearing)."""
     grid = {s: {} for s in symbols}
     scores = {s: 0 for s in symbols}
     unresolved = {s: 0 for s in symbols}
 
     for i, a in enumerate(symbols):
         for b in symbols[i + 1:]:
-            bias = pair_bias(closes_by_symbol[a], closes_by_symbol[b], box_pct)
+            pair_dates = sorted(set(closes_by_symbol[a]) & set(closes_by_symbol[b]))
+            closes_num = [closes_by_symbol[a][d] for d in pair_dates]
+            closes_den = [closes_by_symbol[b][d] for d in pair_dates]
+            bias = pair_bias(closes_num, closes_den, box_pct)
             if bias is None:
                 grid[a][b] = None
                 grid[b][a] = None
