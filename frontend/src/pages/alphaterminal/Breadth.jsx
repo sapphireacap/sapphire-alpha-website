@@ -58,14 +58,14 @@ const StatChip = ({ label, value }) => (
 );
 
 const ZoomTabs = ({ zoom, setZoom }) => (
-  <div className="flex items-center gap-1 rounded-md border border-white/10 p-0.5 w-fit" data-testid="breadth-zoom-tabs">
+  <div className="flex items-center gap-1 rounded-md border border-white/10 p-0.5 w-full overflow-x-auto sm:w-fit" data-testid="breadth-zoom-tabs">
     {ZOOMS.map((z) => (
       <button
         key={z.key}
         type="button"
         onClick={() => setZoom(z.key)}
         data-testid={`breadth-zoom-${z.key}`}
-        className={`font-mono-ui text-[10px] uppercase tracking-wider px-3 py-1.5 rounded transition-colors ${
+        className={`font-mono-ui text-[10px] uppercase tracking-wider px-3 py-1.5 rounded transition-colors whitespace-nowrap shrink-0 ${
           zoom === z.key ? "bg-sapphire-light/20 text-sapphire-light" : "text-slate-500 hover:text-slate-300"
         }`}
       >
@@ -76,12 +76,12 @@ const ZoomTabs = ({ zoom, setZoom }) => (
 );
 
 const BreadthChart = ({ series }) => (
-  <div className={`${SURFACE} p-4`} style={{ height: 380 }} data-testid="breadth-chart">
+  <div className={`${SURFACE} p-3 sm:p-4 h-[280px] sm:h-[380px]`} data-testid="breadth-chart">
     <ResponsiveContainer width="100%" height="100%">
-      <LineChart data={series} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
+      <LineChart data={series} margin={{ top: 10, right: 4, left: 0, bottom: 0 }}>
         <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" vertical={false} />
-        <XAxis dataKey="date" tick={{ fill: "#64748B", fontSize: 10 }} axisLine={{ stroke: "rgba(255,255,255,0.1)" }} tickLine={false} minTickGap={60} tickFormatter={fmtDate} />
-        <YAxis domain={[0, 100]} tick={{ fill: "#64748B", fontSize: 11 }} axisLine={false} tickLine={false} width={40} />
+        <XAxis dataKey="date" tick={{ fill: "#64748B", fontSize: 10 }} axisLine={{ stroke: "rgba(255,255,255,0.1)" }} tickLine={false} minTickGap={45} tickFormatter={fmtDate} />
+        <YAxis domain={[0, 100]} tick={{ fill: "#64748B", fontSize: 11 }} axisLine={false} tickLine={false} width={32} />
         <ReferenceLine y={75} stroke="#F59E0B" strokeDasharray="4 4" strokeOpacity={0.5} />
         <ReferenceLine y={50} stroke="rgba(255,255,255,0.15)" strokeDasharray="2 2" />
         <ReferenceLine y={25} stroke="#F59E0B" strokeDasharray="4 4" strokeOpacity={0.5} />
@@ -159,14 +159,14 @@ const BreadthTool = () => {
         <EmptyState reason="Breadth hasn't been computed for this group yet — check back shortly." />
       ) : (
         <>
-          <div className="flex flex-wrap items-center justify-between gap-6 mb-6">
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
             <StatChip label="Bullish" value={`${latest.value}%`} />
             <StatChip label="5-Day Average" value={`${latest.avg}%`} />
             <StatChip label="Coverage" value={`${latest.resolved} / ${latest.total}`} />
             <StatChip label="As Of" value={fmtDate(latest.date)} />
           </div>
 
-          <div className="flex items-center justify-end mb-3">
+          <div className="flex justify-end mb-3">
             <ZoomTabs zoom={zoom} setZoom={setZoom} />
           </div>
           <BreadthChart series={visibleSeries} />
