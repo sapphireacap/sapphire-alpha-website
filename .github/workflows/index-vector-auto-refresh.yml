@@ -14,6 +14,17 @@ name: Index Vector — auto refresh
 # that's already been logged into.
 # 03:45-10:00 UTC = 09:15-15:30 IST, weekdays only, every 5 minutes (the
 # finest granularity GitHub Actions cron reliably supports).
+#
+# The route catches each index's compute_vector() error individually and
+# reports it IN the 200 response body (server.py's auto-refresh handler) so
+# one index failing never blocks the others -- but that also means a 200
+# HTTP status alone proves nothing about whether every index actually
+# refreshed. Confirmed live (2026-08-05): BANKNIFTY/FINNIFTY sat 2 days
+# stale while this workflow kept reporting green on every tick, because
+# nothing here ever looked past the status code into the response body.
+# Now greps the body for a per-index "error" key and fails the job if any
+# index reported one, so a silent per-index failure shows up as a red run
+# instead of going unnoticed for days.
 on:
   schedule:
     - cron: "45,50,55 3 * * 1-5"
@@ -35,5 +46,11 @@ jobs:
           echo
           if [ "$status" != "200" ]; then
             echo "::error::definedge/auto-refresh failed with status $status"
+            exit 1
+          fi
+          if python3 -c "import json,sys; d=json.load(open('response.json')); sys.exit(1 if any(isinstance(v, dict) and 'error' in v for v in d.values()) else 0)"; then
+            :
+          else
+            echo "::error::One or more indices reported an error in the auto-refresh response — see response.json above."
             exit 1
           fi
