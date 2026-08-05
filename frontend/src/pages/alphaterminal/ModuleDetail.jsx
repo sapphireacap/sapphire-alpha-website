@@ -478,7 +478,7 @@ export default function ModuleDetail() {
           {module.live ? (
             <>
               <LiveDashboard module={module} signals={signals} />
-              {module.kind !== "exitline" && module.kind !== "matrix" && (
+              {module.kind !== "exitline" && module.kind !== "matrix" && module.kind !== "breadth" && (
                 <HistoricalPerformance module={module} />
               )}
             </>

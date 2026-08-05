@@ -170,14 +170,6 @@ const BreadthTool = () => {
             <ZoomTabs zoom={zoom} setZoom={setZoom} />
           </div>
           <BreadthChart series={visibleSeries} />
-
-          <p className="text-[11px] font-light text-slate-600 mt-6 max-w-2xl leading-relaxed">
-            Percentage of the group currently trading in a bullish swing, using each stock's own
-            chart independently (green), against its own 5-day average (red). Above 75% or below
-            25% is an extreme zone — a strong trend can stay there for a long stretch, so treat it
-            as a caution flag on fresh entries, not a standalone reversal signal. For research and
-            educational purposes only — not investment advice.
-          </p>
         </>
       )}
     </div>
