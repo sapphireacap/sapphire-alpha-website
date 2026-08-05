@@ -14,6 +14,7 @@ import SharpeDashboardTool from "./SharpeDashboard";
 import ExitlineTool from "./Exitline";
 import RelativeStrengthMatrix from "./RelativeStrengthMatrix";
 import BreadthTool from "./Breadth";
+import OptionsTrendTool from "./OptionsTrend";
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 const EASE = [0.16, 1, 0.3, 1];
@@ -216,6 +217,7 @@ const LiveDashboard = ({ module, signals }) => (
     {module.kind === "exitline" && <ExitlineTool />}
     {module.kind === "matrix" && <RelativeStrengthMatrix />}
     {module.kind === "breadth" && <BreadthTool />}
+    {module.kind === "options-trend" && <OptionsTrendTool />}
   </Section>
 );
 
@@ -478,7 +480,7 @@ export default function ModuleDetail() {
           {module.live ? (
             <>
               <LiveDashboard module={module} signals={signals} />
-              {module.kind !== "exitline" && module.kind !== "matrix" && module.kind !== "breadth" && (
+              {module.kind !== "exitline" && module.kind !== "matrix" && module.kind !== "breadth" && module.kind !== "options-trend" && (
                 <HistoricalPerformance module={module} />
               )}
             </>

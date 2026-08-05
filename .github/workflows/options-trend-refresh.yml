@@ -1,0 +1,34 @@
+name: Options Trend Scanner — daily refresh
+
+# Recomputes the three-pillar (future/ATM call/ATM put) verdict for every
+# NSE F&O-listed stock once daily after close. /admin/refresh only kicks
+# off the background job and returns immediately -- ~208 stocks x 3 legs of
+# minute-bar history is a considerably heavier job than Breadth's daily-close
+# refresh (options_trend_routes.py writes each stock's result to Mongo as
+# soon as it's computed, specifically so an interrupted run - e.g. a
+# same-day deploy - doesn't lose already-finished stocks the way Breadth's
+# batch-at-the-end write did on 2026-08-05).
+# 10:30 UTC = 16:00 IST, 30 min after NSE's 15:30 IST close (and after
+# Breadth's own 15:45 IST refresh, so the two heavy jobs don't overlap),
+# weekdays only.
+on:
+  schedule:
+    - cron: "30 10 * * 1-5"
+  workflow_dispatch: {}
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Call options-trend/admin/refresh
+        run: |
+          status=$(curl -s -o response.json -w "%{http_code}" -X POST \
+            "https://sapphire-alpha-backend.onrender.com/api/terminal/options-trend/admin/refresh" \
+            -H "X-Cron-Key: ${{ secrets.CRON_SECRET }}")
+          echo "HTTP status: $status"
+          cat response.json
+          echo
+          if [ "$status" != "200" ]; then
+            echo "::error::options-trend/admin/refresh failed with status $status"
+            exit 1
+          fi

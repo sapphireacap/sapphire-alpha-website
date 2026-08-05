@@ -1,5 +1,5 @@
 import {
-  Compass, Crosshair, Activity, Radar, BarChart3, Sliders, TrendingUp, Target, Gauge,
+  Compass, Crosshair, Activity, Radar, BarChart3, Sliders, TrendingUp, Target, Gauge, GitBranch,
 } from "lucide-react";
 
 // Every research module shown on the Alpha Terminal directory and served at
@@ -175,6 +175,24 @@ export const MODULES = [
       purpose: "Reads market health from participation, not just the index level — a rising index on narrow participation is a weaker trend than one lifting most of its constituents.",
       whatItMeasures: "Percentage of stocks in the group currently in a bullish swing on their own chart, independent of every other constituent.",
       interpret: "Above 75% or below 25% is an extreme zone — trends can sit there for a long stretch, so treat it as a caution flag for fresh entries, not a standalone reversal trigger.",
+    },
+  },
+  {
+    slug: "options-trend-scanner",
+    no: "10",
+    kind: "options-trend",
+    live: true,
+    icon: GitBranch,
+    title: "Options Trend Scanner",
+    shortDescription: "Confirms directional setups across future, call, and put together.",
+    category: "Screening Engine",
+    status: "Operational",
+    universe: "NSE F&O Stocks",
+    coverage: "Daily",
+    overview: {
+      purpose: "Confirms a stock's directional setup isn't just a single-chart read — the underlying, its call, and its put all have to agree.",
+      whatItMeasures: "Reads each of the three instrument's own chart independently, then applies a strict agreement rule: bullish needs the future AND call both up with the put down, bearish is the mirror image, everything else is neutral.",
+      interpret: "A Bullish or Bearish verdict reflects real cross-instrument momentum agreement, not a guess off the underlying alone — treat Neutral as no current edge, not a hidden signal.",
     },
   },
   {

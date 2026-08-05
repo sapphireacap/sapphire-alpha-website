@@ -66,6 +66,7 @@ from exitline_routes import create_exitline_router
 from pnf_routes import create_pnf_router
 from relative_strength_routes import create_relative_strength_router
 from breadth_routes import create_breadth_router
+from options_trend_routes import create_options_trend_router
 if "stock_terminal" not in DISABLED_FEATURES:
     from stock_terminal_routes import create_stock_terminal_router
 from swing_picks_lcp import update_swing_picks_lcp
@@ -1592,6 +1593,7 @@ async def on_startup():
         await db.blackbox_config.create_index("index", unique=True)
         await db.rs_daily_closes.create_index("symbol", unique=True)
         await db.breadth_daily_closes.create_index("symbol", unique=True)
+        await db.options_trend_scan.create_index("symbol", unique=True)
     except Exception as e:  # noqa: BLE001
         logger.warning(f"Index creation: {e}")
 
@@ -1602,6 +1604,7 @@ exitline_router = create_exitline_router(db, definedge)
 pnf_router = create_pnf_router(db, definedge, get_current_pnf_subscriber)
 relative_strength_router = create_relative_strength_router(db, definedge)
 breadth_router = create_breadth_router(db, definedge, get_current_admin, CRON_SECRET)
+options_trend_router = create_options_trend_router(db, definedge, get_current_admin, CRON_SECRET)
 
 app.include_router(api_router)
 app.include_router(ipo_router, prefix="/api")
@@ -1610,6 +1613,7 @@ app.include_router(exitline_router, prefix="/api")
 app.include_router(pnf_router, prefix="/api")
 app.include_router(relative_strength_router, prefix="/api")
 app.include_router(breadth_router, prefix="/api")
+app.include_router(options_trend_router, prefix="/api")
 
 # Paused features (see DISABLED_FEATURES above) -- router creation/mounting
 # skipped entirely, not just hidden, matching the skipped imports above.
