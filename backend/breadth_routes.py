@@ -16,13 +16,14 @@ from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request
 
 import breadth_engine as be
 from breadth_groups import GROUPS, BreadthGroupError, fetch_group_symbols
-from definedge_service import IST, DefinedgeError
+from definedge_service import IST, DefinedgeError, NIFTY_SPOT_TOKEN
 
 logger = logging.getLogger(__name__)
 
 CLOSES_CACHE_COLLECTION = "breadth_daily_closes"
 SERIES_CACHE_COLLECTION = "breadth_x_percent_cache"
 REFRESH_STATUS_COLLECTION = "breadth_refresh_status"
+INDEX_CANDLES_COLLECTION = "breadth_index_candles"
 YEARS_BACK = 15  # generous — this is each stock's OWN P&F state, not a ratio anchor concern (see breadth_engine.py)
 MAX_CONCURRENT_FETCHES = 5  # courteous to Definedge, same bound quant_lab.py uses for its 500-symbol refresh
 
@@ -55,6 +56,25 @@ def create_breadth_router(db, definedge, get_current_admin, cron_secret: str) ->
             upsert=True,
         )
         return closes
+
+    async def _refresh_index_candles():
+        """NIFTY 50 index daily OHLC — the reference price chart plotted
+        above the breadth line (same NIFTY_SPOT_TOKEN Index Vector already
+        uses for the live quote; daily_history() is the generic OHLC path,
+        not options-specific). One shared series for both groups' pages,
+        refreshed alongside whichever group triggers a refresh — cheap
+        (a single API call), so no separate schedule needed for it."""
+        try:
+            bars = await definedge.daily_history("NSE", NIFTY_SPOT_TOKEN, years=YEARS_BACK)
+        except DefinedgeError as e:
+            logger.warning("Breadth index candle fetch failed: %s", e)
+            return
+        candles = [{"date": b["date"], "open": b["open"], "high": b["high"], "low": b["low"], "close": b["close"]} for b in bars]
+        await db[INDEX_CANDLES_COLLECTION].update_one(
+            {"id": "NIFTY"},
+            {"$set": {"id": "NIFTY", "candles": candles, "computed_at": datetime.now(timezone.utc).isoformat()}},
+            upsert=True,
+        )
 
     async def _refresh_group(group_key: str):
         """Runs as a background task — fetches the group's constituent
@@ -114,7 +134,7 @@ def create_breadth_router(db, definedge, get_current_admin, cron_secret: str) ->
                     {"$set": {"done": counters["done"], "resolved": counters["resolved"], "failed": counters["failed"]}},
                 )
 
-        await asyncio.gather(*(worker(s) for s in symbols))
+        await asyncio.gather(*(worker(s) for s in symbols), _refresh_index_candles())
 
         series = be.compute_breadth_series(closes_by_symbol) if closes_by_symbol else []
         today_ist = datetime.now(IST).strftime("%Y-%m-%d")
@@ -150,6 +170,8 @@ def create_breadth_router(db, definedge, get_current_admin, cron_secret: str) ->
                 status_code=404,
                 detail=f"{GROUPS[group]['label']} breadth hasn't been computed yet — trigger a refresh.",
             )
+        index_doc = await db[INDEX_CANDLES_COLLECTION].find_one({"id": "NIFTY"}, {"_id": 0})
+        doc["index_candles"] = index_doc["candles"] if index_doc else []
         return doc
 
     @router.get("/refresh-status")
