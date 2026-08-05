@@ -6,9 +6,15 @@ name: Black Box — Convexity Window / Gamma Backspread EOD close
 # deleted by application code, this is the only writer). 15:35 IST = 10:05
 # UTC. GitHub Actions schedules can slip a few minutes under load, same
 # accepted limitation as every other cron in this repo.
+#
+# PAUSED (2026-08-05): schedule trigger removed -- only Prism Alpha 2 and
+# Momentum Leaders should be running live for now. Nothing deleted:
+# workflow_dispatch below still lets this be run manually, and
+# un-commenting the `schedule:` block below restores the original cadence
+# exactly.
 on:
-  schedule:
-    - cron: "5 10 * * 1-5"
+  # schedule:
+  #   - cron: "5 10 * * 1-5"
   workflow_dispatch: {}
 
 jobs:

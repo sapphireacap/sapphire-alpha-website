@@ -1,0 +1,42 @@
+name: Breadth — daily refresh
+
+# Recomputes X-Percent breadth for both groups (Nifty 50 / Nifty 500) once
+# daily after NSE close. /admin/breadth/refresh only kicks off the
+# background job and returns immediately (a full Nifty 500 pass is a
+# multi-minute job, same shape as quant_lab.py's Sharpe dashboard refresh)
+# -- this cron just triggers it, it doesn't wait for completion.
+# 10:15 UTC = 15:45 IST, 15 min after NSE's 15:30 IST close so the day's
+# candle is finalised, weekdays only.
+on:
+  schedule:
+    - cron: "15 10 * * 1-5"
+  workflow_dispatch: {}
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Call breadth/admin/refresh (Nifty 50)
+        run: |
+          status=$(curl -s -o response.json -w "%{http_code}" -X POST \
+            "https://sapphire-alpha-backend.onrender.com/api/terminal/breadth/admin/refresh?group=nifty-50" \
+            -H "X-Cron-Key: ${{ secrets.CRON_SECRET }}")
+          echo "HTTP status: $status"
+          cat response.json
+          echo
+          if [ "$status" != "200" ]; then
+            echo "::error::breadth/admin/refresh (nifty-50) failed with status $status"
+            exit 1
+          fi
+      - name: Call breadth/admin/refresh (Nifty 500)
+        run: |
+          status=$(curl -s -o response.json -w "%{http_code}" -X POST \
+            "https://sapphire-alpha-backend.onrender.com/api/terminal/breadth/admin/refresh?group=nifty-500" \
+            -H "X-Cron-Key: ${{ secrets.CRON_SECRET }}")
+          echo "HTTP status: $status"
+          cat response.json
+          echo
+          if [ "$status" != "200" ]; then
+            echo "::error::breadth/admin/refresh (nifty-500) failed with status $status"
+            exit 1
+          fi

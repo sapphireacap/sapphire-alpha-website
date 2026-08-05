@@ -1,5 +1,5 @@
 import {
-  Compass, Crosshair, Activity, Radar, BarChart3, Sliders, TrendingUp, Target,
+  Compass, Crosshair, Activity, Radar, BarChart3, Sliders, TrendingUp, Target, Gauge,
 } from "lucide-react";
 
 // Every research module shown on the Alpha Terminal directory and served at
@@ -157,6 +157,24 @@ export const MODULES = [
       purpose: "Flags trend acceleration and crossover events using a fast/slow moving-average model.",
       whatItMeasures: "Runs an exponentially-weighted moving-average crossover, with an acceleration filter, against buy-and-hold on any symbol you choose.",
       interpret: "A fresh bullish crossover suggests emerging upward momentum; a bearish crossover suggests the opposite — always shown against its own buy-and-hold benchmark for context.",
+    },
+  },
+  {
+    slug: "breadth-indicator",
+    no: "09",
+    kind: "breadth",
+    live: true,
+    icon: Gauge,
+    title: "Market Breadth",
+    shortDescription: "Percentage of the group currently trending bullish.",
+    category: "Market Intelligence",
+    status: "Operational",
+    universe: "Nifty 50 / Nifty 500",
+    coverage: "Daily",
+    overview: {
+      purpose: "Reads market health from participation, not just the index level — a rising index on narrow participation is a weaker trend than one lifting most of its constituents.",
+      whatItMeasures: "Percentage of stocks in the group currently in a bullish swing on their own chart, independent of every other constituent.",
+      interpret: "Above 75% or below 25% is an extreme zone — trends can sit there for a long stretch, so treat it as a caution flag for fresh entries, not a standalone reversal trigger.",
     },
   },
   {
