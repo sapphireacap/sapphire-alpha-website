@@ -70,6 +70,7 @@ from options_trend_routes import create_options_trend_router
 from market_dashboard_routes import create_market_dashboard_router
 if "stock_terminal" not in DISABLED_FEATURES:
     from stock_terminal_routes import create_stock_terminal_router
+    from lattice_routes import create_lattice_router
 from swing_picks_lcp import update_swing_picks_lcp
 from momentum_track_record import (
     capture_entries as capture_track_record_entries,
@@ -1597,6 +1598,10 @@ async def on_startup():
         await db.options_trend_scan.create_index("symbol", unique=True)
         await db.market_dashboard_fii_dii_history.create_index("date", unique=True)
         await db.market_dashboard_ad_history.create_index("date")
+        await db.lattice_positions.create_index([("symbol", 1), ("status", 1)])
+        await db.lattice_positions.create_index("status")
+        await db.lattice_decisions.create_index([("symbol", 1), ("run_at", -1)])
+        await db.lattice_portfolio_state.create_index("id", unique=True)
     except Exception as e:  # noqa: BLE001
         logger.warning(f"Index creation: {e}")
 
@@ -1636,6 +1641,8 @@ if "blackbox_legacy" not in DISABLED_FEATURES:
 if "stock_terminal" not in DISABLED_FEATURES:
     stock_terminal_router = create_stock_terminal_router(db, definedge, get_current_admin, CRON_SECRET)
     app.include_router(stock_terminal_router, prefix="/api")
+    lattice_router = create_lattice_router(db, definedge, get_current_admin, CRON_SECRET)
+    app.include_router(lattice_router, prefix="/api")
 
 app.add_middleware(
     CORSMiddleware,
