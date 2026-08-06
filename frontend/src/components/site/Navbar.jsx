@@ -20,6 +20,7 @@ const EASE = [0.16, 1, 0.3, 1];
 // a real paid product (see /pnf-studio, backend's get_current_pnf_subscriber)
 // that deserves primary billing, not a tuck-away link.
 const PRIMARY_LINKS = [
+  { label: "Lattice", to: "/lattice" },
   { label: "P&F Studio", to: "/pnf-studio" },
   { label: "Alpha Terminal", to: "/alpha-terminal" },
   { label: "The Black Box", to: "/black-box" },

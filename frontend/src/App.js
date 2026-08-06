@@ -25,6 +25,8 @@ import IpoDetail from "@/pages/IpoDetail";
 import Pricing from "@/pages/Pricing";
 import Aurora from "@/pages/research/Aurora";
 import FacetView from "@/pages/research/FacetView";
+import LatticeHome from "@/pages/lattice/LatticeHome";
+import LatticeRun from "@/pages/lattice/LatticeRun";
 import Admin from "@/pages/Admin";
 import { SignupPage, LoginPage, ForgotPasswordPage, ResetPasswordPage, VerifyEmailPage } from "@/pages/Auth";
 import { installAuthInterceptor, RequirePnfAccess } from "@/lib/auth";
@@ -80,6 +82,8 @@ const AppShell = () => {
                 stock_terminal backend infra. */}
             <Route path="/research" element={<Aurora />} />
             <Route path="/research/:symbol" element={<FacetView />} />
+            <Route path="/lattice" element={<LatticeHome />} />
+            <Route path="/lattice/:symbol" element={<LatticeRun />} />
             <Route path="/admin33" element={<Admin />} />
             <Route path="/signup" element={<SignupPage />} />
             <Route path="/login" element={<LoginPage />} />
