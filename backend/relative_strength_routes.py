@@ -10,6 +10,7 @@ from datetime import datetime
 from fastapi import APIRouter, HTTPException
 
 import relative_strength_matrix as rsm
+import yahoo_finance_client as yf
 from definedge_service import IST, DefinedgeError
 from relative_strength_groups import GROUPS, get_group
 
@@ -39,11 +40,12 @@ def create_relative_strength_router(db, definedge) -> APIRouter:
             {"key": k, "label": v["label"], "symbols": v["symbols"]} for k, v in GROUPS.items()
         ]}
 
-    async def _closes_for(symbol: str, master) -> dict:
-        """{date: close} for one symbol, cached in Mongo once today's own
-        close is actually in it — a 8-12 symbol group means every matrix
-        request costs that many live Definedge calls otherwise, and
-        nothing about a day's already-closed daily bar changes intraday.
+    async def _closes_for_nse(symbol: str, master) -> dict:
+        """{date: close} for one NSE symbol, cached in Mongo once today's
+        own close is actually in it — a 8-12 symbol group means every
+        matrix request costs that many live Definedge calls otherwise,
+        and nothing about a day's already-closed daily bar changes
+        intraday.
 
         Freshness is keyed on whether TODAY's date is actually a key in
         the cached closes, not on when the cache was last written —
@@ -81,6 +83,21 @@ def create_relative_strength_router(db, definedge) -> APIRouter:
         )
         return closes
 
+    async def _closes_for_yahoo(symbol: str) -> dict:
+        """{date: close} for one US equity ticker via Yahoo Finance —
+        Definedge carries no US market data at all (same reason
+        pnf_routes.py's US Indices segment uses Yahoo instead). Caching
+        is yahoo_finance_client.equity_bars()'s own job (same
+        accumulate-forever-per-day pattern already proven for US
+        Indices), not duplicated here."""
+        try:
+            bars = await yf.equity_bars(db, symbol)
+        except yf.YahooFinanceError as e:
+            logger.warning("Yahoo fetch failed for %s: %s", symbol, e)
+            raise HTTPException(status_code=502,
+                                detail="Chart data is temporarily unavailable — please try again shortly.")
+        return {b["date"]: b["close"] for b in bars}
+
     @router.get("/matrix")
     async def matrix(group: str, box_pcts: str = "0.25,1,3"):
         """Full multi-box-size matrix + ranking for one fixed group. Box
@@ -101,13 +118,16 @@ def create_relative_strength_router(db, definedge) -> APIRouter:
         label_by_value = dict(zip(values, tokens))
 
         symbols = cfg["symbols"]
-        try:
-            master = await definedge._get_all_master()
-        except DefinedgeError:
-            raise HTTPException(status_code=502,
-                                detail="Chart data is temporarily unavailable — please try again shortly.")
-
-        closes_maps = await asyncio.gather(*[_closes_for(s, master) for s in symbols])
+        source = cfg.get("source", "NSE")
+        if source == "YAHOO":
+            closes_maps = await asyncio.gather(*[_closes_for_yahoo(s) for s in symbols])
+        else:
+            try:
+                master = await definedge._get_all_master()
+            except DefinedgeError:
+                raise HTTPException(status_code=502,
+                                    detail="Chart data is temporarily unavailable — please try again shortly.")
+            closes_maps = await asyncio.gather(*[_closes_for_nse(s, master) for s in symbols])
         per_symbol = dict(zip(symbols, closes_maps))
 
         # NOT truncated to a group-wide date intersection — rsm.compute_matrix

@@ -95,6 +95,36 @@ def _merge_bars(existing: list, fresh: list) -> list:
     return [by_date[d] for d in sorted(by_date)]
 
 
+async def equity_bars(db, ticker: str) -> list:
+    """Accumulated real daily OHLC history for an arbitrary US equity
+    ticker (e.g. AAPL) -- same accumulate-forever Mongo cache as
+    daily_bars(), just not restricted to the two index symbols. Yahoo
+    tickers for US equities are the plain ticker itself, no mapping
+    needed the way the indices need ^NDX/^GSPC. Callers are expected to
+    validate the ticker against their own known-good list first (see
+    relative_strength_groups.py) -- this function itself will happily
+    ask Yahoo for anything and surface whatever it says."""
+    ticker = ticker.strip().upper()
+    today = datetime.now(timezone.utc).date().isoformat()
+    doc = await db[CACHE_COLLECTION].find_one({"symbol": ticker})
+    if doc and doc.get("last_fetched_date") == today:
+        return doc["bars"]
+
+    # NOT "max" -- verified live (2026-08-05): Yahoo silently downsamples
+    # interval=1d to ~monthly spacing once the range spans multiple
+    # decades (AAPL: 168 bars for range=max vs a real 5031 for range=20y,
+    # over the same calendar span). 20y matches the same window
+    # relative_strength_routes.py's YEARS_BACK uses for NSE symbols.
+    fresh = await _fetch_daily(ticker, range_="20y")
+    merged = _merge_bars(doc["bars"] if doc else [], fresh)
+    await db[CACHE_COLLECTION].update_one(
+        {"symbol": ticker},
+        {"$set": {"symbol": ticker, "last_fetched_date": today, "bars": merged}},
+        upsert=True,
+    )
+    return merged
+
+
 async def daily_bars(db, symbol_key: str) -> list:
     """Accumulated real daily OHLC history for NDX or SPX. At most one
     Yahoo call per symbol per real calendar day -- every other call today
