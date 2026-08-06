@@ -19,12 +19,21 @@ const EASE = [0.16, 1, 0.3, 1];
 // just a paused-feature placeholder in the primary bar, while P&F Studio is
 // a real paid product (see /pnf-studio, backend's get_current_pnf_subscriber)
 // that deserves primary billing, not a tuck-away link.
+// "P&F Studio" replaced with a "Charting" parent item (2026-08-06): Renko
+// Studio launched as a second charting method (same paid tier, see
+// /renko-studio, backend's renko_routes.py) -- both charting products now
+// live under one primary-bar dropdown instead of adding a second standalone
+// top-level link.
 const PRIMARY_LINKS = [
   { label: "Lattice", to: "/lattice" },
-  { label: "P&F Studio", to: "/pnf-studio" },
   { label: "Alpha Terminal", to: "/alpha-terminal" },
   { label: "The Black Box", to: "/black-box" },
   { label: "Pricing", to: "/pricing" },
+];
+
+const CHARTING_LINKS = [
+  { label: "P&F Studio", to: "/pnf-studio" },
+  { label: "Renko Studio", to: "/renko-studio" },
 ];
 
 const MORE_LINKS = [
@@ -35,13 +44,15 @@ const MORE_LINKS = [
   { label: "About", id: "about", icon: User },
 ];
 
-const ALL_LINKS = [...PRIMARY_LINKS, ...MORE_LINKS];
+const ALL_LINKS = [...PRIMARY_LINKS.slice(0, 1), ...CHARTING_LINKS, ...PRIMARY_LINKS.slice(1), ...MORE_LINKS];
 
 export const Navbar = () => {
   const [scrolled, setScrolled] = useState(false);
   const [open, setOpen] = useState(false);
   const [moreOpen, setMoreOpen] = useState(false);
+  const [chartingOpen, setChartingOpen] = useState(false);
   const moreRef = useRef(null);
+  const chartingRef = useRef(null);
   const navigate = useNavigate();
   const location = useLocation();
 
@@ -60,6 +71,15 @@ export const Navbar = () => {
     return () => document.removeEventListener("mousedown", onClickOutside);
   }, [moreOpen]);
 
+  useEffect(() => {
+    if (!chartingOpen) return undefined;
+    const onClickOutside = (e) => {
+      if (chartingRef.current && !chartingRef.current.contains(e.target)) setChartingOpen(false);
+    };
+    document.addEventListener("mousedown", onClickOutside);
+    return () => document.removeEventListener("mousedown", onClickOutside);
+  }, [chartingOpen]);
+
   const goSection = (id) => {
     setOpen(false);
     if (location.pathname !== "/") {
@@ -73,6 +93,7 @@ export const Navbar = () => {
   const handleLink = (l) => {
     setOpen(false);
     setMoreOpen(false);
+    setChartingOpen(false);
     if (l.to) navigate(l.to);
     else goSection(l.id);
   };
@@ -109,7 +130,54 @@ export const Navbar = () => {
         </button>
 
         <div className="hidden md:flex items-center gap-8 lg:gap-10">
-          {PRIMARY_LINKS.map((l) => (
+          {PRIMARY_LINKS.slice(0, 1).map((l) => (
+            <button
+              key={l.id || l.to}
+              onClick={() => handleLink(l)}
+              className="relative text-sm text-slate-300 hover:text-white transition-colors duration-200 group"
+              data-testid={`nav-${testId(l)}-link`}
+            >
+              {l.label}
+              <span className="absolute -bottom-1.5 left-0 h-px w-0 bg-sapphire-light transition-all duration-200 ease-out group-hover:w-full" />
+            </button>
+          ))}
+
+          <div className="relative" ref={chartingRef}>
+            <button
+              onClick={() => setChartingOpen((v) => !v)}
+              className="relative flex items-center gap-1 text-sm text-slate-300 hover:text-white transition-colors duration-200"
+              data-testid="nav-charting-link"
+              aria-expanded={chartingOpen}
+            >
+              Charting
+              <ChevronDown size={14} className={`transition-transform duration-200 ${chartingOpen ? "rotate-180" : ""}`} />
+            </button>
+            <AnimatePresence>
+              {chartingOpen && (
+                <motion.div
+                  initial={{ opacity: 0, y: -6, scale: 0.98 }}
+                  animate={{ opacity: 1, y: 0, scale: 1 }}
+                  exit={{ opacity: 0, y: -6, scale: 0.98 }}
+                  transition={{ duration: 0.2, ease: EASE }}
+                  className="absolute top-full left-0 mt-3 w-44 rounded-xl border border-white/10 bg-void/95 backdrop-blur-xl p-2 shadow-2xl shadow-black/50"
+                  data-testid="nav-charting-menu"
+                >
+                  {CHARTING_LINKS.map((l) => (
+                    <button
+                      key={l.to}
+                      onClick={() => handleLink(l)}
+                      className="w-full text-left px-3.5 py-2.5 rounded-lg text-sm text-slate-300 hover:text-white hover:bg-white/5 transition-colors duration-200"
+                      data-testid={`nav-charting-${testId(l)}-link`}
+                    >
+                      {l.label}
+                    </button>
+                  ))}
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </div>
+
+          {PRIMARY_LINKS.slice(1).map((l) => (
             <button
               key={l.id || l.to}
               onClick={() => handleLink(l)}

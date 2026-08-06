@@ -20,6 +20,8 @@ import BlackBox from "@/pages/BlackBox";
 import ModuleDetail from "@/pages/alphaterminal/ModuleDetail";
 import PnfChart from "@/pages/alphaterminal/PnfChart";
 import PnfStudio from "@/pages/PnfStudio";
+import RenkoChart from "@/pages/alphaterminal/RenkoChart";
+import RenkoStudio from "@/pages/RenkoStudio";
 import Ipos from "@/pages/Ipos";
 import IpoDetail from "@/pages/IpoDetail";
 import Pricing from "@/pages/Pricing";
@@ -69,6 +71,10 @@ const AppShell = () => {
                 the marketing/subscribe page anyone lacking access lands on. */}
             <Route path="/alpha-terminal/pnf" element={<RequirePnfAccess><PnfChart /></RequirePnfAccess>} />
             <Route path="/pnf-studio" element={<PnfStudio />} />
+            {/* Same reasoning as /alpha-terminal/pnf above: must precede
+                the /:slug route or "renko" gets swallowed as a module slug. */}
+            <Route path="/alpha-terminal/renko" element={<RequirePnfAccess><RenkoChart /></RequirePnfAccess>} />
+            <Route path="/renko-studio" element={<RenkoStudio />} />
             <Route path="/alpha-terminal/:slug" element={<ModuleDetail />} />
             {/* Shared placeholder for every nav entry that isn't public yet
                 (P&F Studio, Log In / Sign Up) -- see NotAvailablePage. */}

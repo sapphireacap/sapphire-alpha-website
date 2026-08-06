@@ -64,6 +64,7 @@ if "blackbox_legacy" not in DISABLED_FEATURES:
 from blackbox_options_routes import create_blackbox_options_router
 from exitline_routes import create_exitline_router
 from pnf_routes import create_pnf_router
+from renko_routes import create_renko_router
 from relative_strength_routes import create_relative_strength_router
 from breadth_routes import create_breadth_router
 from options_trend_routes import create_options_trend_router
@@ -1610,6 +1611,7 @@ ipo_router = create_ipo_router(db, get_current_admin, CRON_SECRET)
 blackbox_options_router = create_blackbox_options_router(db, definedge, get_current_admin, CRON_SECRET)
 exitline_router = create_exitline_router(db, definedge)
 pnf_router = create_pnf_router(db, definedge, get_current_pnf_subscriber)
+renko_router = create_renko_router(db, definedge, get_current_pnf_subscriber)
 relative_strength_router = create_relative_strength_router(db, definedge)
 breadth_router = create_breadth_router(db, definedge, get_current_admin, CRON_SECRET)
 options_trend_router = create_options_trend_router(db, definedge, get_current_admin, CRON_SECRET)
@@ -1620,6 +1622,7 @@ app.include_router(ipo_router, prefix="/api")
 app.include_router(blackbox_options_router, prefix="/api")
 app.include_router(exitline_router, prefix="/api")
 app.include_router(pnf_router, prefix="/api")
+app.include_router(renko_router, prefix="/api")
 app.include_router(relative_strength_router, prefix="/api")
 app.include_router(breadth_router, prefix="/api")
 app.include_router(options_trend_router, prefix="/api")
