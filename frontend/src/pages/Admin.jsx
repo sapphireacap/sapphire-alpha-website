@@ -892,6 +892,98 @@ const BlackBoxPanel = ({ onAuthError }) => {
 };
 
 /* ------------------------- Momentum Track Record ------------------------- */
+/* ------------------------------ Lattice v2 ------------------------------ */
+const fmtLatticeINR = (v) => (v == null ? "—" : `₹${Math.round(v).toLocaleString("en-IN")}`);
+
+const LatticePanel = ({ onAuthError }) => {
+  const [portfolio, setPortfolio] = useState(null);
+  const [decisions, setDecisions] = useState([]);
+  const [running, setRunning] = useState(false);
+  const [lastResult, setLastResult] = useState(null);
+
+  const load = useCallback(() => {
+    axios.get(`${API}/lattice/portfolio`).then((r) => setPortfolio(r.data)).catch(() => {});
+    axios.get(`${API}/lattice/positions`).then((r) => setDecisions(r.data.slice(0, 10))).catch(() => {});
+  }, []);
+
+  useEffect(() => { load(); }, [load]);
+
+  const evaluateNow = async () => {
+    setRunning(true);
+    try {
+      const { data } = await axios.post(`${API}/lattice/admin/evaluate-positions-now`, {}, authHeaders());
+      setLastResult(data);
+      toast.success(`Checked ${data.checked} position(s), closed ${data.closed}${data.failed ? `, ${data.failed} failed` : ""}.`);
+      load();
+    } catch (err) {
+      if (err?.response?.status === 401) { onAuthError(); return; }
+      toast.error(errMsg(err, "Evaluation failed."));
+    } finally {
+      setRunning(false);
+    }
+  };
+
+  return (
+    <div className="glass rounded-2xl p-6 md:p-8 mb-10" data-testid="admin-lattice-panel">
+      <div className="flex flex-wrap items-center justify-between gap-3 mb-2">
+        <h2 className="font-display text-xl font-bold text-white">Lattice — Paper Portfolio</h2>
+        <button onClick={evaluateNow} disabled={running} className="btn-ghost !px-4 !py-2 text-sm disabled:opacity-50" data-testid="lattice-evaluate-btn">
+          {running ? <><Loader2 size={16} className="animate-spin" /> Evaluating</> : <><RefreshCw size={15} /> Evaluate Open Positions</>}
+        </button>
+      </div>
+      <p className="text-sm text-slate-500 mb-4">
+        The Forge/Temper/Vault pipeline runs on demand from /lattice; this checks every open paper position's stop-loss,
+        target, and holding horizon and closes any that have been reached. The external cron hits{" "}
+        <code className="text-slate-400">/api/lattice/admin/evaluate-positions</code> once/day shortly after 15:30 IST close.
+      </p>
+
+      {portfolio && (
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-5" data-testid="lattice-portfolio-stats">
+          <div className="rounded-xl border border-white/10 bg-white/[0.02] p-3 text-center">
+            <p className="font-mono-ui text-[10px] uppercase tracking-wider text-slate-500 mb-1">Total Value</p>
+            <p className="font-mono-ui text-base font-bold text-white">{fmtLatticeINR(portfolio.total_value)}</p>
+          </div>
+          <div className="rounded-xl border border-white/10 bg-white/[0.02] p-3 text-center">
+            <p className="font-mono-ui text-[10px] uppercase tracking-wider text-slate-500 mb-1">Cash</p>
+            <p className="font-mono-ui text-base font-bold text-white">{fmtLatticeINR(portfolio.cash)}</p>
+          </div>
+          <div className="rounded-xl border border-white/10 bg-white/[0.02] p-3 text-center">
+            <p className="font-mono-ui text-[10px] uppercase tracking-wider text-slate-500 mb-1">Realized P&amp;L</p>
+            <p className={`font-mono-ui text-base font-bold ${portfolio.realized_pnl_rupees >= 0 ? "text-emerald-400" : "text-red-400"}`}>
+              {fmtLatticeINR(portfolio.realized_pnl_rupees)}
+            </p>
+          </div>
+          <div className="rounded-xl border border-white/10 bg-white/[0.02] p-3 text-center">
+            <p className="font-mono-ui text-[10px] uppercase tracking-wider text-slate-500 mb-1">Win Rate</p>
+            <p className="font-mono-ui text-base font-bold text-white">
+              {portfolio.win_rate == null ? "—" : `${(portfolio.win_rate * 100).toFixed(0)}%`}
+            </p>
+          </div>
+        </div>
+      )}
+
+      {decisions.length > 0 && (
+        <div className="text-xs text-slate-500 font-mono-ui space-y-1" data-testid="lattice-recent-positions">
+          {decisions.map((p) => (
+            <div key={p.id} className="flex items-center justify-between gap-3">
+              <span>{p.symbol} · {p.status}{p.exit_reason ? ` (${p.exit_reason})` : ""}</span>
+              <span className={p.realized_pnl_pct >= 0 ? "text-emerald-400" : p.realized_pnl_pct < 0 ? "text-red-400" : ""}>
+                {p.realized_pnl_pct != null ? `${p.realized_pnl_pct.toFixed(2)}%` : "open"}
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {lastResult && (
+        <div className="text-xs text-slate-500 font-mono-ui mt-3" data-testid="lattice-last-eval-result">
+          Last run — checked: {lastResult.checked} · closed: {lastResult.closed} · failed: {lastResult.failed}
+        </div>
+      )}
+    </div>
+  );
+};
+
 const MomentumTrackRecordPanel = ({ onAuthError }) => {
   const [running, setRunning] = useState(false);
   const [lastResult, setLastResult] = useState(null);
@@ -1424,6 +1516,7 @@ const Dashboard = ({ onLogout }) => {
         <IpoPanel onAuthError={onLogout} />
         <BlackBoxPanel onAuthError={onLogout} />
         <MomentumTrackRecordPanel onAuthError={onLogout} />
+        <LatticePanel onAuthError={onLogout} />
         <PnfAccessPanel onAuthError={onLogout} />
 
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-8">

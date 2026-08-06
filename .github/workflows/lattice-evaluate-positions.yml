@@ -1,0 +1,31 @@
+name: Lattice — evaluate open paper positions
+
+# Checks every open Lattice paper position once daily, after NSE close,
+# against its stop-loss/target/holding-horizon and closes it if any of
+# those have been reached (see lattice_memory.py's check_open_positions).
+# Positions are multi-day by design (The Forge proposes a holding horizon
+# in days, not a same-session exit), so unlike Prism Alpha's 5-minute
+# intraday polling, once a day is the right cadence here -- there's
+# nothing to catch mid-session.
+# 10:15 UTC = 15:45 IST, 15 minutes after NSE's 15:30 close, weekdays only.
+on:
+  schedule:
+    - cron: "15 10 * * 1-5"
+  workflow_dispatch: {}
+
+jobs:
+  evaluate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Call lattice/admin/evaluate-positions
+        run: |
+          status=$(curl -s -o response.json -w "%{http_code}" -X POST \
+            "https://sapphire-alpha-backend.onrender.com/api/lattice/admin/evaluate-positions" \
+            -H "X-Cron-Key: ${{ secrets.CRON_SECRET }}")
+          echo "HTTP status: $status"
+          cat response.json
+          echo
+          if [ "$status" != "200" ]; then
+            echo "::error::lattice/admin/evaluate-positions failed with status $status"
+            exit 1
+          fi
