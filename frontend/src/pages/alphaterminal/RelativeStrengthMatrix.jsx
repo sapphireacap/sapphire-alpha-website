@@ -176,13 +176,6 @@ const RelativeStrengthMatrix = () => {
             ))}
           </div>
           <MatrixGrid symbols={data.symbols} grid={data.matrices[boxTab]?.grid || {}} />
-
-          <p className="text-[11px] font-light text-slate-600 mt-6 max-w-2xl leading-relaxed">
-            Each cell compares the row instrument against the column instrument using a Point &amp; Figure chart of
-            their price ratio — Bull means the row instrument is outperforming, Bear means the column instrument
-            is. Score is how many of an instrument's pairwise comparisons currently favor it. For research and
-            educational purposes only — not investment advice.
-          </p>
         </>
       )}
     </div>
