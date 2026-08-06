@@ -20,6 +20,7 @@ const SEGMENTS = [
   { key: "FUT", label: "Futures" },
   { key: "OPT", label: "Options" },
   { key: "US", label: "US Indices" },
+  { key: "COMMODITY", label: "Commodities" },
   { key: "CRYPTO", label: "Crypto" },
 ];
 
@@ -733,10 +734,10 @@ const PnfChart = () => {
   const [hoverCol, setHoverCol] = useState(null);
   const gridRef = useRef(null);
 
-  // Every interval can go live now (see LIVE_REFRESH_MS) -- only US index
-  // proxies can't, since Alpha Vantage's free tier has no live quote at
-  // all, just cached daily history.
-  const canGoLive = segment !== "US";
+  // Every interval can go live now (see LIVE_REFRESH_MS) -- only the
+  // Yahoo-backed segments (US indices, commodities) can't, since Yahoo's
+  // free endpoint here only serves cached daily history, no live quote.
+  const canGoLive = segment !== "US" && segment !== "COMMODITY";
 
   // Symbol search
   useEffect(() => {
@@ -766,10 +767,10 @@ const PnfChart = () => {
       .catch(() => setStrikes([]));
   }, [symbol, expiry, segment]);
 
-  // US indices only have daily+ history — drop back to daily if an
-  // intraday interval was left selected from a different segment.
+  // US indices and commodities only have daily+ history — drop back to
+  // daily if an intraday interval was left selected from a different segment.
   useEffect(() => {
-    if (segment === "US" && !US_INTERVALS.includes(interval)) setIntervalKey("daily");
+    if ((segment === "US" || segment === "COMMODITY") && !US_INTERVALS.includes(interval)) setIntervalKey("daily");
   }, [segment, interval]);
 
   // `silent` skips the loading spinner/camera reset — used by the live
@@ -883,7 +884,7 @@ const PnfChart = () => {
           )}
 
           <select className={compactField} value={interval} onChange={(e) => setIntervalKey(e.target.value)}>
-            {(segment === "US" ? INTERVALS.filter((i) => US_INTERVALS.includes(i.key)) : INTERVALS)
+            {(segment === "US" || segment === "COMMODITY" ? INTERVALS.filter((i) => US_INTERVALS.includes(i.key)) : INTERVALS)
               .map((i) => <option key={i.key} value={i.key}>{i.label}</option>)}
           </select>
           <select className={compactField} value={boxPct} onChange={(e) => setBoxPct(Number(e.target.value))}>
@@ -925,6 +926,11 @@ const PnfChart = () => {
         {segment === "US" && (
           <p className="text-[11px] text-slate-500 mt-2 max-w-3xl">
             Nasdaq 100 and S&amp;P 500 are plotted from their most liquid tracking ETF (QQQ / SPY) — daily/weekly/monthly only, no intraday.
+          </p>
+        )}
+        {segment === "COMMODITY" && (
+          <p className="text-[11px] text-slate-500 mt-2 max-w-3xl">
+            Gold is plotted from COMEX futures (the free proxy for spot XAUUSD — no free spot forex feed exists) — daily/weekly/monthly only, no intraday.
           </p>
         )}
         {segment === "CRYPTO" && (

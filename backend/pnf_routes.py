@@ -28,7 +28,7 @@ from pnf_indicators import DEFAULT_XO_LOOKBACK
 
 logger = logging.getLogger(__name__)
 
-VALID_SEGMENTS = ("NSE", "FUT", "OPT", "US", "CRYPTO")
+VALID_SEGMENTS = ("NSE", "FUT", "OPT", "US", "COMMODITY", "CRYPTO")
 US_INTERVALS = ("daily", "weekly", "monthly")  # no real intraday index data on Yahoo's free chart endpoint
 MAX_SCAN_SYMBOLS = 40
 
@@ -72,6 +72,11 @@ def create_pnf_router(db, definedge, get_current_subscriber) -> APIRouter:
             syms = [k for k in yf.US_INDEX_SYMBOLS
                     if q in k or q in yf.US_INDEX_SYMBOLS[k]["label"].upper()]
             return {"symbols": syms}
+        if segment == "COMMODITY":
+            q = (query or "").strip().upper()
+            syms = [k for k in yf.COMMODITY_SYMBOLS
+                    if q in k or q in yf.COMMODITY_SYMBOLS[k]["label"].upper()]
+            return {"symbols": syms}
         if segment == "CRYPTO":
             q = (query or "").strip().upper()
             syms = [k for k in bn.CRYPTO_SYMBOLS
@@ -89,21 +94,22 @@ def create_pnf_router(db, definedge, get_current_subscriber) -> APIRouter:
 
     # -- the chart ---------------------------------------------------------
 
-    async def _chart_us(symbol: str, interval: str, box_pct: Optional[float],
-                        box_value: Optional[float], cfg, xo_lookback: int,
-                        ma_period: int) -> dict:
-        """US index branch: same build_chart() as every other segment —
-        only the bar-fetching differs (Yahoo Finance's free, keyless
-        daily history for the real index — see yahoo_finance_client.py).
-        No P&F construction rule changes."""
+    async def _chart_yahoo(symbol: str, interval: str, box_pct: Optional[float],
+                           box_value: Optional[float], cfg, xo_lookback: int,
+                           ma_period: int, symbol_map: dict, selector_segment: str) -> dict:
+        """Shared Yahoo-backed branch for both "US" (indices) and
+        "COMMODITY" (currently just XAUUSD/GC=F) — same build_chart() as
+        every other segment, only the bar-fetching differs (Yahoo
+        Finance's free, keyless daily history — see
+        yahoo_finance_client.py). No P&F construction rule changes."""
         sym = symbol.strip().upper()
-        if sym not in yf.US_INDEX_SYMBOLS:
+        if sym not in symbol_map:
             raise HTTPException(status_code=404, detail=f"No instrument found for {symbol}.")
         if interval not in US_INTERVALS:
             raise HTTPException(status_code=400,
-                                detail="US indices are available at daily, weekly or monthly intervals only.")
+                                detail="This instrument is available at daily, weekly or monthly intervals only.")
         try:
-            bars = await yf.daily_bars(db, sym)
+            bars = await yf.daily_bars(db, sym, symbol_map=symbol_map)
             bars = pnf_chart.resample_daily(bars, interval)
             payload = pnf_chart.build_chart(
                 bars, box_pct=box_pct, box_value=box_value,
@@ -117,10 +123,10 @@ def create_pnf_router(db, definedge, get_current_subscriber) -> APIRouter:
             raise HTTPException(status_code=502,
                                 detail="Chart data is temporarily unavailable — please try again shortly.")
         payload["params"]["interval"] = interval
-        info = yf.US_INDEX_SYMBOLS[sym]
+        info = symbol_map[sym]
         payload["instrument"] = {
             "symbol": sym,
-            "selector_segment": "US",
+            "selector_segment": selector_segment,
             "tradingsymbol": info["label"],
         }
         return payload
@@ -157,7 +163,11 @@ def create_pnf_router(db, definedge, get_current_subscriber) -> APIRouter:
         )
 
         if segment == "US":
-            return await _chart_us(symbol, interval, box_pct, box_value, cfg, xo_lookback, ma_period)
+            return await _chart_yahoo(symbol, interval, box_pct, box_value, cfg, xo_lookback, ma_period,
+                                      yf.US_INDEX_SYMBOLS, "US")
+        if segment == "COMMODITY":
+            return await _chart_yahoo(symbol, interval, box_pct, box_value, cfg, xo_lookback, ma_period,
+                                      yf.COMMODITY_SYMBOLS, "COMMODITY")
         if segment == "CRYPTO":
             raise HTTPException(status_code=400,
                                 detail="Crypto charts are built from client-fetched bars — use POST /pnf/chart/crypto.")

@@ -36,6 +36,19 @@ US_INDEX_SYMBOLS = {
     "SPX": {"yahoo": "%5EGSPC", "label": "S&P 500"},
 }
 
+# Commodities segment — same free/keyless Yahoo chart endpoint, just a
+# different symbol dict. XAUUSD itself (spot forex-style ticker) doesn't
+# resolve on Yahoo's endpoint (verified live, 2026-08-06: both "XAU=X" and
+# "XAUUSD=X" 404) -- GC=F (COMEX gold futures, USD/troy oz) does and is the
+# standard free proxy (futures track spot closely, small basis that
+# converges at expiry). Daily/weekly/monthly only, same as US indices — no
+# permanent minute-bar caching here (Yahoo's own 1-minute data only reaches
+# back ~7-8 days per request, verified live, not worth a whole caching
+# layer for a window that short).
+COMMODITY_SYMBOLS = {
+    "XAUUSD": {"yahoo": "GC=F", "label": "Gold (Futures)"},
+}
+
 
 class YahooFinanceError(Exception):
     """Upstream problems -- safe to show a caller."""
@@ -125,20 +138,24 @@ async def equity_bars(db, ticker: str) -> list:
     return merged
 
 
-async def daily_bars(db, symbol_key: str) -> list:
-    """Accumulated real daily OHLC history for NDX or SPX. At most one
-    Yahoo call per symbol per real calendar day -- every other call today
-    comes straight out of Mongo."""
+async def daily_bars(db, symbol_key: str, symbol_map: dict = None) -> list:
+    """Accumulated real daily OHLC history for a symbol in `symbol_map`
+    (defaults to US_INDEX_SYMBOLS — NDX/SPX; pass COMMODITY_SYMBOLS for
+    XAUUSD/GC=F). At most one Yahoo call per symbol per real calendar day
+    -- every other call today comes straight out of Mongo. Same
+    CACHE_COLLECTION for every symbol_map — keys (NDX/SPX vs XAUUSD) don't
+    collide since they're distinct strings."""
+    symbol_map = symbol_map or US_INDEX_SYMBOLS
     symbol_key = symbol_key.strip().upper()
-    if symbol_key not in US_INDEX_SYMBOLS:
-        raise YahooFinanceError(f"Unknown US index symbol {symbol_key}.")
+    if symbol_key not in symbol_map:
+        raise YahooFinanceError(f"Unknown symbol {symbol_key}.")
 
     today = datetime.now(timezone.utc).date().isoformat()
     doc = await db[CACHE_COLLECTION].find_one({"symbol": symbol_key})
     if doc and doc.get("last_fetched_date") == today:
         return doc["bars"]
 
-    yahoo_symbol = US_INDEX_SYMBOLS[symbol_key]["yahoo"]
+    yahoo_symbol = symbol_map[symbol_key]["yahoo"]
     fresh = await _fetch_daily(yahoo_symbol)
     merged = _merge_bars(doc["bars"] if doc else [], fresh)
     await db[CACHE_COLLECTION].update_one(
