@@ -48,7 +48,7 @@ import zxcvbn
 # "blackbox_legacy" here if crash-restarts resume.
 DISABLED_FEATURES = set(
     f.strip() for f in os.environ.get(
-        "DISABLED_FEATURES", "journal,quant_lab,stock_terminal"
+        "DISABLED_FEATURES", "journal,quant_lab"
     ).split(",") if f.strip()
 )
 

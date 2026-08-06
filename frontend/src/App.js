@@ -7,14 +7,9 @@ import { ThemeProvider, useTheme } from "@/contexts/ThemeContext";
 import SmoothScroll from "@/components/site/SmoothScroll";
 import Navbar from "@/components/site/Navbar";
 import Hero from "@/components/site/Hero";
-import TrustStrip from "@/components/site/TrustStrip";
-import EditorialMarquee from "@/components/site/EditorialMarquee";
 import ComingSoon from "@/components/site/ComingSoon";
 import PausedFeature from "@/components/site/PausedFeature";
 import About from "@/components/site/About";
-import Manifesto from "@/components/site/Manifesto";
-import Research from "@/components/site/Research";
-import Investing from "@/components/site/Investing";
 import NotAvailablePage from "@/components/site/NotAvailablePage";
 import Contact from "@/components/site/Contact";
 import Footer from "@/components/site/Footer";
@@ -22,7 +17,6 @@ import LegalPage from "@/components/site/LegalPage";
 import NotFound from "@/components/site/NotFound";
 import AlphaTerminal from "@/pages/AlphaTerminal";
 import BlackBox from "@/pages/BlackBox";
-import StrategyDetail from "@/pages/blackbox/StrategyDetail";
 import ModuleDetail from "@/pages/alphaterminal/ModuleDetail";
 import PnfChart from "@/pages/alphaterminal/PnfChart";
 import PnfStudio from "@/pages/PnfStudio";
@@ -45,13 +39,8 @@ const Landing = () => (
     <Navbar />
     <main className="relative">
       <Hero />
-      <TrustStrip />
-      <EditorialMarquee />
-      <ComingSoon />
       <About />
-      <Manifesto />
-      <Research />
-      <Investing />
+      <ComingSoon />
       <Contact />
     </main>
     <Footer />
@@ -72,7 +61,6 @@ const AppShell = () => {
             <Route path="/" element={<Landing />} />
             <Route path="/alpha-terminal" element={<AlphaTerminal />} />
             <Route path="/black-box" element={<BlackBox />} />
-            <Route path="/black-box/:slug" element={<StrategyDetail />} />
             {/* Must precede the /:slug route below — otherwise "pnf" is
                 swallowed as a module slug and never reaches this page.
                 Paid-access gated (see RequirePnfAccess) -- /pnf-studio is
@@ -86,12 +74,12 @@ const AppShell = () => {
             <Route path="/pricing" element={<Pricing />} />
             <Route path="/ipos" element={<Ipos />} />
             <Route path="/ipos/:id" element={<IpoDetail />} />
-            {/* Research (Aurora/FacetView) paused 2026-07-29 to cut backend
-                memory/load -- real components untouched below, just not
-                routed to right now. Swap back to <Aurora />/<FacetView />
-                to restore. */}
-            <Route path="/research" element={<PausedFeature title="Research" description="The Research terminal is temporarily paused. It'll be back online shortly." />} />
-            <Route path="/research/:symbol" element={<PausedFeature title="Research" description="The Research terminal is temporarily paused. It'll be back online shortly." />} />
+            {/* Research (Aurora/FacetView) restored 2026-08-05 -- was paused
+                2026-07-29 to cut backend memory/load, re-enabled alongside
+                the new Lattice pipeline which depends on the same
+                stock_terminal backend infra. */}
+            <Route path="/research" element={<Aurora />} />
+            <Route path="/research/:symbol" element={<FacetView />} />
             <Route path="/admin33" element={<Admin />} />
             <Route path="/signup" element={<SignupPage />} />
             <Route path="/login" element={<LoginPage />} />

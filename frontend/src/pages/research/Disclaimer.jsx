@@ -1,5 +1,5 @@
 const SEBI_DISCLAIMER =
-  "Research & education only — not investment advice (SEBI). Lattice displays an analytical score, not a buy/sell recommendation.";
+  "Research & education only — not investment advice (SEBI). Research displays an analytical score, not a buy/sell recommendation.";
 
 export default function Disclaimer() {
   return (
