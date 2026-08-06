@@ -67,6 +67,7 @@ from pnf_routes import create_pnf_router
 from relative_strength_routes import create_relative_strength_router
 from breadth_routes import create_breadth_router
 from options_trend_routes import create_options_trend_router
+from market_dashboard_routes import create_market_dashboard_router
 if "stock_terminal" not in DISABLED_FEATURES:
     from stock_terminal_routes import create_stock_terminal_router
 from swing_picks_lcp import update_swing_picks_lcp
@@ -1594,6 +1595,8 @@ async def on_startup():
         await db.rs_daily_closes.create_index("symbol", unique=True)
         await db.breadth_daily_closes.create_index("symbol", unique=True)
         await db.options_trend_scan.create_index("symbol", unique=True)
+        await db.market_dashboard_fii_dii_history.create_index("date", unique=True)
+        await db.market_dashboard_ad_history.create_index("date")
     except Exception as e:  # noqa: BLE001
         logger.warning(f"Index creation: {e}")
 
@@ -1605,6 +1608,7 @@ pnf_router = create_pnf_router(db, definedge, get_current_pnf_subscriber)
 relative_strength_router = create_relative_strength_router(db, definedge)
 breadth_router = create_breadth_router(db, definedge, get_current_admin, CRON_SECRET)
 options_trend_router = create_options_trend_router(db, definedge, get_current_admin, CRON_SECRET)
+market_dashboard_router = create_market_dashboard_router(db, get_current_admin, CRON_SECRET)
 
 app.include_router(api_router)
 app.include_router(ipo_router, prefix="/api")
@@ -1614,6 +1618,7 @@ app.include_router(pnf_router, prefix="/api")
 app.include_router(relative_strength_router, prefix="/api")
 app.include_router(breadth_router, prefix="/api")
 app.include_router(options_trend_router, prefix="/api")
+app.include_router(market_dashboard_router, prefix="/api")
 
 # Paused features (see DISABLED_FEATURES above) -- router creation/mounting
 # skipped entirely, not just hidden, matching the skipped imports above.

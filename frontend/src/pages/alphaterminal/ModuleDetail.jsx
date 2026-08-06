@@ -15,6 +15,7 @@ import ExitlineTool from "./Exitline";
 import RelativeStrengthMatrix from "./RelativeStrengthMatrix";
 import BreadthTool from "./Breadth";
 import OptionsTrendTool from "./OptionsTrend";
+import MarketDashboardTool from "./MarketDashboard";
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 const EASE = [0.16, 1, 0.3, 1];
@@ -218,6 +219,7 @@ const LiveDashboard = ({ module, signals }) => (
     {module.kind === "matrix" && <RelativeStrengthMatrix />}
     {module.kind === "breadth" && <BreadthTool />}
     {module.kind === "options-trend" && <OptionsTrendTool />}
+    {module.kind === "market-dashboard" && <MarketDashboardTool />}
   </Section>
 );
 
@@ -480,7 +482,7 @@ export default function ModuleDetail() {
           {module.live ? (
             <>
               <LiveDashboard module={module} signals={signals} />
-              {module.kind !== "exitline" && module.kind !== "matrix" && module.kind !== "breadth" && module.kind !== "options-trend" && (
+              {module.kind !== "exitline" && module.kind !== "matrix" && module.kind !== "breadth" && module.kind !== "options-trend" && module.kind !== "market-dashboard" && (
                 <HistoricalPerformance module={module} />
               )}
             </>

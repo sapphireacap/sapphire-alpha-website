@@ -1,5 +1,5 @@
 import {
-  Compass, Crosshair, Activity, Radar, BarChart3, Sliders, TrendingUp, Target, Gauge, GitBranch,
+  Compass, Crosshair, Activity, Radar, BarChart3, Sliders, TrendingUp, Target, Gauge, GitBranch, LayoutDashboard,
 } from "lucide-react";
 
 // Every research module shown on the Alpha Terminal directory and served at
@@ -193,6 +193,24 @@ export const MODULES = [
       purpose: "Confirms a stock's directional setup isn't just a single-chart read — the underlying, its call, and its put all have to agree.",
       whatItMeasures: "Reads each of the three instrument's own chart independently, then applies a strict agreement rule: bullish needs the future AND call both up with the put down, bearish is the mirror image, everything else is neutral.",
       interpret: "A Bullish or Bearish verdict reflects real cross-instrument momentum agreement, not a guess off the underlying alone — treat Neutral as no current edge, not a hidden signal.",
+    },
+  },
+  {
+    slug: "market-dashboard",
+    no: "11",
+    kind: "market-dashboard",
+    live: true,
+    icon: LayoutDashboard,
+    title: "Market Dashboard",
+    shortDescription: "Single-screen market health, built entirely from free public data.",
+    category: "Market Intelligence",
+    status: "Operational",
+    universe: "NSE / Global Indices",
+    coverage: "Live, market hours",
+    overview: {
+      purpose: "A single-screen read on overall market health — index levels, participation, sentiment — independent of any broker session.",
+      whatItMeasures: "Sector and segment performance, market-wide advance/decline, India VIX, 52-week high/low counts, FII/DII cash-market flows, and global index levels.",
+      interpret: "Use it as market context before drilling into any other module — broad participation (many sectors green, advances beating declines) supports conviction; narrow or negative breadth is a caution flag even when the headline index looks fine.",
     },
   },
   {

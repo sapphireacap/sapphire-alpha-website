@@ -138,6 +138,41 @@ async def equity_bars(db, ticker: str) -> list:
     return merged
 
 
+async def quote_snapshot(yahoo_symbol: str) -> dict:
+    """{"last", "previous_close", "change_pct"} straight off Yahoo's chart
+    endpoint's own `meta` block — no historical accumulation, just the
+    live-ish read, for callers that only need "where is it right now" (the
+    Market Dashboard's Global Indices card) rather than a chartable
+    series. Raises YahooFinanceError (never fabricates) if the meta block
+    doesn't carry a live price."""
+    try:
+        async with httpx.AsyncClient(timeout=15) as c:
+            r = await c.get(
+                f"{BASE_URL}/{yahoo_symbol}",
+                params={"interval": "1d", "range": "5d"},
+                headers={"User-Agent": USER_AGENT},
+            )
+        r.raise_for_status()
+        data = r.json()
+    except httpx.HTTPError as e:
+        raise YahooFinanceError(f"Yahoo Finance request failed: {e}") from e
+
+    result = (data.get("chart") or {}).get("result")
+    if not result:
+        err = (data.get("chart") or {}).get("error")
+        raise YahooFinanceError(f"No chart data for {yahoo_symbol}: {err}")
+    meta = result[0].get("meta") or {}
+    last = meta.get("regularMarketPrice")
+    prev = meta.get("chartPreviousClose") or meta.get("previousClose")
+    if last is None or prev is None:
+        raise YahooFinanceError(f"Incomplete quote meta for {yahoo_symbol}.")
+    return {
+        "last": last,
+        "previous_close": prev,
+        "change_pct": round(((last - prev) / prev) * 100.0, 2) if prev else None,
+    }
+
+
 async def daily_bars(db, symbol_key: str, symbol_map: dict = None) -> list:
     """Accumulated real daily OHLC history for a symbol in `symbol_map`
     (defaults to US_INDEX_SYMBOLS — NDX/SPX; pass COMMODITY_SYMBOLS for
