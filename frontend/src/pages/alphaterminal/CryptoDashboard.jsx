@@ -52,7 +52,7 @@ const fmtCompact = (v) => (v == null ? "—" : Number(v).toLocaleString("en-US",
 // EWMA / Breakout are placeholders there too, not just here).
 const CRYPTO_MODULES = [
   { slug: "chart", no: "01", icon: LineChartIcon, title: "Live Chart", shortDescription: "Live candlestick charts across major USDT pairs.", category: "Market Intelligence", live: true },
-  { slug: "exitline", no: "02", icon: Crosshair, title: "Crypto Exitline", shortDescription: "Proprietary intraday levels with a suggested SL and TP.", category: "", live: true },
+  { slug: "exitline", no: "02", icon: Crosshair, title: "Crypto Exitline", shortDescription: "Intraday levels with a suggested SL and TP.", category: "", live: true },
   { slug: "momentum", no: "03", icon: Activity, title: "Crypto Momentum Leaders", shortDescription: "Ranks 24h momentum across major USDT pairs.", category: "Screening Engine", live: true },
   { slug: "swing-picks", no: "04", icon: Target, title: "Swing Picks", shortDescription: "Multi-day swing picks with a buy-at level.", category: "Screening Engine", live: false },
   { slug: "relative-strength", no: "05", icon: Radar, title: "Relative Strength Engine", shortDescription: "Ranks outperforming coins.", category: "Screening Engine", live: false },

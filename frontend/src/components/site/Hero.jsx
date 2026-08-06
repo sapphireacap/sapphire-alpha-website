@@ -1,19 +1,9 @@
 import { useRef } from "react";
 import { motion, useScroll, useTransform } from "framer-motion";
-import { ArrowDown, ArrowUpRight, ChevronRight, PlayCircle, TrendingUp, ShieldCheck, ShieldAlert, ExternalLink } from "lucide-react";
+import { ArrowDown, ArrowUpRight, ChevronRight, PlayCircle } from "lucide-react";
 import ParticleField from "./ParticleField";
 import { scrollToId } from "./SmoothScroll";
 import HeroDashboardMockup from "./HeroDashboardMockup";
-
-// Short trust-signal row under the hero CTAs -- new UI, own short labels
-// (not paragraphs), echoing the site's own three Manifesto principles
-// rather than inventing unrelated marketing claims.
-const TRUST_SIGNALS = [
-  { icon: TrendingUp, label: "Evidence-Led", sub: "Research-first process" },
-  { icon: ShieldCheck, label: "Systematic Execution", sub: "Rules over emotions." },
-  { icon: ShieldAlert, label: "Risk Managed", sub: "Capital preservation first." },
-  { icon: ExternalLink, label: "Built to Compound", sub: "Discipline over prediction" },
-];
 
 const EASE = [0.16, 1, 0.3, 1];
 
@@ -90,9 +80,8 @@ export const Hero = () => {
               className="mt-8 max-w-xl text-base md:text-lg font-light text-slate-400 leading-relaxed"
               data-testid="hero-description"
             >
-              Sapphire Alpha Capital builds quantitative tools and market
-              intelligence for traders and investors who want structure
-              before conviction.
+              Quantitative tools and market intelligence for traders who
+              want structure before conviction.
             </motion.p>
 
             <motion.div
@@ -108,32 +97,6 @@ export const Hero = () => {
                 Learn More <PlayCircle size={16} />
               </button>
             </motion.div>
-
-            {/* Trust-signal row -- new UI, own labels, echoing the site's
-                existing Manifesto principles rather than new marketing copy */}
-            <motion.div
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 1.2, duration: 0.9, ease: EASE }}
-              className="mt-12 flex flex-wrap gap-x-8 gap-y-5"
-              data-testid="hero-trust-signals"
-            >
-              {TRUST_SIGNALS.map((t) => {
-                const Icon = t.icon;
-                return (
-                  <div key={t.label} className="flex items-center gap-3">
-                    <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-white/10 bg-white/[0.02]">
-                      <Icon size={16} className="text-sapphire-light" />
-                    </span>
-                    <div className="leading-tight">
-                      <p className="text-sm font-medium text-white">{t.label}</p>
-                      <p className="text-xs text-slate-500">{t.sub}</p>
-                    </div>
-                  </div>
-                );
-              })}
-            </motion.div>
-
           </div>
 
           <div className="flex lg:col-span-6 items-center justify-center">

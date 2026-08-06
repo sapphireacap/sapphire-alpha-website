@@ -3,7 +3,7 @@ import axios from "axios";
 import { motion } from "framer-motion";
 import { toast } from "sonner";
 import { useNavigate } from "react-router-dom";
-import { Check, Lock, ArrowUpRight, Loader2 } from "lucide-react";
+import { Lock, ArrowUpRight, Loader2 } from "lucide-react";
 import Navbar from "../components/site/Navbar";
 import Footer from "../components/site/Footer";
 import Reveal from "../components/site/Reveal";
@@ -29,15 +29,6 @@ const loadRazorpayScript = () => {
   });
   return razorpayScriptPromise;
 };
-
-const FEATURES = [
-  "Unlimited Point & Figure workspaces",
-  "Complete pattern library",
-  "Advanced indicator library",
-  "Multi-timeframe analysis",
-  "Custom box size and reversal settings",
-  "Professional charting workspace",
-];
 
 // Same figures as Pricing.jsx's P&F Studio plan -- kept in sync manually,
 // this page and the Pricing cards describe the same product.
@@ -151,20 +142,8 @@ export default function PnfStudio() {
         </section>
 
         <section className="relative pb-28 md:pb-40">
-          <div className="container-x grid grid-cols-1 lg:grid-cols-[1fr_1.1fr] gap-10 lg:gap-16 items-start max-w-5xl mx-auto">
-            <Reveal>
-              <p className="font-mono-ui text-[11px] uppercase tracking-[0.16em] text-slate-500 mb-4">What's included</p>
-              <ul className="space-y-3">
-                {FEATURES.map((f) => (
-                  <li key={f} className="flex items-start gap-2.5 text-sm text-slate-300">
-                    <Check size={15} className="text-sapphire-light mt-0.5 shrink-0" />
-                    {f}
-                  </li>
-                ))}
-              </ul>
-            </Reveal>
-
-            <Reveal delay={0.1} className="rounded-2xl border border-white/10 bg-white/[0.02] p-6 md:p-8" data-testid="pnf-studio-access-panel">
+          <div className="container-x max-w-lg mx-auto">
+            <Reveal className="rounded-2xl border border-white/10 bg-white/[0.02] p-6 md:p-8" data-testid="pnf-studio-access-panel">
               {status === "loading" && (
                 <div className="flex items-center justify-center py-12 text-slate-500">
                   <Loader2 className="animate-spin" size={20} />

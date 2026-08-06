@@ -4,14 +4,14 @@ import {
 
 // Every research module shown on the Alpha Terminal directory and served at
 // its own /alpha-terminal/:slug page (ModuleDetail.jsx). `kind` decides what
-// ModuleDetail's Live Dashboard section renders:
+// ModuleDetail's Current Reading section renders:
 //   "vector"    -> one StraddleCompass per covered index (see indices below)
 //                  — the Index Vector's public bias/spot read, per index
 //   "scanner"   -> MomentumTable against /terminal/stocks?scanner=<scannerKey>
 //   "ewma"      -> the standalone EwmaCrossoverTool, embedded
 //   "sharpe"    -> the standalone SharpeDashboardTool, embedded
 //   "exitline"  -> the standalone ExitlineTool, embedded (segment -> scrip
-//                  -> proprietary level ladder + SL/TP)
+//                  -> level ladder + SL/TP)
 // `live: false` modules are paused (2026-07-29) to cut backend memory/load
 // while the Render free-tier instance keeps crash-restarting on its memory
 // limit -- their pages show a "Coming Soon" placeholder and make no API
@@ -28,13 +28,9 @@ export const MODULES = [
     live: true,
     icon: Compass,
     title: "Index Vector",
-    shortDescription: "Institutional market regime confirmation model.",
-    category: "Market Intelligence",
-    status: "Operational",
-    universe: "NIFTY, BANKNIFTY, FINNIFTY Index Options",
-    coverage: "Weekly & Monthly Expiries",
+    shortDescription: "Market regime confirmation model.",
     // Displayed inside the module page, one compass per index, in this
-    // order (2-1 formation on the Live Dashboard grid — see ModuleDetail.jsx).
+    // order (2-1 formation on the Current Reading grid — see ModuleDetail.jsx).
     // Same P&F box%/reversal parameters and same all-legs-must-agree
     // confluence rule for every index — only the underlying contracts
     // differ. NIFTY still lists real weekly-cadence contracts; BANKNIFTY/
@@ -56,13 +52,9 @@ export const MODULES = [
     live: true,
     icon: Crosshair,
     title: "Intraday Exitline",
-    shortDescription: "Proprietary intraday levels with a suggested SL and TP.",
-    category: "",
-    status: "Operational",
-    universe: "NSE Cash, Futures & Options",
-    coverage: "On demand, any symbol",
+    shortDescription: "Intraday levels with a suggested SL and TP.",
     overview: {
-      purpose: "Turns yesterday's high/low/close into a proprietary intraday level ladder against the live price, with a rule-based stop-loss and take-profit.",
+      purpose: "Turns yesterday's high/low/close into an intraday level ladder against the live price, with a rule-based stop-loss and take-profit.",
       whatItMeasures: "Classifies the current price into a mean-reversion Trading Zone (S3–R3) or a trend-day Breakout Zone (beyond R4/S4), and derives SL/TP from that read.",
       interpret: "Near R3/S3, treat it as a mean-reversion trigger with a fixed target; beyond R4/S4, treat it as a trend day — trail the stop, no fixed target.",
     },
@@ -75,13 +67,9 @@ export const MODULES = [
     scannerKey: "momentum",
     icon: Activity,
     title: "Intraday Momentum Leaders",
-    shortDescription: "Ranks institutional momentum across NSE.",
-    category: "Screening Engine",
-    status: "Operational",
-    universe: "NSE Cash Market",
-    coverage: "Daily, pre-market",
+    shortDescription: "Ranks momentum across NSE.",
     overview: {
-      purpose: "Surfaces the NSE-listed names showing the strongest institutional-grade momentum right now.",
+      purpose: "Surfaces the NSE-listed names showing the strongest momentum right now.",
       whatItMeasures: "Ranks stocks by a composite momentum score built from price action, volume, and conviction scoring.",
       interpret: "A higher score reflects stronger, more confirmed momentum — treat the list as a daily research starting point, not a buy list.",
     },
@@ -95,10 +83,6 @@ export const MODULES = [
     icon: Target,
     title: "Swing Picks",
     shortDescription: "Multi-day swing picks with a buy-at level.",
-    category: "Screening Engine",
-    status: "Calibration in Progress",
-    universe: "NSE Cash Market",
-    coverage: "Daily",
     overview: {
       purpose: "Surfaces multi-day swing setups to hold over several sessions, not intraday turnover.",
       whatItMeasures: "Screens for structural setups that develop over days to weeks, each with a defined buy-at level.",
@@ -113,10 +97,6 @@ export const MODULES = [
     icon: Radar,
     title: "Relative Strength Engine",
     shortDescription: "Pairwise strength matrix across sector groups.",
-    category: "Screening Engine",
-    status: "Operational",
-    universe: "NSE Sector Baskets",
-    coverage: "Daily, on demand",
     overview: {
       purpose: "Ranks every stock in a sector against every other stock in that sector, not just against a single benchmark.",
       whatItMeasures: "For each pair, builds a Point & Figure chart of their price ratio — a rising ratio favors the first stock, a falling ratio favors the second. Each stock's score is how many of its pairwise comparisons currently favor it.",
@@ -131,10 +111,6 @@ export const MODULES = [
     icon: BarChart3,
     title: "Sharpe Dashboard",
     shortDescription: "Risk-adjusted stock ranking engine.",
-    category: "Risk Analytics",
-    status: "Operational",
-    universe: "Nifty 500",
-    coverage: "On demand, any lookback",
     overview: {
       purpose: "Ranks opportunities by risk-adjusted return rather than raw performance.",
       whatItMeasures: "Computes Sharpe, Sortino, and maximum drawdown across the Nifty 500 for any basket you choose, or the full ranked universe.",
@@ -149,10 +125,6 @@ export const MODULES = [
     icon: Sliders,
     title: "EWMA Scanner",
     shortDescription: "Trend acceleration and crossover engine.",
-    category: "Signal Engine",
-    status: "Operational",
-    universe: "NSE / BSE / NFO / BFO",
-    coverage: "On demand, any symbol",
     overview: {
       purpose: "Flags trend acceleration and crossover events using a fast/slow moving-average model.",
       whatItMeasures: "Runs an exponentially-weighted moving-average crossover, with an acceleration filter, against buy-and-hold on any symbol you choose.",
@@ -167,10 +139,6 @@ export const MODULES = [
     icon: Gauge,
     title: "Market Breadth",
     shortDescription: "Percentage of the group currently trending bullish.",
-    category: "Market Intelligence",
-    status: "Operational",
-    universe: "Nifty 50 / Nifty 500",
-    coverage: "Daily",
     overview: {
       purpose: "Reads market health from participation, not just the index level — a rising index on narrow participation is a weaker trend than one lifting most of its constituents.",
       whatItMeasures: "Percentage of stocks in the group currently in a bullish swing on their own chart, independent of every other constituent.",
@@ -185,10 +153,6 @@ export const MODULES = [
     icon: GitBranch,
     title: "Options Trend Scanner",
     shortDescription: "Confirms directional setups across future, call, and put together.",
-    category: "Screening Engine",
-    status: "Operational",
-    universe: "NSE F&O Stocks",
-    coverage: "Daily",
     overview: {
       purpose: "Confirms a stock's directional setup isn't just a single-chart read — the underlying, its call, and its put all have to agree.",
       whatItMeasures: "Reads each of the three instrument's own chart independently, then applies a strict agreement rule: bullish needs the future AND call both up with the put down, bearish is the mirror image, everything else is neutral.",
@@ -201,12 +165,8 @@ export const MODULES = [
     kind: "market-dashboard",
     live: true,
     icon: LayoutDashboard,
-    title: "Market Dashboard",
+    title: "Market Assessment",
     shortDescription: "Single-screen market health, built entirely from free public data.",
-    category: "Market Intelligence",
-    status: "Operational",
-    universe: "NSE / Global Indices",
-    coverage: "Live, market hours",
     overview: {
       purpose: "A single-screen read on overall market health — index levels, participation, sentiment — independent of any broker session.",
       whatItMeasures: "Sector and segment performance, market-wide advance/decline, India VIX, 52-week high/low counts, FII/DII cash-market flows, and global index levels.",
@@ -222,10 +182,6 @@ export const MODULES = [
     icon: TrendingUp,
     title: "Breakout Candidates",
     shortDescription: "Detects high-conviction breakout setups.",
-    category: "Screening Engine",
-    status: "Calibration in Progress",
-    universe: "NSE Cash Market",
-    coverage: "Daily, pre-market",
     overview: {
       purpose: "Detects names approaching or clearing a key structural price level.",
       whatItMeasures: "Screens for price action nearing a defined resistance or support level alongside volume confirmation.",

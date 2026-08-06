@@ -1,19 +1,7 @@
 import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useNavigate, useLocation } from "react-router-dom";
-import {
-  Check,
-  ArrowUpRight,
-  ArrowRight,
-  Link2,
-  Layers,
-  KeyRound,
-  Sparkles,
-  Zap,
-  ShieldCheck,
-  Building2,
-  ChevronDown,
-} from "lucide-react";
+import { Check, ArrowUpRight, ChevronDown } from "lucide-react";
 import Navbar from "../components/site/Navbar";
 import Footer from "../components/site/Footer";
 import Reveal from "../components/site/Reveal";
@@ -27,25 +15,6 @@ const CYCLES = [
   { key: "yearly", label: "Yearly", months: 12 },
 ];
 
-// Three-step onboarding flow shown above the pricing cards.
-const STEPS = [
-  {
-    icon: Link2,
-    title: "Connect Your Broker",
-    body: "Securely connect your supported broker account to Sapphire Alpha Capital.",
-  },
-  {
-    icon: Layers,
-    title: "Choose Your Strategy",
-    body: "Select one or more proprietary quantitative strategies from The Black Box.",
-  },
-  {
-    icon: KeyRound,
-    title: "Authenticate Once",
-    body: "After authorization, your selected strategy executes trades automatically until you pause or stop it.",
-  },
-];
-
 // Pricing totals unchanged from the original structure -- each cycle's
 // figure is the amount actually billed for that cycle, not a monthly rate
 // multiplied out. Bundle = Black Box + P&F Studio at a lower combined rate
@@ -56,12 +25,12 @@ const PLANS = [
     name: "The Black Box",
     tagline: "Automated Strategy Execution Platform",
     description:
-      "Deploy proprietary quantitative trading strategies directly in your own broker account through fully automated execution.",
+      "Deploy quantitative trading strategies directly in your own broker account through automated execution.",
     features: [
       "Secure broker integration",
       "One-time authentication",
-      "Fully automated trade execution",
-      "Multiple proprietary quantitative strategies",
+      "Automated trade execution",
+      "Multiple strategies",
       "Automated entries, stop-loss and target execution",
       "Pause or stop any strategy anytime",
       "Real-time execution notifications",
@@ -74,7 +43,7 @@ const PLANS = [
     name: "P&F Studio",
     tagline: "Professional Point & Figure Platform",
     description:
-      "Institutional-grade Point & Figure charting with an advanced pattern and indicator library.",
+      "Point & Figure charting with a full pattern and indicator library.",
     features: [
       "Unlimited Point & Figure charts",
       "Complete pattern library",
@@ -87,7 +56,6 @@ const PLANS = [
   {
     key: "bundle",
     name: "Bundle",
-    badge: "MOST POPULAR",
     highlight: true,
     description:
       "The complete Sapphire Alpha Capital platform combining research, automation and professional charting.",
@@ -97,40 +65,12 @@ const PLANS = [
       "Everything in P&F Studio",
       "Priority support",
       "Access to future Black Box strategies",
-      "Best overall value",
     ],
     prices: { monthly: 109, quarterly: 299, yearly: 999 },
   },
 ];
 
-const WHY = [
-  {
-    icon: Sparkles,
-    title: "Proprietary Strategies",
-    body: "Research-driven quantitative strategies developed entirely in-house.",
-  },
-  {
-    icon: Zap,
-    title: "Fully Automated",
-    body: "Authenticate once and your selected strategy continues executing automatically.",
-  },
-  {
-    icon: ShieldCheck,
-    title: "Your Broker. Your Control.",
-    body: "Trades execute directly in your connected broker account. Pause, resume or disconnect whenever you choose.",
-  },
-  {
-    icon: Building2,
-    title: "Institutional Execution",
-    body: "Rule-based execution removes emotional decision making and follows predefined strategy logic.",
-  },
-];
-
 const FAQS = [
-  {
-    q: "How does The Black Box work?",
-    a: "You connect your broker account, choose one or more proprietary quantitative strategies, and authenticate once. From there, your selected strategy runs automatically -- entries, stop-loss and target execution -- until you choose to pause or stop it.",
-  },
   {
     q: "Which brokers are supported?",
     a: "Broker integrations are being rolled out progressively ahead of launch. Join the waitlist for early access and updates as new brokers go live.",
@@ -140,16 +80,8 @@ const FAQS = [
     a: "Yes. You can pause or stop any strategy at any time -- your broker account and your capital remain fully under your control throughout.",
   },
   {
-    q: "Can I run multiple strategies?",
-    a: "Yes. The Black Box is built to run multiple proprietary strategies in parallel, each with its own independent entry, exit and risk logic.",
-  },
-  {
     q: "Do I need to keep my computer running?",
     a: "No. Execution runs on Sapphire Alpha Capital's infrastructure, not your device -- once a strategy is active, it continues running independently.",
-  },
-  {
-    q: "How is this different from trading signals?",
-    a: "The Black Box doesn't send signals, tips or calls for you to act on manually. It executes rule-based strategy logic directly and automatically, removing manual decision-making from the process entirely.",
   },
 ];
 
@@ -168,69 +100,6 @@ const billedLabel = (cycle, price) => {
   return `${fmt(price)} billed yearly`;
 };
 
-const HowItWorks = () => (
-  <section className="relative pb-24 md:pb-32" data-testid="how-it-works-section">
-    <div className="container-x">
-      <Reveal className="text-center max-w-2xl mx-auto mb-14 md:mb-20">
-        <p className="overline text-sapphire-light mb-4">Onboarding</p>
-        <h2 className="font-display font-black tracking-tighter text-white text-3xl md:text-5xl leading-[1.05]">
-          How The Black Box Works
-        </h2>
-        <p className="mt-4 text-base md:text-lg font-light text-slate-400 leading-relaxed">
-          Automate your trading in three simple steps.
-        </p>
-      </Reveal>
-
-      <div className="flex flex-col md:flex-row md:items-start gap-10 md:gap-6 max-w-5xl mx-auto">
-        {STEPS.map((step, i) => {
-          const Icon = step.icon;
-          return (
-            <div key={step.title} className="flex md:flex-1 md:flex-col items-start md:items-center gap-5 md:gap-0">
-              <Reveal
-                delay={i * 0.12}
-                className="flex md:flex-col items-start md:items-center gap-5 md:gap-0 md:flex-1 w-full"
-              >
-                <div className="relative shrink-0 md:mb-6">
-                  <span className="flex h-14 w-14 items-center justify-center rounded-2xl border border-white/10 bg-white/[0.02]">
-                    <Icon size={22} className="text-sapphire-light" />
-                  </span>
-                  <span className="absolute -top-2 -right-2 flex h-5 w-5 items-center justify-center rounded-full bg-sapphire-light font-mono-ui text-[10px] font-semibold text-void">
-                    {i + 1}
-                  </span>
-                </div>
-                <div className="md:text-center">
-                  <h3 className="font-display text-lg font-bold text-white tracking-tight">{step.title}</h3>
-                  <p className="mt-2 text-sm text-slate-400 leading-relaxed md:max-w-[15rem] md:mx-auto">
-                    {step.body}
-                  </p>
-                </div>
-              </Reveal>
-
-              {i < STEPS.length - 1 && (
-                <>
-                  {/* connector: vertical on mobile, horizontal on desktop */}
-                  <div className="hidden md:flex items-center justify-center pt-7 self-stretch px-2" aria-hidden="true">
-                    <motion.div
-                      initial={{ scaleX: 0, opacity: 0 }}
-                      whileInView={{ scaleX: 1, opacity: 1 }}
-                      viewport={{ once: true, margin: "-80px" }}
-                      transition={{ duration: 0.7, ease: EASE, delay: i * 0.12 + 0.2 }}
-                      className="h-px w-full origin-left bg-gradient-to-r from-sapphire-light/60 to-white/10 relative"
-                    >
-                      <ArrowRight size={13} className="absolute -right-1 -top-[6px] text-sapphire-light" />
-                    </motion.div>
-                  </div>
-                  <div className="md:hidden ml-7 h-8 w-px bg-gradient-to-b from-sapphire-light/60 to-white/10" aria-hidden="true" />
-                </>
-              )}
-            </div>
-          );
-        })}
-      </div>
-    </div>
-  </section>
-);
-
 const PricingCard = ({ plan, cycle, onCta }) => {
   const price = plan.prices[cycle.key];
   const perMonth = price / cycle.months;
@@ -246,11 +115,6 @@ const PricingCard = ({ plan, cycle, onCta }) => {
       }`}
       data-testid={`pricing-card-${plan.key}`}
     >
-      {plan.badge && (
-        <span className="absolute -top-3 left-1/2 -translate-x-1/2 rounded-full bg-sapphire-light px-3 py-1 font-mono-ui text-[10px] uppercase tracking-wider text-void font-semibold whitespace-nowrap">
-          {plan.badge}
-        </span>
-      )}
       <h3 className="font-display text-xl font-bold text-white tracking-tight">{plan.name}</h3>
       {plan.tagline && (
         <p className="mt-1.5 font-mono-ui text-[11px] uppercase tracking-[0.1em] text-sapphire-light">{plan.tagline}</p>
@@ -302,38 +166,6 @@ const PricingCard = ({ plan, cycle, onCta }) => {
     </div>
   );
 };
-
-const WhyBlackBox = () => (
-  <section className="relative py-24 md:py-32 border-t border-white/5" data-testid="why-blackbox-section">
-    <div className="container-x">
-      <Reveal className="text-center max-w-2xl mx-auto mb-14 md:mb-16">
-        <h2 className="font-display font-black tracking-tighter text-white text-3xl md:text-5xl leading-[1.05]">
-          Why The Black Box?
-        </h2>
-      </Reveal>
-
-      <div className="flex flex-col md:grid md:grid-cols-2 lg:grid-cols-4 gap-4 md:gap-5 max-w-6xl mx-auto">
-        {WHY.map((item, i) => {
-          const Icon = item.icon;
-          return (
-            <Reveal
-              key={item.title}
-              delay={i * 0.08}
-              className="card-hover rounded-2xl border border-white/10 bg-white/[0.02] p-6"
-              data-testid={`why-blackbox-${i}`}
-            >
-              <span className="flex h-11 w-11 items-center justify-center rounded-xl border border-white/10 bg-white/[0.02]">
-                <Icon size={19} className="text-sapphire-light" />
-              </span>
-              <h3 className="mt-5 font-display text-base font-bold text-white tracking-tight">{item.title}</h3>
-              <p className="mt-2 text-sm text-slate-400 leading-relaxed">{item.body}</p>
-            </Reveal>
-          );
-        })}
-      </div>
-    </div>
-  </section>
-);
 
 const FaqItem = ({ item, isOpen, onClick, testId }) => (
   <div className="border-b border-white/10" data-testid={testId}>
@@ -437,8 +269,6 @@ export default function Pricing() {
           </div>
         </section>
 
-        <HowItWorks />
-
         <section className="relative pb-28 md:pb-40">
           <div className="container-x">
             <div className="flex justify-center mb-12">
@@ -475,7 +305,6 @@ export default function Pricing() {
           </div>
         </section>
 
-        <WhyBlackBox />
         <Faq />
 
         <section className="relative py-16 md:py-20 border-t border-white/5" data-testid="pricing-disclaimer-section">

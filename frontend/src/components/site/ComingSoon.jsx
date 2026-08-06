@@ -80,13 +80,12 @@ export const ComingSoon = () => {
           <div className="absolute -left-24 -bottom-24 w-[320px] h-[320px] rounded-full bg-sapphire-light/10 blur-[100px] pointer-events-none" />
           <WireframeGlobe />
           <div className="relative z-10 max-w-3xl">
-            <p className="overline mb-6">Coming Soon</p>
+            <p className="overline mb-6">Research Updates</p>
             <h2 className="font-display font-black tracking-tighter text-white text-4xl md:text-6xl leading-[1.02]">
-              Platform launching soon.
+              Stay close to the research.
             </h2>
             <p className="mt-6 text-base md:text-lg font-light text-slate-400 max-w-xl">
-              Join the waitlist for early access to our research, systematic
-              frameworks, and market tools.
+              Notes on new research, tools, and market observations — sent as they happen.
             </p>
 
             <form onSubmit={submit} className="mt-10 flex flex-col sm:flex-row gap-4 max-w-xl" data-testid="waitlist-form">
