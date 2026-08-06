@@ -32,6 +32,7 @@ expireAfterSeconds index on `expires_at`, created in server.py) so a page
 view doesn't re-run the full tool-use loop (several LLM round-trips) every
 time.
 """
+import asyncio
 import json
 import logging
 import os
@@ -229,20 +230,68 @@ async def _tool_get_sector_news(db, symbol: str, days: int = 30) -> dict:
     ]}
 
 
+RATE_LIMIT_RETRIES = 3  # separate from MALFORMED_TOOL_CALL_RETRIES -- a 429
+                         # is not a malformed-generation issue, it's Groq's
+                         # real 8000-tokens/minute cap on the on_demand tier
+                         # (confirmed live, 2026-08-05: Lattice v2's Forge/
+                         # Temper/Vault chain called right after a 6-completion
+                         # Crucible debate tripped it -- "Used 4196, Requested
+                         # 4111" against the 8000 limit). The window is
+                         # per-minute and resets on a rolling basis, so a
+                         # short wait-and-retry is the right fix, same as the
+                         # malformed-tool-call retry below.
+RATE_LIMIT_DEFAULT_WAIT = 8.0  # seconds, used when the error gives no
+                                # extractable wait time
+
+
+def _rate_limit_wait_seconds(e: "groq.RateLimitError") -> float:
+    """Groq returns a Retry-After header when present; fall back to parsing
+    "try again in Xs" out of the error body, then a fixed default -- never
+    raises, always returns something retryable."""
+    try:
+        header = e.response.headers.get("retry-after")
+        if header:
+            return float(header) + 0.5
+    except Exception:  # noqa: BLE001
+        pass
+    try:
+        import re
+        m = re.search(r"try again in ([\d.]+)s", str(e))
+        if m:
+            return float(m.group(1)) + 0.5
+    except Exception:  # noqa: BLE001
+        pass
+    return RATE_LIMIT_DEFAULT_WAIT
+
+
 async def _create_completion(client: AsyncGroq, **kwargs):
-    """client.chat.completions.create() with a short retry on a malformed
-    tool-call generation (see MALFORMED_TOOL_CALL_RETRIES docstring) --
-    confirmed live to be a transient per-request issue, not a permanent
-    failure, so a plain retry is the right fix rather than giving up."""
-    last_error = None
-    for attempt in range(MALFORMED_TOOL_CALL_RETRIES + 1):
+    """client.chat.completions.create() with two independent retry budgets:
+    a short retry on a malformed tool-call generation (see
+    MALFORMED_TOOL_CALL_RETRIES docstring -- confirmed live to be a
+    transient per-request issue, so a plain retry is the right fix) and a
+    separate wait-and-retry on Groq's tokens-per-minute rate limit (see
+    RATE_LIMIT_RETRIES docstring). Each exception type gets its own budget
+    so a run that trips the rate limit once doesn't eat into the malformed-
+    call budget, and vice versa."""
+    malformed_attempts = 0
+    rate_limit_attempts = 0
+    while True:
         try:
             return await client.chat.completions.create(**kwargs)
+        except groq.RateLimitError as e:
+            rate_limit_attempts += 1
+            if rate_limit_attempts > RATE_LIMIT_RETRIES:
+                raise
+            wait = _rate_limit_wait_seconds(e)
+            logger.warning("Groq rate limit hit (attempt %d/%d), waiting %.1fs: %s",
+                            rate_limit_attempts, RATE_LIMIT_RETRIES, wait, e)
+            await asyncio.sleep(wait)
         except groq.BadRequestError as e:
-            last_error = e
+            malformed_attempts += 1
+            if malformed_attempts > MALFORMED_TOOL_CALL_RETRIES:
+                raise
             logger.warning("Groq call failed (attempt %d/%d), likely a malformed tool-call generation: %s",
-                            attempt + 1, MALFORMED_TOOL_CALL_RETRIES + 1, e)
-    raise last_error
+                            malformed_attempts, MALFORMED_TOOL_CALL_RETRIES, e)
 
 
 async def _dispatch_tool(db, symbol: str, name: str, tool_input: dict) -> dict:
