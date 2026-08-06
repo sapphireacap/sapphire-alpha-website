@@ -422,7 +422,7 @@ const DirectoryCard = ({ module, index, onAbout }) => {
           <button
             type="button"
             onClick={(e) => { e.preventDefault(); e.stopPropagation(); onAbout(module); }}
-            className="rounded-full border border-white/15 px-3 py-1 font-mono-ui text-[9px] uppercase tracking-wider text-slate-400 whitespace-nowrap shrink-0 hover:border-sapphire-light/50 hover:text-white transition-colors"
+            className="rounded-full border border-white/15 px-3.5 py-1.5 font-mono-ui text-[11px] uppercase tracking-wider text-slate-400 whitespace-nowrap shrink-0 hover:border-sapphire-light/50 hover:text-white transition-colors"
             data-testid={`about-module-${module.slug}`}
           >
             About Module

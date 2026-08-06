@@ -20,6 +20,10 @@ import {
 // `true` to fully restore. Index Vector, Exitline, and Momentum Leaders
 // stay live throughout -- every other module is explicitly `live: false`
 // below (set on each one, not defaulted, so it's never ambiguous).
+// Live modules are listed first (grouped together), paused ones after --
+// `no` is renumbered sequentially to match this visual order rather than
+// the historical build order, so the badge on each card always reads
+// top-to-bottom, left-to-right with no gaps/out-of-order jumps.
 export const MODULES = [
   {
     slug: "index-vector",
@@ -75,23 +79,8 @@ export const MODULES = [
     },
   },
   {
-    slug: "swing-picks",
-    no: "04",
-    kind: "scanner",
-    live: false,
-    scannerKey: "swing_picks",
-    icon: Target,
-    title: "Swing Picks",
-    shortDescription: "Multi-day swing picks with a buy-at level.",
-    overview: {
-      purpose: "Surfaces multi-day swing setups to hold over several sessions, not intraday turnover.",
-      whatItMeasures: "Screens for structural setups that develop over days to weeks, each with a defined buy-at level.",
-      interpret: "Picks here are meant to be held and reviewed over days to weeks, not exited same-day — the buy-at level is the reference entry, not a live trigger.",
-    },
-  },
-  {
     slug: "relative-strength",
-    no: "05",
+    no: "04",
     kind: "matrix",
     live: true,
     icon: Radar,
@@ -104,36 +93,8 @@ export const MODULES = [
     },
   },
   {
-    slug: "sharpe-dashboard",
-    no: "06",
-    kind: "sharpe",
-    live: false,
-    icon: BarChart3,
-    title: "Sharpe Dashboard",
-    shortDescription: "Risk-adjusted stock ranking engine.",
-    overview: {
-      purpose: "Ranks opportunities by risk-adjusted return rather than raw performance.",
-      whatItMeasures: "Computes Sharpe, Sortino, and maximum drawdown across the Nifty 500 for any basket you choose, or the full ranked universe.",
-      interpret: "A higher Sharpe reflects steadier, more risk-efficient returns — useful for comparing very different names on equal footing.",
-    },
-  },
-  {
-    slug: "ewma-scanner",
-    no: "07",
-    kind: "ewma",
-    live: false,
-    icon: Sliders,
-    title: "EWMA Scanner",
-    shortDescription: "Trend acceleration and crossover engine.",
-    overview: {
-      purpose: "Flags trend acceleration and crossover events using a fast/slow moving-average model.",
-      whatItMeasures: "Runs an exponentially-weighted moving-average crossover, with an acceleration filter, against buy-and-hold on any symbol you choose.",
-      interpret: "A fresh bullish crossover suggests emerging upward momentum; a bearish crossover suggests the opposite — always shown against its own buy-and-hold benchmark for context.",
-    },
-  },
-  {
     slug: "breadth-indicator",
-    no: "09",
+    no: "05",
     kind: "breadth",
     live: true,
     icon: Gauge,
@@ -147,7 +108,7 @@ export const MODULES = [
   },
   {
     slug: "options-trend-scanner",
-    no: "10",
+    no: "06",
     kind: "options-trend",
     live: true,
     icon: GitBranch,
@@ -161,7 +122,7 @@ export const MODULES = [
   },
   {
     slug: "market-dashboard",
-    no: "11",
+    no: "07",
     kind: "market-dashboard",
     live: true,
     icon: LayoutDashboard,
@@ -174,8 +135,51 @@ export const MODULES = [
     },
   },
   {
-    slug: "breakout-candidates",
+    slug: "swing-picks",
     no: "08",
+    kind: "scanner",
+    live: false,
+    scannerKey: "swing_picks",
+    icon: Target,
+    title: "Swing Picks",
+    shortDescription: "Multi-day swing picks with a buy-at level.",
+    overview: {
+      purpose: "Surfaces multi-day swing setups to hold over several sessions, not intraday turnover.",
+      whatItMeasures: "Screens for structural setups that develop over days to weeks, each with a defined buy-at level.",
+      interpret: "Picks here are meant to be held and reviewed over days to weeks, not exited same-day — the buy-at level is the reference entry, not a live trigger.",
+    },
+  },
+  {
+    slug: "sharpe-dashboard",
+    no: "09",
+    kind: "sharpe",
+    live: false,
+    icon: BarChart3,
+    title: "Sharpe Dashboard",
+    shortDescription: "Risk-adjusted stock ranking engine.",
+    overview: {
+      purpose: "Ranks opportunities by risk-adjusted return rather than raw performance.",
+      whatItMeasures: "Computes Sharpe, Sortino, and maximum drawdown across the Nifty 500 for any basket you choose, or the full ranked universe.",
+      interpret: "A higher Sharpe reflects steadier, more risk-efficient returns — useful for comparing very different names on equal footing.",
+    },
+  },
+  {
+    slug: "ewma-scanner",
+    no: "10",
+    kind: "ewma",
+    live: false,
+    icon: Sliders,
+    title: "EWMA Scanner",
+    shortDescription: "Trend acceleration and crossover engine.",
+    overview: {
+      purpose: "Flags trend acceleration and crossover events using a fast/slow moving-average model.",
+      whatItMeasures: "Runs an exponentially-weighted moving-average crossover, with an acceleration filter, against buy-and-hold on any symbol you choose.",
+      interpret: "A fresh bullish crossover suggests emerging upward momentum; a bearish crossover suggests the opposite — always shown against its own buy-and-hold benchmark for context.",
+    },
+  },
+  {
+    slug: "breakout-candidates",
+    no: "11",
     kind: "scanner",
     live: false,
     scannerKey: "breakout",
