@@ -99,7 +99,7 @@ db = client[os.environ['DB_NAME']]
 EMAIL_BASE_URL = "https://integrations.emergentagent.com"
 EMAIL_KEY = os.environ.get("EMERGENT_EMAIL_KEY")
 EMAIL_FROM_NAME = os.environ.get("EMAIL_FROM_NAME", "Sapphire Alpha Capital")
-NOTIFY_EMAIL = os.environ.get("NOTIFY_EMAIL", "contact@sapphirealphacapital.com")
+NOTIFY_EMAIL = os.environ.get("NOTIFY_EMAIL", "sapphirealphacapital@gmail.com")
 
 # Auth config
 JWT_SECRET = os.environ.get("JWT_SECRET", "dev-secret-change-me")
