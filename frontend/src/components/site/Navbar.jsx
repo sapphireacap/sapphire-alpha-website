@@ -116,8 +116,8 @@ export const Navbar = () => {
           className="flex items-center gap-3.5 group min-w-0"
           data-testid="nav-logo"
         >
-          <span className="logo-pill p-2 flex items-center justify-center shrink-0 transition-transform duration-300 group-hover:scale-105">
-            <img src={LOGO} alt="Sapphire Alpha Capital" className="h-8 w-8 object-contain" />
+          <span className="logo-pill h-11 w-11 flex items-center justify-center shrink-0 overflow-hidden transition-transform duration-300 group-hover:scale-105">
+            <img src={LOGO} alt="Sapphire Alpha Capital" className="h-[62px] w-[62px] max-w-none object-contain" />
           </span>
           <span className="flex flex-col leading-none text-left">
             <span className="font-display font-extrabold text-white text-[13px] sm:text-base tracking-normal sm:tracking-tight whitespace-nowrap">

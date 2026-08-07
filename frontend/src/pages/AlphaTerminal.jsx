@@ -2,10 +2,9 @@ import { useEffect, useState } from "react";
 import axios from "axios";
 import { motion, AnimatePresence } from "framer-motion";
 import { Link } from "react-router-dom";
-import { ArrowUpRight, TrendingUp, TrendingDown, Minus, ExternalLink, X, Lock, Globe } from "lucide-react";
+import { ArrowUpRight, ChevronRight, TrendingUp, TrendingDown, Minus, ExternalLink, X, Lock, Unlock, Globe, LayoutDashboard, Shield, Zap, Target } from "lucide-react";
 import Navbar from "../components/site/Navbar";
 import Footer from "../components/site/Footer";
-import ParticleField from "../components/site/ParticleField";
 import BiasBadge from "../components/site/BiasBadge";
 import { MODULES } from "./alphaterminal/modules";
 import CryptoDashboard from "./alphaterminal/CryptoDashboard";
@@ -576,9 +575,96 @@ const AboutModuleModal = ({ module, onClose }) => (
   </motion.div>
 );
 
+// Compact top-right info panel -- terminal-wide counterpart to each card's
+// "About Module" popup. Reuses the page's own existing subtitle copy rather
+// than inventing new marketing text.
+const AboutTerminalPanel = ({ onClick }) => (
+  <motion.button
+    type="button"
+    onClick={onClick}
+    initial={{ opacity: 0, y: -12 }}
+    animate={{ opacity: 1, y: 0 }}
+    transition={{ duration: 0.7, ease: EASE, delay: 0.15 }}
+    className="group flex items-center gap-4 rounded-2xl border border-white/10 bg-white/[0.03] px-5 py-4 text-left transition-colors duration-300 hover:border-sapphire-light/40 hover:bg-white/[0.05]"
+    data-testid="about-terminal-panel"
+  >
+    <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-sapphire-light/30 bg-sapphire/15 text-sapphire-light">
+      <LayoutDashboard size={18} />
+    </span>
+    <span>
+      <span className="block font-display text-sm font-bold text-white tracking-tight">About Alpha Terminal</span>
+      <span className="block text-xs font-light text-slate-500 mt-0.5">Explore how our modules give you an edge</span>
+    </span>
+    <ChevronRight size={16} className="text-slate-500 group-hover:text-sapphire-light transition-colors ml-2 shrink-0" />
+  </motion.button>
+);
+
+const AboutTerminalModal = ({ onClose }) => (
+  <motion.div
+    initial={{ opacity: 0 }}
+    animate={{ opacity: 1 }}
+    exit={{ opacity: 0 }}
+    transition={{ duration: 0.25 }}
+    className="fixed inset-0 z-50 flex items-center justify-center bg-void/80 backdrop-blur-sm px-6"
+    onClick={onClose}
+    data-testid="about-terminal-modal-overlay"
+  >
+    <motion.div
+      initial={{ opacity: 0, y: 12, scale: 0.97 }}
+      animate={{ opacity: 1, y: 0, scale: 1 }}
+      exit={{ opacity: 0, y: 8, scale: 0.98 }}
+      transition={{ duration: 0.25, ease: EASE }}
+      onClick={(e) => e.stopPropagation()}
+      className="relative w-full max-w-md rounded-2xl border border-white/10 bg-[#0A0D18] p-6 md:p-7"
+      data-testid="about-terminal-modal"
+    >
+      <button
+        type="button"
+        onClick={onClose}
+        className="absolute top-4 right-4 text-slate-500 hover:text-white transition-colors"
+        data-testid="about-terminal-close"
+      >
+        <X size={18} />
+      </button>
+      <p className="font-mono-ui text-[10px] uppercase tracking-[0.2em] text-sapphire-light mb-2">About Alpha Terminal</p>
+      <h3 className="font-display text-xl font-bold text-white tracking-tight mb-4">Market Intelligence</h3>
+      <p className="text-sm text-slate-300 leading-relaxed">
+        Research modules and screening engines for disciplined investors. Each module runs its own model against
+        live market data -- open one to see its current reading, or tap "About Module" on any card for what it
+        measures and how to interpret it.
+      </p>
+    </motion.div>
+  </motion.div>
+);
+
+// Bottom-of-page trust strip -- same four pillars on every market tab.
+const FEATURE_STRIP = [
+  { icon: Shield, title: "Data-Driven", description: "Built on robust quantitative models and real market data." },
+  { icon: Zap, title: "Systematic Edge", description: "Remove emotion. Follow the data. Stay consistent." },
+  { icon: Unlock, title: "Transparent", description: "No hidden black boxes. Just clear logic." },
+  { icon: Target, title: "Built for Traders", description: "From intraday scalpers to swing traders. Every module serves a purpose." },
+];
+
+const FeatureStrip = () => (
+  <div className="border-t border-white/[0.06] pt-10 mt-16 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-8" data-testid="terminal-feature-strip">
+    {FEATURE_STRIP.map(({ icon: Icon, title, description }) => (
+      <div key={title} className="flex items-start gap-3.5">
+        <span className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-white/10 bg-white/[0.03] text-slate-400">
+          <Icon size={16} />
+        </span>
+        <span>
+          <span className="block text-sm font-semibold text-white">{title}</span>
+          <span className="block text-xs font-light text-slate-500 mt-1 leading-relaxed">{description}</span>
+        </span>
+      </div>
+    ))}
+  </div>
+);
+
 /* --------------------------------- Directory --------------------------------- */
 export default function AlphaTerminal() {
   const [aboutModule, setAboutModule] = useState(null);
+  const [aboutTerminalOpen, setAboutTerminalOpen] = useState(false);
   const [activeMarket, setActiveMarket] = useState("india");
   useEffect(() => { window.scrollTo(0, 0); }, []);
   const market = MARKETS.find((m) => m.id === activeMarket) || MARKETS[0];
@@ -587,29 +673,35 @@ export default function AlphaTerminal() {
     <>
       <Navbar />
       <main className="relative bg-void min-h-screen">
-        <section className="relative pt-28 pb-14 md:pt-36 md:pb-16 overflow-hidden" data-testid="terminal-hero">
-          <ParticleField density={0.00006} />
-          <div className="absolute inset-0 terminal-grid-bg opacity-40" />
-          <div className="absolute inset-0 radial-glow" />
-          <div className="absolute inset-0 bg-gradient-to-b from-void/0 to-void pointer-events-none" />
-          <div className="container-x relative z-10">
-            <motion.h1
-              initial={{ opacity: 0, y: 24 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.9, ease: EASE, delay: 0.1 }}
-              className="font-display font-black tracking-tighter text-white text-5xl md:text-6xl leading-[0.95]"
-            >
-              Market Intelligence
-            </motion.h1>
-            <motion.p
-              initial={{ opacity: 0, y: 24 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.9, ease: EASE, delay: 0.2 }}
-              className="mt-6 text-base md:text-lg font-light text-slate-400 leading-relaxed max-w-2xl"
-              data-testid="terminal-subtitle"
-            >
-              Research modules and screening engines for disciplined investors.
-            </motion.p>
+        <section className="relative pt-28 pb-8 md:pt-32 md:pb-10" data-testid="terminal-hero">
+          <div className="container-x">
+            <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-6">
+              <div>
+                <motion.div
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ duration: 0.7, ease: EASE }}
+                  className="flex items-center gap-4"
+                >
+                  <span className="inline-flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl border border-sapphire-light/30 bg-sapphire/15 text-sapphire-light">
+                    <LayoutDashboard size={24} />
+                  </span>
+                  <h1 className="font-display font-black tracking-tighter text-white text-4xl md:text-5xl leading-[0.95]">
+                    Market Intelligence
+                  </h1>
+                </motion.div>
+                <motion.p
+                  initial={{ opacity: 0, y: 16 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ duration: 0.7, ease: EASE, delay: 0.1 }}
+                  className="mt-4 text-sm md:text-base font-light text-slate-400 leading-relaxed max-w-lg"
+                  data-testid="terminal-subtitle"
+                >
+                  Research modules and screening engines for disciplined investors.
+                </motion.p>
+              </div>
+              <AboutTerminalPanel onClick={() => setAboutTerminalOpen(true)} />
+            </div>
             <MarketSelector active={activeMarket} onChange={setActiveMarket} />
           </div>
         </section>
@@ -636,19 +728,21 @@ export default function AlphaTerminal() {
                   animate={{ opacity: 1 }}
                   exit={{ opacity: 0 }}
                   transition={{ duration: 0.25, ease: EASE }}
-                  className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5"
+                  className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5"
                   data-testid="module-directory"
                 >
                   {MODULES.map((m, i) => <DirectoryCard key={m.slug} module={m} index={i} onAbout={setAboutModule} />)}
                 </motion.div>
               )}
             </AnimatePresence>
+            {market.available && market.id !== "crypto" && <FeatureStrip />}
           </div>
         </section>
       </main>
       <Footer />
       <AnimatePresence>
         {aboutModule && <AboutModuleModal module={aboutModule} onClose={() => setAboutModule(null)} />}
+        {aboutTerminalOpen && <AboutTerminalModal onClose={() => setAboutTerminalOpen(false)} />}
       </AnimatePresence>
     </>
   );

@@ -33,8 +33,8 @@ export const Footer = () => {
         <div className="flex flex-col md:grid md:grid-cols-12 gap-x-8 gap-y-12 pb-24">
           <div className="md:col-span-4">
             <div className="flex items-center gap-3.5 mb-6">
-              <span className="logo-pill p-2 flex items-center justify-center">
-                <img src={LOGO} alt="Sapphire Alpha Capital" className="h-8 w-8 object-contain" />
+              <span className="logo-pill h-11 w-11 flex items-center justify-center overflow-hidden">
+                <img src={LOGO} alt="Sapphire Alpha Capital" className="h-[62px] w-[62px] max-w-none object-contain" />
               </span>
               <span className="font-display font-extrabold text-white text-lg tracking-tight">SAPPHIRE ALPHA CAPITAL</span>
             </div>
