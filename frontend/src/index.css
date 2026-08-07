@@ -265,8 +265,11 @@ body {
         box-shadow: 0 1px 0 rgba(255, 255, 255, 0.16) inset, 0 0 40px rgba(67, 126, 235, 0.55), 0 12px 32px -12px rgba(31, 95, 208, 0.65);
         transform: scale(1.03);
     }
+    /* Press feedback must land in ~1 frame, not share the 0.25s hover
+       transition -- a delayed press reads as latency, not softness. */
     .btn-sapphire:active {
         transform: scale(0.97);
+        transition-duration: 0.08s;
     }
 
     .btn-ghost {
@@ -280,6 +283,7 @@ body {
     }
     .btn-ghost:active {
         transform: scale(0.97);
+        transition-duration: 0.08s;
     }
 }
 

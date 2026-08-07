@@ -405,6 +405,7 @@ const DirectoryCard = ({ module, index, onAbout }) => {
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.6, ease: EASE, delay: index * 0.06 }}
+      whileTap={{ scale: 0.97 }}
     >
       <Link
         to={`/alpha-terminal/${module.slug}`}
