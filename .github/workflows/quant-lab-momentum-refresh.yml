@@ -1,0 +1,31 @@
+name: Quant Lab — Momentum Dashboard daily refresh
+
+# Recomputes 12-1 risk-adjusted momentum score for all Nifty 500
+# constituents once daily after NSE close. /quant-lab/admin/momentum-refresh
+# only kicks off the background job and returns immediately (a full Nifty
+# 500 pass is a multi-minute job) -- this cron just triggers it, it doesn't
+# wait for completion. Was manual-only via the admin panel button; this is
+# the same automation breadth-refresh.yml already does for its own cache.
+# 10:15 UTC = 15:45 IST, 15 min after NSE's 15:30 IST close so the day's
+# candle is finalised, weekdays only.
+on:
+  schedule:
+    - cron: "15 10 * * 1-5"
+  workflow_dispatch: {}
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Call quant-lab/admin/momentum-refresh
+        run: |
+          status=$(curl -s -o response.json -w "%{http_code}" -X POST \
+            "https://sapphire-alpha-backend.onrender.com/api/quant-lab/admin/momentum-refresh" \
+            -H "X-Cron-Key: ${{ secrets.CRON_SECRET }}")
+          echo "HTTP status: $status"
+          cat response.json
+          echo
+          if [ "$status" != "200" ]; then
+            echo "::error::quant-lab/admin/momentum-refresh failed with status $status"
+            exit 1
+          fi
