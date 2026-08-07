@@ -10,8 +10,8 @@ const NotFound = () => (
         <Link to="/" className="inline-flex items-center gap-2 text-slate-400 hover:text-white transition-colors text-sm" data-testid="not-found-home-link">
           <ArrowLeft size={16} /> Back to home
         </Link>
-        <span className="logo-pill h-9 w-9 flex items-center justify-center overflow-hidden">
-          <img src={LOGO} alt="Sapphire Alpha Capital" className="h-[50px] w-[50px] max-w-none object-contain" />
+        <span className="logo-pill p-1.5 flex items-center justify-center">
+          <img src={LOGO} alt="Sapphire Alpha Capital" className="h-6 w-6 object-contain" />
         </span>
       </div>
 
