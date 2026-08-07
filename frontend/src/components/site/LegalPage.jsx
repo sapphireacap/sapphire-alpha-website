@@ -14,7 +14,7 @@ const CONTENT = {
       { h: "Information We Collect", p: "We collect the email address you provide when joining our waitlist, and the name, email, company, and message you submit through our contact form. We do not collect payment or sensitive financial information at this time." },
       { h: "How We Use Information", p: "We use the information solely to notify you about platform availability, respond to your enquiries, and share relevant research updates. We do not sell or rent your personal data to third parties." },
       { h: "Data Storage & Security", p: "Submitted information is stored securely and access is limited to authorised personnel. We apply reasonable technical and organisational measures to protect it." },
-      { h: "Your Rights", p: "You may request access to, correction of, or deletion of your personal data at any time by emailing contact@sapphirealphacapital.com." },
+      { h: "Your Rights", p: "You may request access to, correction of, or deletion of your personal data at any time by emailing care@sapphirealpha.com." },
       { h: "Cookies", p: "Our site uses only essential cookies required for basic functionality. We do not use advertising or third-party tracking cookies." },
     ],
   },
