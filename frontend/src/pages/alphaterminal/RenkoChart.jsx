@@ -546,7 +546,18 @@ const RenkoChart = () => {
       .slice(0, 120);
   }, [data, onlyMajor, onlyActive]);
 
-  const bias = data?.summary?.bias || "neutral";
+  // The header label sits directly next to Cont./Rev., which are computed
+  // off the LITERAL last-printed brick's direction (renko_chart.py's
+  // current_swing) - so this label has to track that same thing, not
+  // data.summary.bias (a separate pattern-vote composite across the whole
+  // chart's active patterns). The two can disagree - e.g. many more
+  // bullish than bearish patterns historically active, but the very last
+  // brick is a bearish pullback - and showing the pattern-vote label next
+  // to brick-direction levels made Cont. read as sitting BELOW Rev. while
+  // still labeled "Bullish", which looks inverted/wrong even though the
+  // underlying numbers were always correct for the real last-brick direction.
+  const swingDirection = data?.summary?.current_swing?.direction;
+  const bias = swingDirection === "up" ? "bullish" : swingDirection === "down" ? "bearish" : "neutral";
   const BiasIcon = BIAS_STYLE[bias].Icon;
 
   return (
