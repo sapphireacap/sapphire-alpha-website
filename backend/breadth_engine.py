@@ -67,11 +67,21 @@ def compute_breadth_series(closes_by_symbol: dict, box_pct: float = DEFAULT_BOX_
     the start of the series, same "unresolved" honesty as
     relative_strength_matrix.compute_matrix — never padded to make the
     denominator look fuller than it is)."""
-    total = len(closes_by_symbol)
     per_symbol_directions = {
         s: direction_by_date(closes, box_pct, reversal_boxes)
         for s, closes in closes_by_symbol.items()
     }
+    return compute_breadth_series_from_directions(per_symbol_directions, total=len(closes_by_symbol))
+
+
+def compute_breadth_series_from_directions(per_symbol_directions: dict, total: int) -> list:
+    """Same aggregation as compute_breadth_series, but takes each symbol's
+    already-computed {date: direction} map directly. Lets a caller discard
+    each symbol's raw multi-year close history right after computing its
+    direction map, instead of holding every group member's full price
+    history in memory at once until the very end — see breadth_routes.py's
+    _refresh_group, the actual 500-symbol Nifty 500 job this split was
+    written for."""
     all_dates = sorted(set.union(*(set(d.keys()) for d in per_symbol_directions.values())) if total else set())
 
     series = []

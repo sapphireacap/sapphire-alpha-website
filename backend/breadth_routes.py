@@ -117,26 +117,43 @@ def create_breadth_router(db, definedge, get_current_admin, cron_secret: str) ->
         semaphore = asyncio.Semaphore(MAX_CONCURRENT_FETCHES)
         counters = {"done": 0, "resolved": 0, "failed": 0}
         counters_lock = asyncio.Lock()
-        closes_by_symbol = {}
+        directions_by_symbol = {}
 
         async def worker(symbol):
-            async with semaphore:
-                closes = await _closes_for(symbol, master)
-            async with counters_lock:
-                counters["done"] += 1
-                if closes:
-                    counters["resolved"] += 1
-                    closes_by_symbol[symbol] = closes
-                else:
-                    counters["failed"] += 1
-                await db[REFRESH_STATUS_COLLECTION].update_one(
-                    {"id": status_id},
-                    {"$set": {"done": counters["done"], "resolved": counters["resolved"], "failed": counters["failed"]}},
-                )
+            # Whole body guarded, including the counters/DB-write tail — one
+            # symbol's unexpected exception (a bad Definedge response shape,
+            # a P&F edge case, a transient Mongo write blip) must never take
+            # down asyncio.gather() below and silently kill the other 499 in
+            # flight, which is what left this job stuck mid-run indefinitely
+            # (same per-symbol guard quant_lab.py's Sharpe/Momentum refresh
+            # workers already use for this exact 500-symbol shape).
+            try:
+                async with semaphore:
+                    closes = await _closes_for(symbol, master)
+                # Computed and discarded here, per symbol, rather than kept
+                # in one big closes_by_symbol dict for all 500 members until
+                # the final aggregation — holding every member's full
+                # multi-year close history in memory simultaneously was the
+                # other half of what was pushing this job over Render's
+                # free-tier memory limit mid-run.
+                directions = be.direction_by_date(closes) if closes else None
+                async with counters_lock:
+                    counters["done"] += 1
+                    if closes:
+                        counters["resolved"] += 1
+                        directions_by_symbol[symbol] = directions
+                    else:
+                        counters["failed"] += 1
+                    await db[REFRESH_STATUS_COLLECTION].update_one(
+                        {"id": status_id},
+                        {"$set": {"done": counters["done"], "resolved": counters["resolved"], "failed": counters["failed"]}},
+                    )
+            except Exception:  # noqa: BLE001
+                logger.exception("Breadth refresh failed for %s", symbol)
 
         await asyncio.gather(*(worker(s) for s in symbols), _refresh_index_candles())
 
-        series = be.compute_breadth_series(closes_by_symbol) if closes_by_symbol else []
+        series = be.compute_breadth_series_from_directions(directions_by_symbol, total=total) if directions_by_symbol else []
         today_ist = datetime.now(IST).strftime("%Y-%m-%d")
         await db[SERIES_CACHE_COLLECTION].update_one(
             {"group": group_key},
