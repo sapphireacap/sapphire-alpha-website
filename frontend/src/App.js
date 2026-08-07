@@ -1,5 +1,5 @@
 import "@/App.css";
-import { useEffect } from "react";
+import { useEffect, lazy, Suspense } from "react";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { Toaster } from "sonner";
 
@@ -15,28 +15,33 @@ import Contact from "@/components/site/Contact";
 import Footer from "@/components/site/Footer";
 import LegalPage from "@/components/site/LegalPage";
 import NotFound from "@/components/site/NotFound";
-import AlphaTerminal from "@/pages/AlphaTerminal";
-import BlackBox from "@/pages/BlackBox";
-import ModuleDetail from "@/pages/alphaterminal/ModuleDetail";
-import PnfChart from "@/pages/alphaterminal/PnfChart";
-import PnfStudio from "@/pages/PnfStudio";
-import RenkoChart from "@/pages/alphaterminal/RenkoChart";
-import RenkoStudio from "@/pages/RenkoStudio";
-import Ipos from "@/pages/Ipos";
-import IpoDetail from "@/pages/IpoDetail";
-import Pricing from "@/pages/Pricing";
-import Aurora from "@/pages/research/Aurora";
-import FacetView from "@/pages/research/FacetView";
-import LatticeHome from "@/pages/lattice/LatticeHome";
-import LatticeRun from "@/pages/lattice/LatticeRun";
-import Admin from "@/pages/Admin";
-import { SignupPage, LoginPage, ForgotPasswordPage, ResetPasswordPage, VerifyEmailPage } from "@/pages/Auth";
+import LoadingBar from "@/components/site/LoadingBar";
 import { installAuthInterceptor, RequirePnfAccess } from "@/lib/auth";
-import JournalLayout from "@/pages/journal/JournalLayout";
-import Dashboard from "@/pages/journal/Dashboard";
-import TradeEntry from "@/pages/journal/TradeEntry";
-import TradeLog from "@/pages/journal/TradeLog";
-import Reviews from "@/pages/journal/Reviews";
+
+// Everything below is only needed once a visitor navigates to that specific
+// route, so it's code-split out of the initial bundle instead of shipping
+// the trading terminal / chart studios / admin panel to every landing-page
+// visitor up front.
+const AlphaTerminal = lazy(() => import("@/pages/AlphaTerminal"));
+const BlackBox = lazy(() => import("@/pages/BlackBox"));
+const ModuleDetail = lazy(() => import("@/pages/alphaterminal/ModuleDetail"));
+const PnfChart = lazy(() => import("@/pages/alphaterminal/PnfChart"));
+const PnfStudio = lazy(() => import("@/pages/PnfStudio"));
+const RenkoChart = lazy(() => import("@/pages/alphaterminal/RenkoChart"));
+const RenkoStudio = lazy(() => import("@/pages/RenkoStudio"));
+const Ipos = lazy(() => import("@/pages/Ipos"));
+const IpoDetail = lazy(() => import("@/pages/IpoDetail"));
+const Pricing = lazy(() => import("@/pages/Pricing"));
+const Aurora = lazy(() => import("@/pages/research/Aurora"));
+const FacetView = lazy(() => import("@/pages/research/FacetView"));
+const LatticeHome = lazy(() => import("@/pages/lattice/LatticeHome"));
+const LatticeRun = lazy(() => import("@/pages/lattice/LatticeRun"));
+const Admin = lazy(() => import("@/pages/Admin"));
+const SignupPage = lazy(() => import("@/pages/Auth").then((m) => ({ default: m.SignupPage })));
+const LoginPage = lazy(() => import("@/pages/Auth").then((m) => ({ default: m.LoginPage })));
+const ForgotPasswordPage = lazy(() => import("@/pages/Auth").then((m) => ({ default: m.ForgotPasswordPage })));
+const ResetPasswordPage = lazy(() => import("@/pages/Auth").then((m) => ({ default: m.ResetPasswordPage })));
+const VerifyEmailPage = lazy(() => import("@/pages/Auth").then((m) => ({ default: m.VerifyEmailPage })));
 
 const Landing = () => (
   <>
@@ -61,6 +66,7 @@ const AppShell = () => {
       <div className="grain" />
       <BrowserRouter>
         <SmoothScroll>
+          <Suspense fallback={<LoadingBar />}>
           <Routes>
             <Route path="/" element={<Landing />} />
             <Route path="/alpha-terminal" element={<AlphaTerminal />} />
@@ -112,6 +118,7 @@ const AppShell = () => {
             <Route path="/disclaimer" element={<LegalPage page="disclaimer" />} />
             <Route path="*" element={<NotFound />} />
           </Routes>
+          </Suspense>
         </SmoothScroll>
       </BrowserRouter>
       <Toaster

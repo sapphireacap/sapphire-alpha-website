@@ -14,6 +14,8 @@ export const ParticleField = ({ density = 0.00009, className = "" }) => {
     let height = 0;
     let nodes = [];
     let raf;
+    let running = false;
+    let visible = true;
 
     const build = () => {
       const rect = canvas.parentElement.getBoundingClientRect();
@@ -77,11 +79,35 @@ export const ParticleField = ({ density = 0.00009, className = "" }) => {
         ctx.fillStyle = "rgba(120, 165, 245, 0.7)";
         ctx.fill();
       }
+      if (running) raf = requestAnimationFrame(draw);
+    };
+
+    const start = () => {
+      if (running) return;
+      running = true;
       raf = requestAnimationFrame(draw);
+    };
+    const stop = () => {
+      running = false;
+      cancelAnimationFrame(raf);
     };
 
     build();
-    draw();
+    // Only animate while the canvas is actually on screen — most instances
+    // of this field sit below the fold or on routes scrolled past, so this
+    // avoids burning CPU on invisible frames.
+    const io = new IntersectionObserver(([entry]) => {
+      visible = entry.isIntersecting;
+      if (visible && document.visibilityState === "visible") start();
+      else stop();
+    });
+    io.observe(canvas);
+
+    const onVisibilityChange = () => {
+      if (document.visibilityState === "visible" && visible) start();
+      else stop();
+    };
+    document.addEventListener("visibilitychange", onVisibilityChange);
 
     const onResize = () => build();
     const onMove = (e) => {
@@ -95,7 +121,9 @@ export const ParticleField = ({ density = 0.00009, className = "" }) => {
     canvas.parentElement.addEventListener("mouseleave", onLeave);
 
     return () => {
-      cancelAnimationFrame(raf);
+      stop();
+      io.disconnect();
+      document.removeEventListener("visibilitychange", onVisibilityChange);
       window.removeEventListener("resize", onResize);
       canvas.parentElement.removeEventListener("mousemove", onMove);
       canvas.parentElement.removeEventListener("mouseleave", onLeave);

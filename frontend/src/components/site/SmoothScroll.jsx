@@ -17,9 +17,21 @@ export const SmoothScroll = ({ children }) => {
       lenis.raf(time);
       rafId = requestAnimationFrame(raf);
     };
+
+    // Pause the rAF loop while the tab is backgrounded -- no point driving
+    // scroll physics for a page nobody is looking at.
+    const onVisibilityChange = () => {
+      if (document.visibilityState === "visible") {
+        rafId = requestAnimationFrame(raf);
+      } else {
+        cancelAnimationFrame(rafId);
+      }
+    };
+    document.addEventListener("visibilitychange", onVisibilityChange);
     rafId = requestAnimationFrame(raf);
 
     return () => {
+      document.removeEventListener("visibilitychange", onVisibilityChange);
       cancelAnimationFrame(rafId);
       lenis.destroy();
       window.__lenis = null;
