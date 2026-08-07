@@ -99,10 +99,11 @@ mongo_url = os.environ['MONGO_URL']
 client = AsyncIOMotorClient(mongo_url)
 db = client[os.environ['DB_NAME']]
 
-# Email (Emergent managed Resend) — base URL is a constant, never from env.
-EMAIL_BASE_URL = "https://integrations.emergentagent.com"
-EMAIL_KEY = os.environ.get("EMERGENT_EMAIL_KEY")
+# Email (Resend, called directly) — base URL is a constant, never from env.
+RESEND_BASE_URL = "https://api.resend.com"
+RESEND_API_KEY = os.environ.get("RESEND_API_KEY")
 EMAIL_FROM_NAME = os.environ.get("EMAIL_FROM_NAME", "Sapphire Alpha Capital")
+EMAIL_FROM_ADDRESS = "no-reply@sapphirealpha.com"
 NOTIFY_EMAIL = os.environ.get("NOTIFY_EMAIL", "sapphirealphacapital@gmail.com")
 
 # Auth config
@@ -219,22 +220,22 @@ class Contact(BaseModel):
 # Email helper
 # ---------------------------------------------------------------------------
 async def send_email(recipient: str, subject: str, html: str, reply_to: Optional[str] = None):
-    if not EMAIL_KEY:
-        logger.warning("EMERGENT_EMAIL_KEY not set — skipping email send.")
+    if not RESEND_API_KEY:
+        logger.warning("RESEND_API_KEY not set — skipping email send.")
         return
     payload = {
+        "from": f"{EMAIL_FROM_NAME} <{EMAIL_FROM_ADDRESS}>",
         "to": [recipient],
         "subject": subject,
         "html": html,
-        "from_name": EMAIL_FROM_NAME,
     }
     if reply_to:
-        payload["contact_email"] = reply_to
+        payload["reply_to"] = reply_to
     try:
         async with httpx.AsyncClient(timeout=30) as http_client:
             resp = await http_client.post(
-                f"{EMAIL_BASE_URL}/api/v1/email/send",
-                headers={"X-Email-Key": EMAIL_KEY},
+                f"{RESEND_BASE_URL}/emails",
+                headers={"Authorization": f"Bearer {RESEND_API_KEY}"},
                 json=payload,
             )
         resp.raise_for_status()
