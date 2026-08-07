@@ -35,8 +35,12 @@ import zxcvbn
 # `/terminal/stocks` endpoint so aren't separately gate-able here -- their
 # own cron refreshes are paused instead, see the .github/workflows/ files),
 # IPO/GMP, the new Convexity Window / Gamma Backspread options strategies.
-# Paused: Journal (+ its analytics router), Quant Lab (Sharpe Dashboard +
-# Momentum Dashboard + EWMA Scanner), Stock Terminal / Research (Aurora/Facet View).
+# Quant Lab RE-ENABLED 2026-08-07 per explicit instruction ("yes live it") --
+# Momentum Dashboard (module 09) is now live; Sharpe Dashboard/EWMA Scanner's
+# backend routes come back too since they share this one router, but their
+# own modules.js `live` flag stays false so they still show as paused on the
+# public site -- only their admin-panel refresh buttons are now functional.
+# Paused: Journal (+ its analytics router), Stock Terminal / Research (Aurora/Facet View).
 # `blackbox_legacy` (Prism Alpha, Prism Alpha II, Lumen SIP module/router)
 # RE-ENABLED 2026-08-04 per explicit instruction ("prism alpha 2 on") --
 # only Prism Alpha 2 actually evaluates live though, see
@@ -48,7 +52,7 @@ import zxcvbn
 # "blackbox_legacy" here if crash-restarts resume.
 DISABLED_FEATURES = set(
     f.strip() for f in os.environ.get(
-        "DISABLED_FEATURES", "journal,quant_lab"
+        "DISABLED_FEATURES", "journal"
     ).split(",") if f.strip()
 )
 

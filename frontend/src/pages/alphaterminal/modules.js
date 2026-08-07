@@ -153,7 +153,7 @@ export const MODULES = [
     slug: "momentum-investing",
     no: "09",
     kind: "momentum-investing",
-    live: false,
+    live: true,
     icon: Flame,
     title: "Momentum Investing",
     shortDescription: "Risk-adjusted momentum ranking across the Nifty 500.",
