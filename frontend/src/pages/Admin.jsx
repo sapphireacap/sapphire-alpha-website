@@ -460,12 +460,11 @@ const IndexTrackRecordPanel = ({ onAuthError }) => {
 };
 
 /* ----------------------------- Quant Lab ----------------------------- */
-// PAUSED (2026-07-29, to cut backend memory/load) -- quant_lab_router isn't
-// mounted on the backend right now (see server.py's DISABLED_FEATURES), so
-// this panel's calls would just 404/no-op. Same pattern as
-// LEGACY_BLACKBOX_PAUSED above: nothing deleted, flip back to false once
-// the backend router is re-enabled.
-const QUANT_LAB_PAUSED = true;
+// RE-ENABLED 2026-08-07 alongside the Momentum Dashboard going live --
+// quant_lab_router is mounted on the backend again (see server.py's
+// DISABLED_FEATURES). Flip back to true if the backend router gets paused
+// again for memory reasons.
+const QUANT_LAB_PAUSED = false;
 
 // Shared by the Sharpe and Momentum refresh cards below — same shape
 // (status poll, refresh-now button, status line), differing only in the
