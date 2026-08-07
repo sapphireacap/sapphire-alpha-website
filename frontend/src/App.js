@@ -16,7 +16,8 @@ import Footer from "@/components/site/Footer";
 import LegalPage from "@/components/site/LegalPage";
 import NotFound from "@/components/site/NotFound";
 import LoadingBar from "@/components/site/LoadingBar";
-import { installAuthInterceptor, RequirePnfAccess } from "@/lib/auth";
+import { installAuthInterceptor, RequirePnfAccess, RequireAuth } from "@/lib/auth";
+import { TRADER_TOKEN_KEY } from "@/pages/Auth";
 
 // Everything below is only needed once a visitor navigates to that specific
 // route, so it's code-split out of the initial bundle instead of shipping
@@ -94,8 +95,8 @@ const AppShell = () => {
                 stock_terminal backend infra. */}
             <Route path="/research" element={<Aurora />} />
             <Route path="/research/:symbol" element={<FacetView />} />
-            <Route path="/lattice" element={<LatticeHome />} />
-            <Route path="/lattice/:symbol" element={<LatticeRun />} />
+            <Route path="/lattice" element={<RequireAuth tokenKey={TRADER_TOKEN_KEY} loginPath="/login"><LatticeHome /></RequireAuth>} />
+            <Route path="/lattice/:symbol" element={<RequireAuth tokenKey={TRADER_TOKEN_KEY} loginPath="/login"><LatticeRun /></RequireAuth>} />
             <Route path="/admin33" element={<Admin />} />
             <Route path="/signup" element={<SignupPage />} />
             <Route path="/login" element={<LoginPage />} />
