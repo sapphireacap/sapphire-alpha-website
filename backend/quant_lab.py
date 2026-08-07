@@ -1,5 +1,5 @@
 """
-Quant Lab — EWMA Crossover backtester (first of 5 planned Quant Lab tools).
+Quant Lab — EWMA Crossover backtester (first of several Quant Lab tools).
 Mounted under /api by server.py via create_quant_lab_router(db, definedge),
 same factory pattern as journal_routes.py/journal_analytics.py (avoids a
 circular import with server.py). Public — no auth, like the other
@@ -321,6 +321,165 @@ class SharpeDashboardRequest(BaseModel):
     top_n: int = Field(default=10, ge=1, le=20)
 
 
+# ---------------------------------------------------------------------------
+# Risk-Adjusted Momentum Dashboard (Nifty 500 universe) — mirrors the Sharpe
+# section above exactly (same universe fetch, cache-or-compute shape, admin
+# refresh, "compare"/"top" request modes). Only _compute_momentum_stats and
+# its cache/refresh wrappers differ.
+#
+# Methodology (standard academic momentum factor, e.g. Jegadeesh & Titman
+# 1993 "12-1 momentum", used industry-wide — not tied to any one source):
+#   - raw_return = trailing 12-month return, skipping the most recent 1
+#     month (the "12-1" convention: the most recent month is excluded
+#     because short-term price moves tend to mean-revert rather than
+#     continue, which would otherwise work against a momentum read).
+#   - volatility = annualized stdev of daily returns over that same
+#     12-1-month window.
+#   - momentum_score = raw_return / volatility — a risk-adjusted momentum
+#     score, so a stock that grinds steadily higher ranks above one that
+#     produced the same return through wild, choppy swings.
+# ---------------------------------------------------------------------------
+MOMENTUM_LOOKBACK_DAYS = 252  # ~12 months of trading days
+MOMENTUM_SKIP_DAYS = 21  # ~1 month, excluded from the lookback (the "-1" in "12-1")
+MIN_BARS_FOR_MOMENTUM = MOMENTUM_LOOKBACK_DAYS + MOMENTUM_SKIP_DAYS
+
+
+def _compute_momentum_stats(bars: list) -> Optional[dict]:
+    """Pure function, no I/O — same None-when-insufficient-history contract
+    as _compute_risk_stats. The 12-1 window is [t - 252, t - 21] trading
+    days back from the latest bar; daily returns within that same window
+    (not the full skip-adjusted range) feed the volatility figure, since
+    that's the window the return figure itself was earned over."""
+    df = pd.DataFrame(bars)
+    if len(df) < MIN_BARS_FOR_MOMENTUM:
+        return None
+
+    df["date"] = pd.to_datetime(df["date"])
+    df = df.sort_values("date").reset_index(drop=True)
+    close = df["close"]
+
+    window = close.iloc[-MOMENTUM_LOOKBACK_DAYS:-MOMENTUM_SKIP_DAYS]
+    if len(window) < 2:
+        return None
+
+    raw_return = float(window.iloc[-1] / window.iloc[0] - 1)
+    daily_return = window.pct_change().dropna()
+    if daily_return.empty:
+        return None
+    volatility = daily_return.std() * math.sqrt(TRADING_DAYS_PER_YEAR)
+    momentum_score = raw_return / volatility if volatility else float("nan")
+
+    return {
+        "stats": {
+            "momentum_score": _clean(momentum_score),
+            "return_12_1": _clean(raw_return),
+            "volatility": _clean(volatility),
+        },
+        "bars_used": len(df),
+        "history_from": df["date"].iloc[0].date().isoformat(),
+        "history_to": df["date"].iloc[-1].date().isoformat(),
+    }
+
+
+async def _get_or_compute_momentum(db, definedge, master_df, symbol: str) -> Optional[dict]:
+    today_ist = datetime.now(IST).strftime("%Y-%m-%d")
+    cached = await db.quant_lab_momentum_cache.find_one({"symbol": symbol}, {"_id": 0})
+    if cached and cached.get("computed_date") == today_ist:
+        cached["cached"] = True
+        return cached
+
+    resolved = definedge.resolve_symbol(master_df, "NSE", symbol)
+    if resolved is None:
+        return None
+    try:
+        bars = await definedge.daily_history("NSE", resolved["token"], years=10)
+    except DefinedgeError:
+        return None
+    if not bars:
+        return None
+    momentum = _compute_momentum_stats(bars)
+    if momentum is None:
+        return None
+
+    doc = {
+        "symbol": symbol,
+        "resolved_symbol": resolved.get("tradingsymbol", symbol),
+        **momentum,
+        "computed_date": today_ist,
+        "computed_at": datetime.now(timezone.utc).isoformat(),
+    }
+    await db.quant_lab_momentum_cache.update_one({"symbol": symbol}, {"$set": doc}, upsert=True)
+    doc["cached"] = False
+    return doc
+
+
+async def _refresh_momentum_cache(db, definedge):
+    """Runs as a FastAPI BackgroundTask — same shape as _refresh_nifty500_cache,
+    just scoring momentum instead of Sharpe/Sortino."""
+    now_iso = lambda: datetime.now(timezone.utc).isoformat()  # noqa: E731
+    try:
+        universe = await _fetch_nifty500_list()
+    except Exception as e:  # noqa: BLE001
+        logger.exception("Nifty 500 list fetch failed during momentum refresh")
+        await db.quant_lab_momentum_refresh_status.update_one(
+            {"id": "current"},
+            {"$set": {"id": "current", "status": "done", "completed_at": now_iso(), "error": str(e)}},
+            upsert=True,
+        )
+        return
+
+    total = len(universe)
+    await db.quant_lab_momentum_refresh_status.update_one(
+        {"id": "current"},
+        {"$set": {
+            "id": "current", "status": "running", "started_at": now_iso(), "completed_at": None,
+            "total": total, "done": 0, "cached": 0, "failed": 0, "error": None,
+        }},
+        upsert=True,
+    )
+
+    try:
+        master = await definedge._get_all_master()
+    except Exception as e:  # noqa: BLE001
+        logger.exception("Master file fetch failed during momentum refresh")
+        await db.quant_lab_momentum_refresh_status.update_one(
+            {"id": "current"}, {"$set": {"status": "done", "completed_at": now_iso(), "error": str(e)}}
+        )
+        return
+
+    semaphore = asyncio.Semaphore(5)
+    counters = {"done": 0, "cached": 0, "failed": 0}
+    counters_lock = asyncio.Lock()
+
+    async def worker(row):
+        symbol = row["symbol"]
+        async with semaphore:
+            try:
+                doc = await _get_or_compute_momentum(db, definedge, master, symbol)
+            except Exception:  # noqa: BLE001
+                logger.exception("Momentum refresh failed for %s", symbol)
+                doc = None
+        async with counters_lock:
+            counters["done"] += 1
+            counters["cached" if doc is not None else "failed"] += 1
+            await db.quant_lab_momentum_refresh_status.update_one(
+                {"id": "current"},
+                {"$set": {"done": counters["done"], "cached": counters["cached"], "failed": counters["failed"]}},
+            )
+
+    await asyncio.gather(*(worker(row) for row in universe))
+
+    await db.quant_lab_momentum_refresh_status.update_one(
+        {"id": "current"}, {"$set": {"status": "done", "completed_at": now_iso()}}
+    )
+
+
+class MomentumDashboardRequest(BaseModel):
+    mode: str  # "compare" | "top"
+    symbols: Optional[List[str]] = None
+    top_n: int = Field(default=10, ge=1, le=20)
+
+
 def create_quant_lab_router(db, definedge, get_current_admin, cron_secret: str) -> APIRouter:
     router = APIRouter(prefix="/quant-lab")
 
@@ -469,6 +628,79 @@ def create_quant_lab_router(db, definedge, get_current_admin, cron_secret: str) 
     async def sharpe_refresh_admin(background_tasks: BackgroundTasks, admin: dict = Depends(get_current_admin)):
         """Same refresh, admin-JWT-gated for the admin panel's manual button."""
         background_tasks.add_task(_refresh_nifty500_cache, db, definedge)
+        return {"status": "started"}
+
+    @router.post("/momentum-dashboard")
+    async def momentum_dashboard(payload: MomentumDashboardRequest):
+        if payload.mode not in ("compare", "top"):
+            return {"found": False, "reason": "mode must be 'compare' or 'top'."}
+
+        if payload.mode == "compare":
+            symbols = list(dict.fromkeys(s.strip().upper() for s in (payload.symbols or []) if s.strip()))
+            if not (2 <= len(symbols) <= 10):
+                return {"found": False, "reason": "Select between 2 and 10 symbols to compare."}
+
+            try:
+                universe = await _fetch_nifty500_list()
+            except DefinedgeError as e:
+                return {"found": False, "reason": str(e)}
+            universe_symbols = {row["symbol"] for row in universe}
+
+            try:
+                master = await definedge._get_all_master()
+            except DefinedgeError as e:
+                return {"found": False, "reason": str(e)}
+
+            results, skipped = [], []
+            for sym in symbols:
+                if sym not in universe_symbols:
+                    skipped.append({"symbol": sym, "reason": "Not a current Nifty 500 constituent."})
+                    continue
+                doc = await _get_or_compute_momentum(db, definedge, master, sym)
+                if doc is None:
+                    skipped.append({"symbol": sym, "reason": "Insufficient price history."})
+                    continue
+                results.append(doc)
+
+            if not results:
+                return {"found": False, "reason": "None of the requested symbols could be evaluated."}
+            return {"found": True, "results": results, "skipped": skipped}
+
+        # mode == "top" — ranks strictly off the pre-computed cache; 500
+        # symbols is a multi-minute job, not something a request can compute inline.
+        today_ist = datetime.now(IST).strftime("%Y-%m-%d")
+        docs = await db.quant_lab_momentum_cache.find({}, {"_id": 0}).to_list(600)
+        fresh = [d for d in docs if d.get("computed_date") == today_ist and d.get("stats", {}).get("momentum_score") is not None]
+        if len(fresh) < MIN_UNIVERSE_COVERAGE:
+            return {
+                "found": False,
+                "reason": (
+                    f"Nifty 500 ranking isn't ready yet — only {len(fresh)} of ~500 constituents are cached "
+                    "for today. Trigger a refresh from the admin panel, or wait for the next scheduled refresh."
+                ),
+            }
+        ranked = sorted(fresh, key=lambda d: d["stats"]["momentum_score"], reverse=True)[: payload.top_n]
+        for d in ranked:
+            d["cached"] = True
+        return {"found": True, "results": ranked, "universe_coverage": {"cached": len(fresh), "total": len(docs)}}
+
+    @router.get("/momentum-refresh-status")
+    async def momentum_refresh_status():
+        doc = await db.quant_lab_momentum_refresh_status.find_one({"id": "current"}, {"_id": 0})
+        return doc or {"status": "idle", "total": 0, "done": 0, "cached": 0, "failed": 0}
+
+    @router.post("/admin/momentum-refresh")
+    async def momentum_refresh_cron(request: Request, background_tasks: BackgroundTasks):
+        """External-cron entry point, same X-Cron-Key mechanism as the Sharpe refresh."""
+        if not cron_secret or request.headers.get("X-Cron-Key") != cron_secret:
+            raise HTTPException(status_code=401, detail="Invalid cron key")
+        background_tasks.add_task(_refresh_momentum_cache, db, definedge)
+        return {"status": "started"}
+
+    @router.post("/admin/momentum-refresh-now")
+    async def momentum_refresh_admin(background_tasks: BackgroundTasks, admin: dict = Depends(get_current_admin)):
+        """Same refresh, admin-JWT-gated for the admin panel's manual button."""
+        background_tasks.add_task(_refresh_momentum_cache, db, definedge)
         return {"status": "started"}
 
     return router

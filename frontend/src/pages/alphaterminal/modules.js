@@ -1,5 +1,5 @@
 import {
-  Compass, Crosshair, Activity, Radar, BarChart3, Sliders, TrendingUp, Target, Gauge, GitBranch, LayoutDashboard,
+  Compass, Crosshair, Activity, Radar, BarChart3, Sliders, TrendingUp, Target, Gauge, GitBranch, LayoutDashboard, Flame,
 } from "lucide-react";
 
 // Every research module shown on the Alpha Terminal directory and served at
@@ -150,8 +150,22 @@ export const MODULES = [
     },
   },
   {
-    slug: "sharpe-dashboard",
+    slug: "momentum-investing",
     no: "09",
+    kind: "momentum-investing",
+    live: false,
+    icon: Flame,
+    title: "Momentum Investing",
+    shortDescription: "Risk-adjusted momentum ranking across the Nifty 500.",
+    overview: {
+      purpose: "Ranks positional investment candidates by momentum, not raw price performance alone.",
+      whatItMeasures: "Trailing 12-month return (excluding the most recent month) divided by realized volatility over the same window — a steadier uptrend outranks a choppier one with the same headline return.",
+      interpret: "Use it to build or review a positional watchlist, not as a same-day trigger — this is a periodic-rebalance style read, not an intraday signal.",
+    },
+  },
+  {
+    slug: "sharpe-dashboard",
+    no: "10",
     kind: "sharpe",
     live: false,
     icon: BarChart3,
@@ -165,7 +179,7 @@ export const MODULES = [
   },
   {
     slug: "ewma-scanner",
-    no: "10",
+    no: "11",
     kind: "ewma",
     live: false,
     icon: Sliders,
@@ -179,7 +193,7 @@ export const MODULES = [
   },
   {
     slug: "breakout-candidates",
-    no: "11",
+    no: "12",
     kind: "scanner",
     live: false,
     scannerKey: "breakout",

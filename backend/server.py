@@ -36,7 +36,7 @@ import zxcvbn
 # own cron refreshes are paused instead, see the .github/workflows/ files),
 # IPO/GMP, the new Convexity Window / Gamma Backspread options strategies.
 # Paused: Journal (+ its analytics router), Quant Lab (Sharpe Dashboard +
-# EWMA Scanner), Stock Terminal / Research (Aurora/Facet View).
+# Momentum Dashboard + EWMA Scanner), Stock Terminal / Research (Aurora/Facet View).
 # `blackbox_legacy` (Prism Alpha, Prism Alpha II, Lumen SIP module/router)
 # RE-ENABLED 2026-08-04 per explicit instruction ("prism alpha 2 on") --
 # only Prism Alpha 2 actually evaluates live though, see
@@ -1545,6 +1545,7 @@ async def on_startup():
             [("segment", 1), ("symbol", 1), ("fast_span", 1), ("slow_span", 1)], unique=True
         )
         await db.quant_lab_sharpe_cache.create_index("symbol", unique=True)
+        await db.quant_lab_momentum_cache.create_index("symbol", unique=True)
         await db.ipos.create_index("id", unique=True)
         # partialFilterExpression, not sparse=True: every IPO doc stores
         # nse_symbol explicitly (None for manual entries), and a sparse index

@@ -467,18 +467,21 @@ const IndexTrackRecordPanel = ({ onAuthError }) => {
 // the backend router is re-enabled.
 const QUANT_LAB_PAUSED = true;
 
-const QuantLabPanel = ({ onAuthError }) => {
+// Shared by the Sharpe and Momentum refresh cards below — same shape
+// (status poll, refresh-now button, status line), differing only in the
+// endpoint path and copy.
+const QuantLabRefreshCard = ({ title, endpointSlug, description, buttonLabel, testPrefix, onAuthError }) => {
   const [status, setStatus] = useState(null);
   const [starting, setStarting] = useState(false);
 
   const loadStatus = useCallback(async () => {
     try {
-      const { data } = await axios.get(`${API}/quant-lab/sharpe-refresh-status`);
+      const { data } = await axios.get(`${API}/quant-lab/${endpointSlug}-refresh-status`);
       setStatus(data);
     } catch {
       // best-effort — leave last-known status showing
     }
-  }, []);
+  }, [endpointSlug]);
 
   useEffect(() => { loadStatus(); }, [loadStatus]);
 
@@ -491,8 +494,8 @@ const QuantLabPanel = ({ onAuthError }) => {
   const refreshNow = async () => {
     setStarting(true);
     try {
-      await axios.post(`${API}/quant-lab/admin/sharpe-refresh-now`, {}, authHeaders());
-      toast.success("Nifty 500 Sharpe refresh started — takes a few minutes.");
+      await axios.post(`${API}/quant-lab/admin/${endpointSlug}-refresh-now`, {}, authHeaders());
+      toast.success(`Nifty 500 ${title} refresh started — takes a few minutes.`);
       await loadStatus();
     } catch (err) {
       if (err?.response?.status === 401) { onAuthError(); return; }
@@ -504,10 +507,38 @@ const QuantLabPanel = ({ onAuthError }) => {
 
   const running = status?.status === "running";
 
+  return (
+    <div className="rounded-2xl border border-white/10 bg-[#0A0D18] p-6" data-testid={`admin-quant-lab-${endpointSlug}-card`}>
+      <div className="flex flex-wrap items-center justify-between gap-3 mb-2">
+        <h3 className="font-display text-lg font-bold text-white">{title}</h3>
+        <button
+          onClick={refreshNow}
+          disabled={starting || running}
+          className="btn-ghost !px-4 !py-2 text-sm disabled:opacity-50"
+          data-testid={`${testPrefix}-refresh-nifty500-btn`}
+        >
+          {running ? <><Loader2 size={16} className="animate-spin" /> Refreshing</> : <><RefreshCw size={15} /> {buttonLabel}</>}
+        </button>
+      </div>
+      <p className="text-sm text-slate-500 mb-4">{description}</p>
+      {status && (
+        <div className="text-xs text-slate-500 font-mono-ui" data-testid={`${testPrefix}-refresh-status-line`}>
+          {status.status === "idle" && "No refresh has run yet."}
+          {running && `Running — ${status.done ?? 0}/${status.total ?? 0} processed (${status.cached ?? 0} cached, ${status.failed ?? 0} failed).`}
+          {status.status === "done" && !running && (
+            <>Last refresh: {status.cached ?? 0}/{status.total ?? 0} cached, {status.failed ?? 0} failed{status.completed_at ? ` — ${new Date(status.completed_at).toLocaleString("en-IN")}` : ""}.</>
+          )}
+        </div>
+      )}
+    </div>
+  );
+};
+
+const QuantLabPanel = ({ onAuthError }) => {
   if (QUANT_LAB_PAUSED) {
     return (
       <div className="glass rounded-2xl p-6 md:p-8 mb-10" data-testid="admin-quant-lab-panel">
-        <h2 className="font-display text-xl font-bold text-white mb-2">Quant Lab — Sharpe Dashboard / EWMA Scanner</h2>
+        <h2 className="font-display text-xl font-bold text-white mb-2">Quant Lab — Sharpe Dashboard / Momentum Dashboard / EWMA Scanner</h2>
         <p className="text-sm text-slate-400 leading-relaxed">
           Paused to reduce backend memory usage. No code or data was deleted; this panel and its backend routes come back exactly as they were once re-enabled.
         </p>
@@ -517,31 +548,29 @@ const QuantLabPanel = ({ onAuthError }) => {
 
   return (
     <div className="glass rounded-2xl p-6 md:p-8 mb-10" data-testid="admin-quant-lab-panel">
-      <div className="flex flex-wrap items-center justify-between gap-3 mb-2">
-        <h2 className="font-display text-xl font-bold text-white">Quant Lab — Sharpe Dashboard</h2>
-        <button
-          onClick={refreshNow}
-          disabled={starting || running}
-          className="btn-ghost !px-4 !py-2 text-sm disabled:opacity-50"
-          data-testid="sharpe-refresh-nifty500-btn"
-        >
-          {running ? <><Loader2 size={16} className="animate-spin" /> Refreshing</> : <><RefreshCw size={15} /> Refresh Nifty 500 Cache</>}
-        </button>
+      <h2 className="font-display text-xl font-bold text-white mb-4">Quant Lab</h2>
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <QuantLabRefreshCard
+          title="Sharpe Dashboard"
+          endpointSlug="sharpe"
+          testPrefix="sharpe"
+          buttonLabel="Refresh Nifty 500 Cache"
+          description={`Recomputes Sharpe/Sortino/max drawdown for all Nifty 500 constituents (takes a few minutes) — needed once before
+            "Top Ranked" mode on the public Sharpe Dashboard has anything to rank. Individual symbols in "Compare" mode
+            compute on demand and don't need this.`}
+          onAuthError={onAuthError}
+        />
+        <QuantLabRefreshCard
+          title="Momentum Dashboard"
+          endpointSlug="momentum"
+          testPrefix="momentum"
+          buttonLabel="Refresh Nifty 500 Cache"
+          description={`Recomputes 12-1 momentum score/return/volatility for all Nifty 500 constituents (takes a few minutes) — needed once before
+            "Top Ranked" mode on the public Momentum Dashboard has anything to rank. Individual symbols in "Compare" mode
+            compute on demand and don't need this.`}
+          onAuthError={onAuthError}
+        />
       </div>
-      <p className="text-sm text-slate-500 mb-4">
-        Recomputes Sharpe/Sortino/max drawdown for all Nifty 500 constituents (takes a few minutes) — needed once before
-        "Top Ranked" mode on the public Sharpe Dashboard has anything to rank. Individual symbols in "Compare" mode
-        compute on demand and don't need this.
-      </p>
-      {status && (
-        <div className="text-xs text-slate-500 font-mono-ui" data-testid="sharpe-refresh-status-line">
-          {status.status === "idle" && "No refresh has run yet."}
-          {running && `Running — ${status.done ?? 0}/${status.total ?? 0} processed (${status.cached ?? 0} cached, ${status.failed ?? 0} failed).`}
-          {status.status === "done" && !running && (
-            <>Last refresh: {status.cached ?? 0}/{status.total ?? 0} cached, {status.failed ?? 0} failed{status.completed_at ? ` — ${new Date(status.completed_at).toLocaleString("en-IN")}` : ""}.</>
-          )}
-        </div>
-      )}
     </div>
   );
 };

@@ -11,6 +11,7 @@ import {
 import { getModule } from "./modules";
 import EwmaCrossoverTool from "./EwmaCrossover";
 import SharpeDashboardTool from "./SharpeDashboard";
+import MomentumDashboardTool from "./MomentumDashboard";
 import ExitlineTool from "./Exitline";
 import RelativeStrengthMatrix from "./RelativeStrengthMatrix";
 import BreadthTool from "./Breadth";
@@ -185,6 +186,7 @@ const LiveDashboard = ({ module, signals }) => (
     {module.kind === "scanner" && <ScannerDashboard scannerKey={module.scannerKey} />}
     {module.kind === "ewma" && <EwmaCrossoverTool />}
     {module.kind === "sharpe" && <SharpeDashboardTool />}
+    {module.kind === "momentum-investing" && <MomentumDashboardTool />}
     {module.kind === "exitline" && <ExitlineTool />}
     {module.kind === "matrix" && <RelativeStrengthMatrix />}
     {module.kind === "breadth" && <BreadthTool />}
