@@ -86,3 +86,8 @@ android-sdk/
 credentials.json
 *.key
 .credentials
+
+# impeccable local state — detector hook cache and decision-page session logs.
+# Machine-local, not shared config.
+.impeccable/hook.cache.json
+.impeccable/questions/
