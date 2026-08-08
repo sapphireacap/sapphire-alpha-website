@@ -333,9 +333,8 @@ body {
     font-weight: 900;
 }
 
-/* logo pill for the bright-bg SAC monogram */
+/* wrapper for the self-contained navy logo mark (icon already carries its own bg) */
 .logo-pill {
-    background: #f4f6fb;
     border-radius: 10px;
 }
 
