@@ -138,7 +138,7 @@ export const MODULES = [
     slug: "swing-picks",
     no: "08",
     kind: "scanner",
-    live: false,
+    live: true,
     scannerKey: "swing_picks",
     icon: Target,
     title: "Swing Picks",
