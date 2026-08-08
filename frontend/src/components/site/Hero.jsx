@@ -1,126 +1,116 @@
-import { useRef } from "react";
-import { motion, useScroll, useTransform } from "framer-motion";
-import { ArrowDown, ArrowUpRight, ChevronRight, PlayCircle } from "lucide-react";
-import ParticleField from "./ParticleField";
+import { motion } from "framer-motion";
+import { ArrowUpRight } from "lucide-react";
+import { Link } from "react-router-dom";
+import { MODULES } from "@/pages/alphaterminal/modules";
 import { scrollToId } from "./SmoothScroll";
-import HeroDashboardMockup from "./HeroDashboardMockup";
 
 const EASE = [0.16, 1, 0.3, 1];
 
-const Line = ({ children, delay }) => (
-  <span className="block overflow-hidden">
-    <motion.span
-      className="block"
-      initial={{ y: "110%" }}
-      animate={{ y: 0 }}
-      transition={{ duration: 1.1, ease: EASE, delay }}
-    >
-      {children}
-    </motion.span>
-  </span>
-);
+const liveCount = MODULES.filter((m) => m.live).length;
 
-export const Hero = () => {
-  const ref = useRef(null);
-  const { scrollYProgress } = useScroll({ target: ref, offset: ["start start", "end start"] });
-  const y = useTransform(scrollYProgress, [0, 1], [0, 180]);
-  const opacity = useTransform(scrollYProgress, [0, 0.8], [1, 0]);
+export const Hero = () => (
+  <section
+    id="home"
+    className="relative min-h-screen flex items-center overflow-hidden"
+    data-testid="hero-section"
+  >
+    <div className="container-x relative z-10 w-full pt-28 pb-24 md:pt-32 md:pb-28">
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-14 lg:gap-16 items-start">
+        <div className="lg:col-span-7">
+          <motion.h1
+            initial={{ opacity: 0, y: 14 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 1, ease: EASE }}
+            className="font-display text-bone leading-[1.02] tracking-[-0.02em] text-[2.75rem] sm:text-6xl lg:text-[4.25rem]"
+          >
+            Built on Research.
+            <br />
+            Driven by Alpha.
+          </motion.h1>
 
-  return (
-    <section
-      id="home"
-      ref={ref}
-      className="relative min-h-screen flex items-center overflow-hidden"
-      data-testid="hero-section"
-    >
-      <ParticleField />
-      <div className="absolute inset-0 radial-glow" />
-      <div className="absolute top-1/3 -left-40 w-[500px] h-[500px] rounded-full bg-sapphire/10 blur-[120px] pointer-events-none" />
-      <div className="absolute inset-0 bg-gradient-to-b from-void/0 via-void/0 to-void pointer-events-none" />
+          <motion.p
+            initial={{ opacity: 0, y: 14 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 1, ease: EASE, delay: 0.12 }}
+            className="mt-8 max-w-[62ch] text-[15px] md:text-base leading-relaxed text-bone/65"
+            data-testid="hero-description"
+          >
+            Sapphire Alpha Capital is building a quantitative research platform
+            focused on research, technology and analytical tools for the capital
+            markets. Currently under development. More to come.
+          </motion.p>
 
-      <motion.div style={{ y, opacity }} className="container-x relative z-10 pt-24 pb-14 sm:pt-28 sm:pb-20 lg:pt-28">
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-16 lg:gap-10 items-center">
-          <div className="lg:col-span-6">
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              transition={{ delay: 0.15, duration: 0.8 }}
-              className="inline-flex items-center gap-3 mb-8 rounded-xl border border-white/10 bg-white/[0.02] pl-4 pr-3.5 py-2.5"
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ duration: 1, ease: EASE, delay: 0.24 }}
+            className="mt-12 flex flex-col sm:flex-row sm:items-stretch gap-8 sm:gap-12"
+          >
+            <Link
+              to="/alpha-terminal"
+              className="group border-t border-bone/30 pt-3.5 transition-colors duration-300 hover:border-bone/70"
+              data-testid="hero-terminal-btn"
             >
-              <span className="relative flex h-2 w-2">
-                <span className="absolute inline-flex h-full w-full rounded-full bg-sapphire-light opacity-75 animate-ping" />
-                <span className="relative inline-flex h-2 w-2 rounded-full bg-sapphire-light" />
+              <span className="flex items-center gap-2 text-bone text-sm">
+                Open Alpha Terminal
+                <ArrowUpRight
+                  size={15}
+                  className="transition-transform duration-300 group-hover:translate-x-0.5 group-hover:-translate-y-0.5"
+                />
               </span>
-              <span className="overline">Quantitative Research</span>
-              <ChevronRight size={14} className="text-slate-500" />
-            </motion.div>
+              <span className="mt-1 block font-mono text-[10.5px] uppercase tracking-[0.16em] text-bone/60">
+                {liveCount} engines live
+              </span>
+            </Link>
 
-            <h1 className="font-display font-black tracking-tighter leading-[0.95] text-white text-5xl sm:text-6xl md:text-7xl lg:text-6xl xl:text-7xl">
-              <Line delay={0.35}>Built on Research.</Line>
-              <Line delay={0.5}>
-                <span
-                  className="inline-block"
-                  style={{
-                    backgroundImage: "linear-gradient(90deg, #5B92F5 0%, #437EEB 45%, #1F5FD0 100%)",
-                    WebkitBackgroundClip: "text",
-                    backgroundClip: "text",
-                    WebkitTextFillColor: "transparent",
-                    color: "transparent",
-                  }}
-                >
-                  Driven by Alpha.
-                </span>
-              </Line>
-            </h1>
-
-            <motion.p
-              initial={{ opacity: 0, y: 24 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.9, duration: 0.9, ease: EASE }}
-              className="mt-8 max-w-xl text-base md:text-lg font-light text-slate-400 leading-relaxed"
-              data-testid="hero-description"
+            <button
+              onClick={() => scrollToId("about")}
+              className="group text-left border-t border-bone/15 pt-3.5 transition-colors duration-300 hover:border-bone/45"
+              data-testid="hero-learn-btn"
             >
-              Quantitative tools and market intelligence for traders who
-              want structure before conviction.
-            </motion.p>
-
-            <motion.div
-              initial={{ opacity: 0, y: 24 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 1.05, duration: 0.9, ease: EASE }}
-              className="mt-10 flex flex-wrap items-center gap-4"
-            >
-              <button onClick={() => scrollToId("waitlist")} className="btn-sapphire" data-testid="hero-notify-btn">
-                Get Notified <ArrowUpRight size={16} />
-              </button>
-              <button onClick={() => scrollToId("about")} className="btn-ghost" data-testid="hero-learn-btn">
-                Learn More <PlayCircle size={16} />
-              </button>
-            </motion.div>
-          </div>
-
-          <div className="flex lg:col-span-6 items-center justify-center">
-            <HeroDashboardMockup />
-          </div>
+              <span className="block text-bone/80 text-sm group-hover:text-bone transition-colors duration-300">
+                How a read is built
+              </span>
+              <span className="mt-1 block font-mono text-[10.5px] uppercase tracking-[0.16em] text-bone/60">
+                Method and limits
+              </span>
+            </button>
+          </motion.div>
         </div>
-      </motion.div>
 
-      <motion.button
-        onClick={() => scrollToId("about")}
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        transition={{ delay: 1.6, duration: 1 }}
-        className="absolute bottom-8 left-1/2 -translate-x-1/2 flex flex-col items-center gap-2 text-slate-500 hover:text-white transition-colors"
-        data-testid="hero-scroll-indicator"
-        aria-label="Scroll down"
-      >
-        <span className="font-mono-ui text-[10px] tracking-[0.3em] uppercase">Scroll</span>
-        <motion.span animate={{ y: [0, 6, 0] }} transition={{ repeat: Infinity, duration: 1.8 }}>
-          <ArrowDown size={16} />
-        </motion.span>
-      </motion.button>
-    </section>
-  );
-};
+        {/* The plate's margin: where an atlas records how the reading was made
+            and what it cannot tell you. */}
+        <motion.aside
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          transition={{ duration: 1.1, ease: EASE, delay: 0.36 }}
+          className="lg:col-span-4 lg:col-start-9 lg:border-l lg:border-bone/12 lg:pl-8"
+        >
+          <dl className="space-y-7">
+            <div>
+              <dt className="font-mono text-[10.5px] uppercase tracking-[0.18em] text-bone/60">
+                Method
+              </dt>
+              <dd className="mt-2.5 text-[13.5px] leading-relaxed text-bone/70">
+                Each engine computes independently from exchange data. None of them
+                sees another's output, so agreement between them is evidence rather
+                than an average.
+              </dd>
+            </div>
+            <div>
+              <dt className="font-mono text-[10.5px] uppercase tracking-[0.18em] text-bone/60">
+                Limits
+              </dt>
+              <dd className="mt-2.5 text-[13.5px] leading-relaxed text-bone/70">
+                Nothing here forecasts price and nothing here is advice. Where an
+                engine has no reading, it says so instead of estimating one.
+              </dd>
+            </div>
+          </dl>
+        </motion.aside>
+      </div>
+    </div>
+  </section>
+);
 
 export default Hero;

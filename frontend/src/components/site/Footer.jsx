@@ -1,5 +1,4 @@
 import { Link } from "react-router-dom";
-import Marquee from "react-fast-marquee";
 import { Linkedin, Twitter, Instagram, Send } from "lucide-react";
 import { scrollToId } from "./SmoothScroll";
 import LOGO from "../../assets/sac-logo-mark.svg";
@@ -27,7 +26,7 @@ const SOCIAL = [
 
 export const Footer = () => {
   return (
-    <footer className="relative pt-28 md:pt-36 border-t border-white/10 overflow-hidden" data-testid="site-footer">
+    <footer className="relative pt-28 md:pt-36 overflow-hidden" data-testid="site-footer">
       <div className="container-x">
         <div className="flex flex-col md:grid md:grid-cols-12 gap-x-8 gap-y-12 pb-24">
           <div className="md:col-span-4">
@@ -63,7 +62,7 @@ export const Footer = () => {
 
           <div className="flex gap-8 md:contents">
             <div className="flex-1 md:flex-none md:col-span-3 md:col-start-7">
-              <p className="overline !text-slate-500 mb-7">Navigation</p>
+              <p className="label-mono !text-slate-500 mb-7">Navigation</p>
               <ul className="space-y-4">
                 {NAV.map((n) => (
                   <li key={n.id || n.to}>
@@ -90,7 +89,7 @@ export const Footer = () => {
             </div>
 
             <div className="flex-1 md:flex-none md:col-span-2 md:col-start-10">
-              <p className="overline !text-slate-500 mb-7">Legal</p>
+              <p className="label-mono !text-slate-500 mb-7">Legal</p>
               <ul className="space-y-4">
                 {LEGAL.map((l) => (
                   <li key={l.to}>
@@ -108,18 +107,9 @@ export const Footer = () => {
           </div>
         </div>
 
-        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 py-8 border-t border-white/10">
+        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 py-8">
           <p className="font-mono-ui text-xs text-slate-500">© 2026 Sapphire Alpha Capital. All rights reserved.</p>
         </div>
-      </div>
-
-      <div className="relative select-none pointer-events-none py-4 md:py-6 border-t border-white/5">
-        <Marquee speed={32} gradient={false} autoFill>
-          <span className="marquee-text text-[16vw] md:text-[13vw] leading-none whitespace-nowrap">
-            SAPPHIRE ALPHA CAPITAL
-          </span>
-          <span className="text-sapphire text-[10vw] md:text-[8vw] px-6 md:px-10">✦</span>
-        </Marquee>
       </div>
     </footer>
   );

@@ -64,7 +64,7 @@ export const LegalPage = ({ page }) => {
           </span>
         </div>
 
-        <p className="overline mb-4">Legal</p>
+        <p className="label-mono mb-4">Legal</p>
         <h1 className="font-display font-black tracking-tighter text-white text-4xl md:text-6xl mb-3">{data.title}</h1>
         <p className="font-mono-ui text-xs text-slate-500 mb-12">{data.updated}</p>
         <p className="text-base md:text-lg font-light text-slate-300 leading-relaxed mb-14">{data.intro}</p>

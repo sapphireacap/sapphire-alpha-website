@@ -7,9 +7,12 @@ module.exports = {
   ],
   theme: {
     extend: {
+      // Plate titles are set in a Didone -- the face 19th-century engraved
+      // atlases were actually cut in. Archivo carries running text; the mono
+      // is reserved for measured values, never for "technical" flavour.
       fontFamily: {
-        display: ["'Inter'", 'sans-serif'],
-        sans: ["'Inter'", 'sans-serif'],
+        display: ["'Bodoni Moda'", 'serif'],
+        sans: ["'Archivo'", 'sans-serif'],
         mono: ["'JetBrains Mono'", 'monospace'],
       },
       borderRadius: {
@@ -21,6 +24,12 @@ module.exports = {
         void: '#030408',
         surface: '#0A0D18',
         'surface-2': '#12182B',
+        // Plate palette. `bone` is the engraved linework and the reading
+        // colour on dark ground; `oxide` is reserved for live/measured state
+        // and never used decoratively.
+        plate: '#060B18',
+        bone: '#E8E4D9',
+        oxide: '#C4553B',
         sapphire: {
           DEFAULT: '#1F5FD0',
           light: '#437EEB',

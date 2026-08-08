@@ -98,6 +98,24 @@ let webpackConfig = {
         ],
       };
 
+      // Keep the design-direction contract in public/index.html alive through
+      // the production build. CRA's HtmlWebpackPlugin minifies with
+      // removeComments: true, which silently strips it -- and a contract the
+      // build erases is one nobody can audit against the shipped page.
+      const htmlPlugin = webpackConfig.plugins.find(
+        (p) => p.constructor && p.constructor.name === "HtmlWebpackPlugin"
+      );
+      // html-webpack-plugin resolves `options` from `userOptions` in its
+      // constructor and reads `options` at apply time, so both are set.
+      if (htmlPlugin) {
+        for (const key of ["options", "userOptions"]) {
+          const opts = htmlPlugin[key];
+          if (opts && typeof opts.minify === "object" && opts.minify !== null) {
+            opts.minify = { ...opts.minify, removeComments: false };
+          }
+        }
+      }
+
       // Add health check plugin to webpack if enabled
       if (config.enableHealthCheck && healthPluginInstance) {
         webpackConfig.plugins.push(healthPluginInstance);

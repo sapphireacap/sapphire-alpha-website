@@ -7,7 +7,7 @@ import { ThemeProvider, useTheme } from "@/contexts/ThemeContext";
 import SmoothScroll from "@/components/site/SmoothScroll";
 import Navbar from "@/components/site/Navbar";
 import Hero from "@/components/site/Hero";
-import ComingSoon from "@/components/site/ComingSoon";
+import ParticleField from "@/components/site/ParticleField";
 import PausedFeature from "@/components/site/PausedFeature";
 import About from "@/components/site/About";
 import NotAvailablePage from "@/components/site/NotAvailablePage";
@@ -45,16 +45,22 @@ const ResetPasswordPage = lazy(() => import("@/pages/Auth").then((m) => ({ defau
 const VerifyEmailPage = lazy(() => import("@/pages/Auth").then((m) => ({ default: m.VerifyEmailPage })));
 
 const Landing = () => (
-  <>
+  // One continuous ground for the whole landing page. The particle field is
+  // fixed behind every section rather than living inside the hero, so the
+  // plate colour runs unbroken from the first viewport through the footer
+  // instead of seaming where the hero ends.
+  <div className="relative bg-plate">
+    <div className="fixed inset-0 pointer-events-none" aria-hidden="true">
+      <ParticleField />
+    </div>
     <Navbar />
     <main className="relative">
       <Hero />
       <About />
-      <ComingSoon />
       <Contact />
     </main>
     <Footer />
-  </>
+  </div>
 );
 
 const AppShell = () => {

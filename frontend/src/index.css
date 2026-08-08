@@ -1,5 +1,6 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap');
-@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&display=swap');
+/* Faces are loaded from a single non-blocking <link> in public/index.html
+   (Bodoni Moda, Archivo, JetBrains Mono) rather than a render-blocking
+   @import here. */
 
 @tailwind base;
 @tailwind components;
@@ -62,8 +63,7 @@ html[data-theme="light"] {
     border-color: rgba(10, 15, 31, 0.4);
     background-color: rgba(10, 15, 31, 0.04);
 }
-[data-theme="light"] .text-stroke,
-[data-theme="light"] .marquee-text {
+[data-theme="light"] .text-stroke {
     -webkit-text-stroke-color: rgba(10, 15, 31, 0.16);
 }
 [data-theme="light"] .logo-pill {
@@ -184,14 +184,14 @@ body {
     margin: 0;
     background: var(--void);
     color: #ffffff;
-    font-family: 'Inter', sans-serif;
+    font-family: 'Archivo', sans-serif;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
     overflow-x: hidden;
 }
 
 .font-display {
-    font-family: 'Inter', sans-serif;
+    font-family: 'Bodoni Moda', serif;
 }
 .font-mono-ui {
     font-family: 'JetBrains Mono', monospace;
@@ -220,7 +220,11 @@ body {
 }
 
 @layer components {
-    .overline {
+    /* Renamed from `.overline`, which collided with Tailwind's own `overline`
+       utility (text-decoration-line: overline). Because utilities are emitted
+       after components, the utility always won and drew an unintended rule
+       above every label using the class. */
+    .label-mono {
         @apply font-mono-ui text-[11px] md:text-xs uppercase tracking-[0.28em] text-[#437EEB] font-bold;
     }
 
@@ -308,29 +312,12 @@ body {
     background: radial-gradient(circle at center, rgba(31, 95, 208, 0.16) 0%, transparent 70%);
 }
 
-/* Slow-panning grid used only on Alpha Terminal's hero — scoped to that page,
-   not a site-wide reinstatement of the grid brand direction removed above. */
-@keyframes terminalGridPan {
-    from { background-position: 0 0; }
-    to { background-position: 44px 88px; }
-}
+/* Alpha Terminal's hero carried a slow-panning hairline grid. Removed along
+   with the decorative grid on the landing hero: a tiled line-field is a
+   generated-UI signature, and this hero is not a measurement surface. Kept as
+   an inert class so the markup that references it needs no change. */
 .terminal-grid-bg {
-    background-image:
-        linear-gradient(rgba(67, 126, 235, 0.07) 1px, transparent 1px),
-        linear-gradient(90deg, rgba(67, 126, 235, 0.07) 1px, transparent 1px);
-    background-size: 44px 44px;
-    animation: terminalGridPan 70s linear infinite;
-}
-@media (prefers-reduced-motion: reduce) {
-    .terminal-grid-bg { animation: none; }
-}
-
-/* Marquee outline text */
-.marquee-text {
-    -webkit-text-stroke: 1px rgba(255, 255, 255, 0.12);
-    color: transparent;
-    font-family: 'Inter', sans-serif;
-    font-weight: 900;
+    background-image: none;
 }
 
 /* wrapper for the self-contained navy logo icon (icon already carries its own bg) */

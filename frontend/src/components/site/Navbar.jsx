@@ -123,7 +123,7 @@ export const Navbar = () => {
             <span className="font-display font-extrabold text-white text-[13px] sm:text-base tracking-normal sm:tracking-tight whitespace-nowrap">
               SAPPHIRE ALPHA
             </span>
-            <span className="font-mono-ui text-[9px] tracking-[0.3em] text-sapphire-light uppercase mt-0.5">
+            <span className="font-mono-ui text-[9px] tracking-[0.3em] text-bone/60 uppercase mt-0.5">
               Capital
             </span>
           </span>
@@ -240,7 +240,7 @@ export const Navbar = () => {
           </button>
           <button
             onClick={() => navigate("/signup", { state: { from: location.pathname } })}
-            className="hidden lg:inline-flex items-center justify-center rounded-full bg-sapphire px-4 py-2 text-sm font-semibold text-white hover:bg-sapphire-light transition-colors duration-200"
+            className="hidden lg:inline-flex items-center justify-center border border-bone/70 bg-bone px-4 py-2 text-sm font-medium text-plate hover:bg-transparent hover:text-bone transition-colors duration-200"
             data-testid="nav-signup-btn"
           >
             Sign Up
@@ -286,7 +286,7 @@ export const Navbar = () => {
               </button>
               <button
                 onClick={() => { setOpen(false); navigate("/signup", { state: { from: location.pathname } }); }}
-                className="w-full inline-flex items-center justify-center rounded-full bg-sapphire py-2.5 text-sm font-semibold text-white"
+                className="w-full inline-flex items-center justify-center border border-bone/70 bg-bone py-2.5 text-sm font-medium text-plate"
                 data-testid="nav-mobile-signup-btn"
               >
                 Sign Up

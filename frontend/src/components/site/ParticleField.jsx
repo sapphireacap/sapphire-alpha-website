@@ -10,6 +10,7 @@ export const ParticleField = ({ density = 0.00009, className = "" }) => {
     const canvas = canvasRef.current;
     if (!canvas) return;
     const ctx = canvas.getContext("2d");
+    const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     let width = 0;
     let height = 0;
     let nodes = [];
@@ -83,7 +84,9 @@ export const ParticleField = ({ density = 0.00009, className = "" }) => {
     };
 
     const start = () => {
-      if (running) return;
+      // Under reduced-motion the field stays as the single static frame
+      // painted below, rather than drifting.
+      if (running || reduceMotion) return;
       running = true;
       raf = requestAnimationFrame(draw);
     };
@@ -93,6 +96,11 @@ export const ParticleField = ({ density = 0.00009, className = "" }) => {
     };
 
     build();
+    // Paint one frame straight away. requestAnimationFrame is deferred while
+    // the tab is backgrounded, which would otherwise leave the canvas blank
+    // until it is focused -- and leave it blank permanently under
+    // reduced-motion, where the loop never starts at all.
+    draw();
     // Only animate while the canvas is actually on screen — most instances
     // of this field sit below the fold or on routes scrolled past, so this
     // avoids burning CPU on invisible frames.

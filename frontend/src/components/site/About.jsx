@@ -31,7 +31,7 @@ export const About = () => {
       <div className="container-x">
         <div className="flex flex-col md:grid md:grid-cols-12 gap-8 md:gap-16 items-end mb-16 md:mb-24">
           <Reveal className="md:col-span-7">
-            <p className="overline mb-6">About · What We Build</p>
+            <p className="label-mono mb-6">About · What We Build</p>
             <h2 className="font-display font-black tracking-tighter text-white text-4xl md:text-6xl leading-[1.02]">
               Precision at the intersection of data and markets.
             </h2>

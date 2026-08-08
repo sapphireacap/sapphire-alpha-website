@@ -80,7 +80,7 @@ export const ComingSoon = () => {
           <div className="absolute -left-24 -bottom-24 w-[320px] h-[320px] rounded-full bg-sapphire-light/10 blur-[100px] pointer-events-none" />
           <WireframeGlobe />
           <div className="relative z-10 max-w-3xl">
-            <p className="overline mb-6">Research Updates</p>
+            <p className="label-mono mb-6">Research Updates</p>
             <h2 className="font-display font-black tracking-tighter text-white text-4xl md:text-6xl leading-[1.02]">
               Stay close to the research.
             </h2>
