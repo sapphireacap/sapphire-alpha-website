@@ -1,8 +1,7 @@
 import { useEffect } from "react";
 import { Link } from "react-router-dom";
 import { ArrowLeft } from "lucide-react";
-
-const LOGO = "https://customer-assets-agu9un31.emergentagent.net/job_systematic-alpha-1/artifacts/oys5xiox_SAC%20Logo%202.1.png";
+import LOGO from "../../assets/sac-logo-mark.svg";
 
 const CONTENT = {
   privacy: {

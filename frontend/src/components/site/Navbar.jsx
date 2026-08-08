@@ -3,13 +3,13 @@ import { motion, AnimatePresence } from "framer-motion";
 import { Menu, X, ChevronDown, Ticket, NotebookText, LineChart, Mail, User } from "lucide-react";
 import { useNavigate, useLocation } from "react-router-dom";
 import { scrollToId } from "./SmoothScroll";
+import LOGO from "../../assets/sac-logo-mark.svg";
 // Dark mode toggle is hidden for now (2026-08-03) -- ThemeToggle.jsx and
 // ThemeContext are untouched, just not imported/rendered here. Re-add the
 // import and drop `<ThemeToggle />` back into the actions cluster below
 // to bring it back.
 // import ThemeToggle from "./ThemeToggle";
 
-const LOGO = "https://customer-assets-agu9un31.emergentagent.net/job_systematic-alpha-1/artifacts/oys5xiox_SAC%20Logo%202.1.png";
 const EASE = [0.16, 1, 0.3, 1];
 
 // Kept visible: the core product pages. Tucked into "More": the page's

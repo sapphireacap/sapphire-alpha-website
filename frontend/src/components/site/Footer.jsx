@@ -2,8 +2,7 @@ import { Link } from "react-router-dom";
 import Marquee from "react-fast-marquee";
 import { Linkedin, Twitter, Instagram, Send } from "lucide-react";
 import { scrollToId } from "./SmoothScroll";
-
-const LOGO = "https://customer-assets-agu9un31.emergentagent.net/job_systematic-alpha-1/artifacts/oys5xiox_SAC%20Logo%202.1.png";
+import LOGO from "../../assets/sac-logo-mark.svg";
 
 const NAV = [
   { label: "About", id: "about" },
