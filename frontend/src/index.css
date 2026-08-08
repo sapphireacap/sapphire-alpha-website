@@ -333,7 +333,7 @@ body {
     font-weight: 900;
 }
 
-/* wrapper for the self-contained navy logo mark (icon already carries its own bg) */
+/* wrapper for the self-contained navy logo icon (icon already carries its own bg) */
 .logo-pill {
     border-radius: 10px;
 }
