@@ -7,10 +7,14 @@ import { toast } from "sonner";
 import {
   Loader2, Search, Crosshair, TrendingUp, TrendingDown, Minus,
   MousePointer2, Activity, RotateCcw, Pencil, Ruler, Type, Eraser, Radio,
-  Layers, X,
+  Layers, X, Target, SeparatorVertical,
 } from "lucide-react";
 import { EmptyState } from "./QuantLab";
 import { TRADER_TOKEN_KEY } from "../Auth";
+import {
+  EXITLINE_SEGMENTS, EXITLINE_VISIBLE_LEVELS, EXITLINE_LEVEL_COLORS, EXITLINE_DISPLAY_LABELS,
+  fetchExitlineLevels, priceToFractionalLevel, findSessionBoundaries, isIntradayInterval,
+} from "./exitlineOverlay";
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 const authHeaders = () => ({ headers: { Authorization: `Bearer ${localStorage.getItem(TRADER_TOKEN_KEY)}` } });
@@ -40,7 +44,10 @@ const LIVE_REFRESH_MS = {
   daily: 60000, weekly: 60000, monthly: 60000,
 };
 
-const US_INTERVALS = ["daily", "weekly", "monthly"];
+// See PnfChart.jsx's identical constant for the full reasoning. US Indices
+// now has intraday too (real bars from Alpaca, via each index's tracking
+// ETF); COMMODITY (Gold) still doesn't and stays on this list alone.
+const COMMODITY_INTERVALS = ["daily", "weekly", "monthly"];
 
 // Same client-side Binance fetch as PnfChart.jsx, for the same reason
 // (geo-blocked from the backend's own server) — see that file's comment.
@@ -111,7 +118,10 @@ const BIAS_STYLE = {
 /* The chart itself                                                       */
 /* --------------------------------------------------------------------- */
 
-const RenkoGrid = forwardRef(({ data, resetKey, showMa, highlight, onHoverBrick }, ref) => {
+const RenkoGrid = forwardRef(({
+  data, resetKey, showMa, highlight, onHoverBrick,
+  exitlineLevels, showSessionDividers,
+}, ref) => {
   const { swings, grid, meta, indicators } = data;
   const frameRef = useRef(null);
   const mainSvgRef = useRef(null);
@@ -162,6 +172,19 @@ const RenkoGrid = forwardRef(({ data, resetKey, showMa, highlight, onHoverBrick 
       if (b.level < minLevel) minLevel = b.level;
       if (b.level > maxLevel) maxLevel = b.level;
     });
+    // Exitline levels routinely sit outside the traded range currently in
+    // view — extend the fitted band so the ladder is never clipped
+    // off-screen (see PnfChart.jsx's identical fix for the full reasoning).
+    if (exitlineLevels?.levels) {
+      const prices = EXITLINE_VISIBLE_LEVELS.map((k) => exitlineLevels.levels[k]).filter((v) => v != null);
+      if (exitlineLevels.ltp != null) prices.push(exitlineLevels.ltp);
+      prices.forEach((price) => {
+        const lvl = priceToFractionalLevel(price, grid.levels);
+        if (lvl == null) return;
+        if (lvl < minLevel) minLevel = lvl;
+        if (lvl > maxLevel) maxLevel = lvl;
+      });
+    }
     const rowTop = rowOf(maxLevel);
     const rowBottom = rowOf(minLevel);
     const padRows = Math.max(1.5, (rowBottom - rowTop) * 0.08);
@@ -171,7 +194,7 @@ const RenkoGrid = forwardRef(({ data, resetKey, showMa, highlight, onHoverBrick 
     const centerY = PAD_T + ((rowTop + rowBottom) / 2) * BRICK_H + BRICK_H / 2;
     const panYval = clampNum(centerY - nViewH / 2, 0, Math.max(0, contentH - nViewH));
     return { yZoom: nz, panY: panYval };
-  }, [bricks, brickX, rowOf, contentH]);
+  }, [bricks, brickX, rowOf, contentH, exitlineLevels, grid.levels]);
 
   const resetView = useCallback(() => {
     const pxW = mainSvgRef.current?.getBoundingClientRect().width || plotW;
@@ -302,6 +325,44 @@ const RenkoGrid = forwardRef(({ data, resetKey, showMa, highlight, onHoverBrick 
     return pts.length > 1 ? pts.join(" ") : null;
   }, [showMa, indicators, priceToRow, brickX]);
 
+  // Real-screen-pixel conversion for the session-divider date labels below
+  // — SVG <text> sized in viewBox units goes sub-pixel at this app's usual
+  // zoom-out levels (same reasoning as PnfChart.jsx's identical helpers,
+  // which this file never previously needed since it has no HTML overlay).
+  const mainRect = mainSvgRef.current?.getBoundingClientRect();
+  const mainPxW = mainRect?.width || 900;
+  const toScreenX = useCallback((x) => ((x - vx) / viewW) * mainPxW, [vx, viewW, mainPxW]);
+
+  // Exitline overlay — see PnfChart.jsx's identical computation.
+  const exitlineLines = useMemo(() => {
+    if (!exitlineLevels?.levels) return [];
+    const out = EXITLINE_VISIBLE_LEVELS.map((k) => {
+      const price = exitlineLevels.levels[k];
+      if (price == null) return null;
+      const lvl = priceToFractionalLevel(price, grid.levels);
+      if (lvl == null) return null;
+      return { key: k, price, y: PAD_T + (grid.max_level - lvl) * BRICK_H, color: EXITLINE_LEVEL_COLORS[k], label: EXITLINE_DISPLAY_LABELS[k] };
+    }).filter(Boolean);
+    if (exitlineLevels.ltp != null) {
+      const lvl = priceToFractionalLevel(exitlineLevels.ltp, grid.levels);
+      if (lvl != null) {
+        out.push({ key: "LTP", price: exitlineLevels.ltp, y: PAD_T + (grid.max_level - lvl) * BRICK_H, color: "#437EEB", label: "PX" });
+      }
+    }
+    return out;
+  }, [exitlineLevels, grid.levels, grid.max_level]);
+
+  // Session dividers — a vertical line at the left edge of the first
+  // brick of each new calendar day's swing, intraday only.
+  const sessionDividers = useMemo(() => {
+    if (!showSessionDividers) return [];
+    return findSessionBoundaries(swings).map((b) => {
+      const range = swingBrickRange.get(b.index);
+      if (!range) return null;
+      return { ...b, x: brickX(range.first) };
+    }).filter(Boolean);
+  }, [showSessionDividers, swings, swingBrickRange, brickX]);
+
   return (
     <div
       ref={frameRef}
@@ -364,7 +425,52 @@ const RenkoGrid = forwardRef(({ data, resetKey, showMa, highlight, onHoverBrick 
               />
             );
           })()}
+
+          {/* Intraday session dividers — see PnfChart.jsx's identical block. */}
+          {sessionDividers.map((b) => (
+            <line
+              key={`session-${b.index}`}
+              x1={b.x} y1={PAD_T} x2={b.x} y2={contentH - PAD_T}
+              stroke="#64748B" strokeWidth="1" strokeDasharray="3 3" opacity="0.55"
+              vectorEffect="non-scaling-stroke"
+            />
+          ))}
+
+          {/* Exitline levels + LTP — full-width horizontal lines at each
+              level's true fractional price row. */}
+          {exitlineLines.map((ln) => (
+            <line
+              key={`exitline-${ln.key}`}
+              x1={0} y1={ln.y} x2={plotW} y2={ln.y}
+              stroke={ln.color} strokeWidth={ln.key === "LTP" ? 1.5 : 1.25}
+              strokeDasharray={ln.key === "LTP" ? undefined : "5 3"}
+              opacity={ln.key === "LTP" ? 0.9 : 0.75}
+              vectorEffect="non-scaling-stroke"
+            />
+          ))}
         </svg>
+
+        {/* Session-divider date labels — real-screen-pixel HTML overlay,
+            same reasoning as PnfChart.jsx's identical block. */}
+        {sessionDividers.length > 0 && (
+          <div style={{ position: "absolute", inset: 0, overflow: "hidden", pointerEvents: "none" }}>
+            {sessionDividers.map((b) => {
+              const left = toScreenX(b.x);
+              if (left < -40 || left > mainPxW + 40) return null;
+              return (
+                <div
+                  key={`session-label-${b.index}`}
+                  style={{
+                    position: "absolute", left, top: 4, transform: "translateX(2px)",
+                    fontSize: 10, lineHeight: 1, color: "#94A3B8", whiteSpace: "nowrap",
+                  }}
+                >
+                  {b.date}
+                </div>
+              );
+            })}
+          </div>
+        )}
       </div>
 
       <div
@@ -389,6 +495,33 @@ const RenkoGrid = forwardRef(({ data, resetKey, showMa, highlight, onHoverBrick 
             </div>
           );
         })}
+
+        {/* Exitline level chips — see PnfChart.jsx's identical block. */}
+        {exitlineLines.map((ln) => {
+          const topPx = ((ln.y - vy) / viewH) * axisPxH;
+          if (topPx < -20 || topPx > axisPxH + 20) return null;
+          return (
+            <div
+              key={`exitline-axis-${ln.key}`}
+              style={{
+                position: "absolute", left: 2, top: topPx, transform: "translateY(-50%)",
+                display: "flex", alignItems: "center", gap: 4,
+              }}
+            >
+              <span
+                style={{
+                  fontSize: 9.5, fontWeight: 700, lineHeight: 1.3, color: "#060B14",
+                  background: ln.color, borderRadius: 3, padding: "1.5px 4px",
+                }}
+              >
+                {ln.label}
+              </span>
+              <span style={{ fontSize: 10, lineHeight: 1, color: ln.color, whiteSpace: "nowrap" }}>
+                {fmtNum(ln.price, ln.price < 100 ? 2 : 1)}
+              </span>
+            </div>
+          );
+        })}
       </div>
     </div>
   );
@@ -398,12 +531,15 @@ const RenkoGrid = forwardRef(({ data, resetKey, showMa, highlight, onHoverBrick 
 /* Left tool rail                                                         */
 /* --------------------------------------------------------------------- */
 
-const RailButton = ({ icon: Icon, active, disabled, title, onClick }) => (
+// `disabledReason` overrides the default "— coming soon" suffix for tools
+// that ARE built but don't apply to the current selection — see
+// PnfChart.jsx's identical RailButton for the reasoning.
+const RailButton = ({ icon: Icon, active, disabled, title, disabledReason, onClick }) => (
   <button
     type="button"
     onClick={disabled ? undefined : onClick}
     disabled={disabled}
-    title={disabled ? `${title} — coming soon` : title}
+    title={disabled ? (disabledReason || `${title} — coming soon`) : title}
     className={`flex items-center justify-center w-9 h-9 rounded-md transition-colors ${
       disabled ? "text-slate-700 cursor-not-allowed"
         : active ? "text-sapphire-light bg-sapphire-light/10" : "text-slate-400 hover:text-white hover:bg-white/5"
@@ -413,12 +549,33 @@ const RailButton = ({ icon: Icon, active, disabled, title, onClick }) => (
   </button>
 );
 
-const ToolRail = ({ showMa, setShowMa, onReset }) => (
+const ToolRail = ({
+  showMa, setShowMa, onReset,
+  showExitline, onToggleExitline, exitlineDisabled, exitlineLoading,
+  showSessionDividers, onToggleSessionDividers, sessionDividersDisabled,
+}) => (
   <div className="hidden lg:flex flex-col items-center gap-1 w-12 shrink-0 border-r border-white/10 bg-[#0B1220] py-3">
     <RailButton icon={MousePointer2} active title="Cursor" onClick={() => {}} />
     <div className="w-6 h-px bg-white/10 my-1.5" />
     <RailButton icon={Activity} active={showMa} title="Moving Average" onClick={() => setShowMa((v) => !v)} />
     <RailButton icon={RotateCcw} title="Reset View" onClick={onReset} />
+    <div className="w-6 h-px bg-white/10 my-1.5" />
+    <RailButton
+      icon={exitlineLoading ? Loader2 : Target}
+      active={showExitline}
+      disabled={exitlineDisabled}
+      title="Exitline Levels"
+      disabledReason="Exitline Levels — NSE/FUT/OPT only"
+      onClick={onToggleExitline}
+    />
+    <RailButton
+      icon={SeparatorVertical}
+      active={showSessionDividers}
+      disabled={sessionDividersDisabled}
+      title="Session Dividers"
+      disabledReason="Session Dividers — intraday only"
+      onClick={onToggleSessionDividers}
+    />
     <div className="w-6 h-px bg-white/10 my-1.5" />
     <RailButton icon={Pencil} disabled title="Draw Trendline" />
     <RailButton icon={Ruler} disabled title="Measure" />
@@ -452,6 +609,15 @@ const RenkoChart = () => {
   const [live, setLive] = useState(false);
   const [showPatterns, setShowPatterns] = useState(false);
 
+  // Exitline overlay + intraday session dividers — see exitlineOverlay.js
+  // and PnfChart.jsx's identical wiring (same overlay, same instrument
+  // shape, so the logic is a straight mirror).
+  const [showExitline, setShowExitline] = useState(false);
+  const [exitlineData, setExitlineData] = useState(null);
+  const [exitlineLoading, setExitlineLoading] = useState(false);
+  const [showSessionDividers, setShowSessionDividers] = useState(false);
+  const [plottedInstrument, setPlottedInstrument] = useState(null);
+
   const [data, setData] = useState(null);
   const [plotCount, setPlotCount] = useState(0);
   const [loading, setLoading] = useState(false);
@@ -459,7 +625,10 @@ const RenkoChart = () => {
   const [hoverBrick, setHoverBrick] = useState(null);
   const gridRef = useRef(null);
 
-  const canGoLive = segment !== "US" && segment !== "COMMODITY";
+  // See PnfChart.jsx's identical logic for the reasoning.
+  const canGoLive = segment === "COMMODITY" ? false
+    : segment === "US" ? !COMMODITY_INTERVALS.includes(interval)
+    : true;
 
   useEffect(() => {
     let cancelled = false;
@@ -486,8 +655,10 @@ const RenkoChart = () => {
       .catch(() => setStrikes([]));
   }, [symbol, expiry, segment]);
 
+  // COMMODITY only has daily+ history; US no longer needs this reset —
+  // every interval is available there now.
   useEffect(() => {
-    if ((segment === "US" || segment === "COMMODITY") && !US_INTERVALS.includes(interval)) setIntervalKey("daily");
+    if (segment === "COMMODITY" && !COMMODITY_INTERVALS.includes(interval)) setIntervalKey("daily");
   }, [segment, interval]);
 
   const fetchChart = useCallback(async ({ silent = false } = {}) => {
@@ -512,13 +683,36 @@ const RenkoChart = () => {
         }));
       }
       setData(d);
-      if (!silent) setPlotCount((n) => n + 1);
+      if (!silent) {
+        setPlotCount((n) => n + 1);
+        setPlottedInstrument({ segment, symbol, expiry, strike, optionType });
+      }
     } catch (e) {
       if (!silent) { toast.error(e?.response?.data?.detail || "Could not plot that chart."); setData(null); }
     } finally {
       if (!silent) setLoading(false);
     }
   }, [symbol, segment, interval, boxPct, expiry, strike, optionType]);
+
+  // See PnfChart.jsx's identical effect for the reasoning.
+  useEffect(() => {
+    if (!showExitline || !plottedInstrument || !EXITLINE_SEGMENTS.includes(plottedInstrument.segment)) {
+      setExitlineData(null);
+      return undefined;
+    }
+    let cancelled = false;
+    setExitlineLoading(true);
+    fetchExitlineLevels(plottedInstrument)
+      .then((d) => { if (!cancelled) setExitlineData(d); })
+      .catch(() => {
+        if (!cancelled) {
+          setExitlineData(null);
+          toast.error("Could not load Exitline levels for this instrument.");
+        }
+      })
+      .finally(() => { if (!cancelled) setExitlineLoading(false); });
+    return () => { cancelled = true; };
+  }, [showExitline, plottedInstrument]);
 
   const plot = () => {
     if (!symbol) { toast.error("Pick an instrument first."); return; }
@@ -600,7 +794,7 @@ const RenkoChart = () => {
           )}
 
           <select className={compactField} value={interval} onChange={(e) => setIntervalKey(e.target.value)}>
-            {(segment === "US" || segment === "COMMODITY" ? INTERVALS.filter((i) => US_INTERVALS.includes(i.key)) : INTERVALS)
+            {(segment === "COMMODITY" ? INTERVALS.filter((i) => COMMODITY_INTERVALS.includes(i.key)) : INTERVALS)
               .map((i) => <option key={i.key} value={i.key}>{i.label}</option>)}
           </select>
           <select className={compactField} value={boxPct} onChange={(e) => setBoxPct(Number(e.target.value))}>
@@ -641,7 +835,9 @@ const RenkoChart = () => {
 
         {segment === "US" && (
           <p className="text-[11px] text-slate-500 mt-2 max-w-3xl">
-            Nasdaq 100 and S&amp;P 500 are plotted from their most liquid tracking ETF (QQQ / SPY) — daily/weekly/monthly only, no intraday.
+            {COMMODITY_INTERVALS.includes(interval)
+              ? "Nasdaq 100 and S&P 500 are plotted from the real index (daily/weekly/monthly)."
+              : "Intraday plots from each index's most liquid tracking ETF (QQQ / SPY), live — a different underlying from the daily/weekly/monthly index chart above."}
           </p>
         )}
         {segment === "COMMODITY" && (
@@ -686,7 +882,17 @@ const RenkoChart = () => {
 
       {data && (
         <div className="flex-1 flex min-h-0">
-          <ToolRail showMa={showMa} setShowMa={setShowMa} onReset={() => gridRef.current?.resetView()} />
+          <ToolRail
+            showMa={showMa} setShowMa={setShowMa}
+            onReset={() => gridRef.current?.resetView()}
+            showExitline={showExitline}
+            onToggleExitline={() => setShowExitline((v) => !v)}
+            exitlineDisabled={!EXITLINE_SEGMENTS.includes(segment)}
+            exitlineLoading={exitlineLoading}
+            showSessionDividers={showSessionDividers}
+            onToggleSessionDividers={() => setShowSessionDividers((v) => !v)}
+            sessionDividersDisabled={!isIntradayInterval(interval)}
+          />
 
           <div className="flex-1 min-w-0 min-h-0 flex flex-col p-3 sm:p-4">
             <div className="flex-1 min-h-0">
@@ -697,6 +903,8 @@ const RenkoChart = () => {
                 showMa={showMa}
                 highlight={highlight}
                 onHoverBrick={setHoverBrick}
+                exitlineLevels={showExitline ? exitlineData : null}
+                showSessionDividers={showSessionDividers && isIntradayInterval(interval)}
               />
             </div>
             <div className="shrink-0 mt-1.5 flex items-center justify-between text-[11px] text-slate-500 font-mono-ui">

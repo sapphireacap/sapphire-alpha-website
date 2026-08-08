@@ -7,10 +7,14 @@ import { toast } from "sonner";
 import {
   Loader2, Search, Crosshair, TrendingUp, TrendingDown, Minus,
   MousePointer2, Activity, RotateCcw, Pencil, Ruler, Type, Eraser, Radio,
-  Layers, X, Zap,
+  Layers, X, Zap, Target, SeparatorVertical,
 } from "lucide-react";
 import { EmptyState } from "./QuantLab";
 import { TRADER_TOKEN_KEY } from "../Auth";
+import {
+  EXITLINE_SEGMENTS, EXITLINE_VISIBLE_LEVELS, EXITLINE_LEVEL_COLORS, EXITLINE_DISPLAY_LABELS,
+  fetchExitlineLevels, priceToFractionalLevel, findSessionBoundaries, isIntradayInterval,
+} from "./exitlineOverlay";
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 const authHeaders = () => ({ headers: { Authorization: `Bearer ${localStorage.getItem(TRADER_TOKEN_KEY)}` } });
@@ -47,9 +51,19 @@ const LIVE_REFRESH_MS = {
   daily: 60000, weekly: 60000, monthly: 60000,
 };
 
-// US indices come from Yahoo Finance's free chart endpoint, daily history
-// only (no real intraday index data on it) — see backend/yahoo_finance_client.py.
-const US_INTERVALS = ["daily", "weekly", "monthly"];
+// COMMODITY (Gold) still comes from Yahoo Finance's free chart endpoint,
+// daily history only — see backend/yahoo_finance_client.py.
+//
+// US Indices used to share this exact ceiling; it no longer does. US
+// Indices now has intraday too — real bars from Alpaca (backend/
+// alpaca_client.py), via each index's tracking ETF rather than the index
+// itself (Alpaca has no index-level product; QQQ/SPY stand in for NDX/
+// SPX, same proxy relationship Gold already has to COMEX futures). Every
+// interval this platform supports is available for US; daily/weekly/
+// monthly still route through Yahoo's real index history, unchanged —
+// there is no separate US_INTERVALS list any more because there is
+// nothing left for it to restrict.
+const COMMODITY_INTERVALS = ["daily", "weekly", "monthly"];
 
 // Crypto bars are fetched straight from the browser, not proxied through
 // the backend -- Binance's public klines API sends a wildcard CORS header
@@ -139,7 +153,10 @@ const BIAS_STYLE = {
 /* The chart itself                                                       */
 /* --------------------------------------------------------------------- */
 
-const PnfGrid = forwardRef(({ data, resetKey, showTrendLines, showMa, showSmartTrend, highlight, onHoverColumn }, ref) => {
+const PnfGrid = forwardRef(({
+  data, resetKey, showTrendLines, showMa, showSmartTrend, highlight, onHoverColumn,
+  exitlineLevels, showSessionDividers,
+}, ref) => {
   const { columns, grid, trend_lines: lines, meta, indicators } = data;
   const frameRef = useRef(null);
   const mainSvgRef = useRef(null);
@@ -199,6 +216,20 @@ const PnfGrid = forwardRef(({ data, resetKey, showTrendLines, showMa, showSmartT
       if (lvl < minLevel) minLevel = lvl;
       if (lvl > maxLevel) maxLevel = lvl;
     }));
+    // Exitline levels routinely sit outside the traded range currently in
+    // view (H5/L5, often H4/L4 too) — extend the fitted band to always
+    // include every visible level + LTP, same "never clip the ladder off
+    // screen" fix Exitline.jsx's own autoscaleInfoProvider does.
+    if (exitlineLevels?.levels) {
+      const prices = EXITLINE_VISIBLE_LEVELS.map((k) => exitlineLevels.levels[k]).filter((v) => v != null);
+      if (exitlineLevels.ltp != null) prices.push(exitlineLevels.ltp);
+      prices.forEach((price) => {
+        const lvl = priceToFractionalLevel(price, grid.levels);
+        if (lvl == null) return;
+        if (lvl < minLevel) minLevel = lvl;
+        if (lvl > maxLevel) maxLevel = lvl;
+      });
+    }
     const rowTop = rowOf(maxLevel);
     const rowBottom = rowOf(minLevel);
     const padRows = Math.max(1.5, (rowBottom - rowTop) * 0.08);
@@ -208,7 +239,7 @@ const PnfGrid = forwardRef(({ data, resetKey, showTrendLines, showMa, showSmartT
     const centerY = PAD_T + ((rowTop + rowBottom) / 2) * ROW_H + ROW_H / 2;
     const panYval = clampNum(centerY - nViewH / 2, 0, Math.max(0, contentH - nViewH));
     return { yZoom: nz, panY: panYval };
-  }, [columns, colX, rowOf, contentH]);
+  }, [columns, colX, rowOf, contentH, exitlineLevels, grid.levels]);
 
   const resetView = useCallback(() => {
     const pxW = mainSvgRef.current?.getBoundingClientRect().width || plotW;
@@ -458,6 +489,35 @@ const PnfGrid = forwardRef(({ data, resetKey, showTrendLines, showMa, showSmartT
     }).filter(Boolean);
   }, [showSmartTrend, indicators, columns, colX, rowOf]);
 
+  // Exitline overlay — each visible level (+ LTP) as a horizontal line at
+  // its true fractional row (see priceToFractionalLevel), plus its label
+  // for the price-axis pane below. Levels with no price (should not
+  // happen — the backend always returns all 11) are simply skipped.
+  const exitlineLines = useMemo(() => {
+    if (!exitlineLevels?.levels) return [];
+    const out = EXITLINE_VISIBLE_LEVELS.map((k) => {
+      const price = exitlineLevels.levels[k];
+      if (price == null) return null;
+      const lvl = priceToFractionalLevel(price, grid.levels);
+      if (lvl == null) return null;
+      return { key: k, price, y: PAD_T + (grid.max_level - lvl) * ROW_H, color: EXITLINE_LEVEL_COLORS[k], label: EXITLINE_DISPLAY_LABELS[k] };
+    }).filter(Boolean);
+    if (exitlineLevels.ltp != null) {
+      const lvl = priceToFractionalLevel(exitlineLevels.ltp, grid.levels);
+      if (lvl != null) {
+        out.push({ key: "LTP", price: exitlineLevels.ltp, y: PAD_T + (grid.max_level - lvl) * ROW_H, color: "#437EEB", label: "PX" });
+      }
+    }
+    return out;
+  }, [exitlineLevels, grid.levels, grid.max_level]);
+
+  // Session dividers — a vertical line at the left edge of the first
+  // column of each new calendar day, intraday only (see findSessionBoundaries).
+  const sessionDividers = useMemo(() => {
+    if (!showSessionDividers) return [];
+    return findSessionBoundaries(columns).map((b) => ({ ...b, x: colX(b.index) }));
+  }, [showSessionDividers, columns, colX]);
+
   return (
     <div
       ref={frameRef}
@@ -575,6 +635,30 @@ const PnfGrid = forwardRef(({ data, resetKey, showTrendLines, showMa, showSmartT
             />
           );
         })()}
+
+        {/* Intraday session dividers — new-day boundaries within the
+            column series (see findSessionBoundaries). */}
+        {sessionDividers.map((b) => (
+          <line
+            key={`session-${b.index}`}
+            x1={b.x} y1={PAD_T} x2={b.x} y2={contentH - PAD_T}
+            stroke="#64748B" strokeWidth="1" strokeDasharray="3 3" opacity="0.55"
+            vectorEffect="non-scaling-stroke"
+          />
+        ))}
+
+        {/* Exitline levels + LTP — full-width horizontal lines at each
+            level's true fractional price row (not snapped to a box). */}
+        {exitlineLines.map((ln) => (
+          <line
+            key={`exitline-${ln.key}`}
+            x1={0} y1={ln.y} x2={plotW} y2={ln.y}
+            stroke={ln.color} strokeWidth={ln.key === "LTP" ? 1.5 : 1.25}
+            strokeDasharray={ln.key === "LTP" ? undefined : "5 3"}
+            opacity={ln.key === "LTP" ? 0.9 : 0.75}
+            vectorEffect="non-scaling-stroke"
+          />
+        ))}
       </svg>
 
       {/* Smart-trend signal glyphs (arrow/star/pullback) — plain HTML
@@ -599,6 +683,28 @@ const PnfGrid = forwardRef(({ data, resetKey, showTrendLines, showMa, showSmartT
                 }}
               >
                 {s.glyph}
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* Session-divider date labels — same real-screen-pixel HTML overlay
+          as the signal glyphs above, pinned to the top of each line. */}
+      {sessionDividers.length > 0 && (
+        <div style={{ position: "absolute", inset: 0, overflow: "hidden", pointerEvents: "none" }}>
+          {sessionDividers.map((b) => {
+            const left = toScreenX(b.x);
+            if (left < -40 || left > mainPxW + 40) return null;
+            return (
+              <div
+                key={`session-label-${b.index}`}
+                style={{
+                  position: "absolute", left, top: 4, transform: "translateX(2px)",
+                  fontSize: 10, lineHeight: 1, color: "#94A3B8", whiteSpace: "nowrap",
+                }}
+              >
+                {b.date}
               </div>
             );
           })}
@@ -652,6 +758,35 @@ const PnfGrid = forwardRef(({ data, resetKey, showTrendLines, showMa, showSmartT
             </div>
           );
         })}
+
+        {/* Exitline level chips — colored, always shown regardless of
+            labelStep (there are only ever 6-7 of these, never a crowding
+            risk the way the dense per-box labels above are). */}
+        {exitlineLines.map((ln) => {
+          const topPx = ((ln.y - vy) / viewH) * axisPxH;
+          if (topPx < -20 || topPx > axisPxH + 20) return null;
+          return (
+            <div
+              key={`exitline-axis-${ln.key}`}
+              style={{
+                position: "absolute", left: 2, top: topPx, transform: "translateY(-50%)",
+                display: "flex", alignItems: "center", gap: 4,
+              }}
+            >
+              <span
+                style={{
+                  fontSize: 9.5, fontWeight: 700, lineHeight: 1.3, color: "#060B14",
+                  background: ln.color, borderRadius: 3, padding: "1.5px 4px",
+                }}
+              >
+                {ln.label}
+              </span>
+              <span style={{ fontSize: 10, lineHeight: 1, color: ln.color, whiteSpace: "nowrap" }}>
+                {fmtNum(ln.price, ln.price < 100 ? 2 : 1)}
+              </span>
+            </div>
+          );
+        })}
       </div>
     </div>
   );
@@ -663,12 +798,16 @@ const PnfGrid = forwardRef(({ data, resetKey, showTrendLines, showMa, showSmartT
 /* and are shown disabled rather than silently doing nothing on click.    */
 /* --------------------------------------------------------------------- */
 
-const RailButton = ({ icon: Icon, active, disabled, title, onClick }) => (
+// `disabledReason` overrides the default "— coming soon" suffix for tools
+// that ARE built but don't apply to the current selection (Exitline on a
+// non-NSE/FUT/OPT segment, Session Dividers on a non-intraday interval) —
+// those aren't unfinished, they're just inapplicable right now.
+const RailButton = ({ icon: Icon, active, disabled, title, disabledReason, onClick }) => (
   <button
     type="button"
     onClick={disabled ? undefined : onClick}
     disabled={disabled}
-    title={disabled ? `${title} — coming soon` : title}
+    title={disabled ? (disabledReason || `${title} — coming soon`) : title}
     className={`flex items-center justify-center w-9 h-9 rounded-md transition-colors ${
       disabled
         ? "text-slate-700 cursor-not-allowed"
@@ -684,6 +823,8 @@ const RailButton = ({ icon: Icon, active, disabled, title, onClick }) => (
 const ToolRail = ({
   showTrendLines, setShowTrendLines, showMa, setShowMa,
   showSmartTrend, setShowSmartTrend, onReset,
+  showExitline, onToggleExitline, exitlineDisabled, exitlineLoading,
+  showSessionDividers, onToggleSessionDividers, sessionDividersDisabled,
 }) => (
   <div className="hidden lg:flex flex-col items-center gap-1 w-12 shrink-0 border-r border-white/10 bg-[#0B1220] py-3">
     <RailButton icon={MousePointer2} active title="Cursor" onClick={() => {}} />
@@ -692,6 +833,23 @@ const ToolRail = ({
     <RailButton icon={Activity} active={showMa} title="Moving Average" onClick={() => setShowMa((v) => !v)} />
     <RailButton icon={Zap} active={showSmartTrend} title="Smart Trend Cloud" onClick={() => setShowSmartTrend((v) => !v)} />
     <RailButton icon={RotateCcw} title="Reset View" onClick={onReset} />
+    <div className="w-6 h-px bg-white/10 my-1.5" />
+    <RailButton
+      icon={exitlineLoading ? Loader2 : Target}
+      active={showExitline}
+      disabled={exitlineDisabled}
+      title="Exitline Levels"
+      disabledReason="Exitline Levels — NSE/FUT/OPT only"
+      onClick={onToggleExitline}
+    />
+    <RailButton
+      icon={SeparatorVertical}
+      active={showSessionDividers}
+      disabled={sessionDividersDisabled}
+      title="Session Dividers"
+      disabledReason="Session Dividers — intraday only"
+      onClick={onToggleSessionDividers}
+    />
     <div className="w-6 h-px bg-white/10 my-1.5" />
     <RailButton icon={Pencil} disabled title="Draw Trendline" />
     <RailButton icon={Ruler} disabled title="Measure" />
@@ -727,6 +885,17 @@ const PnfChart = () => {
   const [live, setLive] = useState(false);
   const [showPatterns, setShowPatterns] = useState(false);
 
+  // Exitline overlay + intraday session dividers — see exitlineOverlay.js.
+  const [showExitline, setShowExitline] = useState(false);
+  const [exitlineData, setExitlineData] = useState(null);
+  const [exitlineLoading, setExitlineLoading] = useState(false);
+  const [showSessionDividers, setShowSessionDividers] = useState(false);
+  // The instrument a successful Plot actually charted -- Exitline levels
+  // are fetched for THIS, not for whatever the selectors currently say,
+  // so changing the segment/symbol dropdowns without hitting Plot again
+  // can never show levels for an instrument that isn't on screen.
+  const [plottedInstrument, setPlottedInstrument] = useState(null);
+
   const [data, setData] = useState(null);
   const [plotCount, setPlotCount] = useState(0);
   const [loading, setLoading] = useState(false);
@@ -734,10 +903,13 @@ const PnfChart = () => {
   const [hoverCol, setHoverCol] = useState(null);
   const gridRef = useRef(null);
 
-  // Every interval can go live now (see LIVE_REFRESH_MS) -- only the
-  // Yahoo-backed segments (US indices, commodities) can't, since Yahoo's
-  // free endpoint here only serves cached daily history, no live quote.
-  const canGoLive = segment !== "US" && segment !== "COMMODITY";
+  // Every interval can go live now (see LIVE_REFRESH_MS) -- except a
+  // Yahoo-backed chart, which never can (cached daily history, no live
+  // quote). That's COMMODITY always, and US only at daily/weekly/monthly
+  // -- US intraday runs through Alpaca now, which genuinely does refresh.
+  const canGoLive = segment === "COMMODITY" ? false
+    : segment === "US" ? !COMMODITY_INTERVALS.includes(interval)
+    : true;
 
   // Symbol search
   useEffect(() => {
@@ -767,10 +939,11 @@ const PnfChart = () => {
       .catch(() => setStrikes([]));
   }, [symbol, expiry, segment]);
 
-  // US indices and commodities only have daily+ history — drop back to
-  // daily if an intraday interval was left selected from a different segment.
+  // COMMODITY only has daily+ history — drop back to daily if an intraday
+  // interval was left selected from a different segment. US no longer
+  // needs this: every interval is available there now.
   useEffect(() => {
-    if ((segment === "US" || segment === "COMMODITY") && !US_INTERVALS.includes(interval)) setIntervalKey("daily");
+    if (segment === "COMMODITY" && !COMMODITY_INTERVALS.includes(interval)) setIntervalKey("daily");
   }, [segment, interval]);
 
   // `silent` skips the loading spinner/camera reset — used by the live
@@ -798,13 +971,39 @@ const PnfChart = () => {
         }));
       }
       setData(d);
-      if (!silent) setPlotCount((n) => n + 1);
+      if (!silent) {
+        setPlotCount((n) => n + 1);
+        setPlottedInstrument({ segment, symbol, expiry, strike, optionType });
+      }
     } catch (e) {
       if (!silent) { toast.error(e?.response?.data?.detail || "Could not plot that chart."); setData(null); }
     } finally {
       if (!silent) setLoading(false);
     }
   }, [symbol, segment, interval, boxPct, expiry, strike, optionType]);
+
+  // Exitline fetch — keyed to whatever was actually plotted, not the live
+  // selector state (see plottedInstrument above). Re-fetches whenever the
+  // toggle turns on or a fresh Plot lands while it's already on; does
+  // nothing for a segment Exitline has no coverage for.
+  useEffect(() => {
+    if (!showExitline || !plottedInstrument || !EXITLINE_SEGMENTS.includes(plottedInstrument.segment)) {
+      setExitlineData(null);
+      return undefined;
+    }
+    let cancelled = false;
+    setExitlineLoading(true);
+    fetchExitlineLevels(plottedInstrument)
+      .then((d) => { if (!cancelled) setExitlineData(d); })
+      .catch(() => {
+        if (!cancelled) {
+          setExitlineData(null);
+          toast.error("Could not load Exitline levels for this instrument.");
+        }
+      })
+      .finally(() => { if (!cancelled) setExitlineLoading(false); });
+    return () => { cancelled = true; };
+  }, [showExitline, plottedInstrument]);
 
   const plot = () => {
     if (!symbol) { toast.error("Pick an instrument first."); return; }
@@ -884,7 +1083,7 @@ const PnfChart = () => {
           )}
 
           <select className={compactField} value={interval} onChange={(e) => setIntervalKey(e.target.value)}>
-            {(segment === "US" || segment === "COMMODITY" ? INTERVALS.filter((i) => US_INTERVALS.includes(i.key)) : INTERVALS)
+            {(segment === "COMMODITY" ? INTERVALS.filter((i) => COMMODITY_INTERVALS.includes(i.key)) : INTERVALS)
               .map((i) => <option key={i.key} value={i.key}>{i.label}</option>)}
           </select>
           <select className={compactField} value={boxPct} onChange={(e) => setBoxPct(Number(e.target.value))}>
@@ -925,7 +1124,9 @@ const PnfChart = () => {
 
         {segment === "US" && (
           <p className="text-[11px] text-slate-500 mt-2 max-w-3xl">
-            Nasdaq 100 and S&amp;P 500 are plotted from their most liquid tracking ETF (QQQ / SPY) — daily/weekly/monthly only, no intraday.
+            {COMMODITY_INTERVALS.includes(interval)
+              ? "Nasdaq 100 and S&P 500 are plotted from the real index (daily/weekly/monthly)."
+              : "Intraday plots from each index's most liquid tracking ETF (QQQ / SPY), live — a different underlying from the daily/weekly/monthly index chart above."}
           </p>
         )}
         {segment === "COMMODITY" && (
@@ -979,6 +1180,13 @@ const PnfChart = () => {
             showMa={showMa} setShowMa={setShowMa}
             showSmartTrend={showSmartTrend} setShowSmartTrend={setShowSmartTrend}
             onReset={() => gridRef.current?.resetView()}
+            showExitline={showExitline}
+            onToggleExitline={() => setShowExitline((v) => !v)}
+            exitlineDisabled={!EXITLINE_SEGMENTS.includes(segment)}
+            exitlineLoading={exitlineLoading}
+            showSessionDividers={showSessionDividers}
+            onToggleSessionDividers={() => setShowSessionDividers((v) => !v)}
+            sessionDividersDisabled={!isIntradayInterval(interval)}
           />
 
           <div className="flex-1 min-w-0 min-h-0 flex flex-col p-3 sm:p-4">
@@ -992,6 +1200,8 @@ const PnfChart = () => {
                 showSmartTrend={showSmartTrend}
                 highlight={highlight}
                 onHoverColumn={setHoverCol}
+                exitlineLevels={showExitline ? exitlineData : null}
+                showSessionDividers={showSessionDividers && isIntradayInterval(interval)}
               />
             </div>
             <div className="shrink-0 mt-1.5 flex items-center justify-between text-[11px] text-slate-500 font-mono-ui">

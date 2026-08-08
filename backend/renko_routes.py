@@ -15,6 +15,7 @@ from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
+import alpaca_client as ac
 import binance_client as bn
 import renko_chart
 import yahoo_finance_client as yf
@@ -24,6 +25,9 @@ from exitline import list_expiries, list_strikes, list_symbols, resolve_instrume
 logger = logging.getLogger(__name__)
 
 VALID_SEGMENTS = ("NSE", "FUT", "OPT", "US", "COMMODITY", "CRYPTO")
+# See pnf_routes.py's identical constant for the full reasoning — Yahoo's
+# ceiling, not the "US" segment's; intraday now runs through
+# alpaca_client.py instead (_chart_us_intraday below).
 US_INTERVALS = ("daily", "weekly", "monthly")
 MAX_SCAN_SYMBOLS = 40
 
@@ -116,6 +120,38 @@ def create_renko_router(db, definedge, get_current_subscriber) -> APIRouter:
         }
         return payload
 
+    async def _chart_us_intraday(symbol: str, interval: str, box_pct: Optional[float],
+                                  box_value: Optional[float], cfg, ma_period: int, days: int) -> dict:
+        """US Indices, intraday only, via each index's tracking ETF —
+        see pnf_routes.py's identical function and alpaca_client.py's
+        module docstring for the full reasoning."""
+        sym = symbol.strip().upper()
+        proxy = ac.US_INDEX_PROXY.get(sym)
+        if not proxy:
+            raise HTTPException(status_code=404, detail=f"No instrument found for {symbol}.")
+        if interval not in ac.TIMEFRAME_MAP:
+            raise HTTPException(status_code=400,
+                                 detail=f"interval must be one of {', '.join(US_INTERVALS)} (daily+) "
+                                        f"or {', '.join(ac.TIMEFRAME_MAP)} (intraday minutes) for US Indices.")
+        try:
+            bars = await ac.intraday_bars(sym, interval, days=days)
+            payload = renko_chart.build_chart(
+                bars, box_pct=box_pct, box_value=box_value, cfg=cfg, ma_period=ma_period,
+            )
+        except renko_chart.RenkoError as e:
+            raise HTTPException(status_code=400, detail=str(e))
+        except ac.AlpacaError as e:
+            logger.warning("Alpaca fetch failed for %s (%s): %s", sym, proxy["ticker"], e)
+            raise HTTPException(status_code=502,
+                                 detail="Live intraday data is temporarily unavailable — please try again shortly.")
+        payload["params"]["interval"] = interval
+        payload["instrument"] = {
+            "symbol": sym,
+            "selector_segment": "US",
+            "tradingsymbol": proxy["label"],
+        }
+        return payload
+
     @router.get("/chart")
     async def chart(symbol: str, segment: str = "NSE", interval: str = "daily",
                      box_pct: Optional[float] = renko_chart.DEFAULT_BOX_PCT,
@@ -147,8 +183,10 @@ def create_renko_router(db, definedge, get_current_subscriber) -> APIRouter:
         )
 
         if segment == "US":
-            return await _chart_yahoo(symbol, interval, box_pct, box_value, cfg, ma_period,
-                                       yf.US_INDEX_SYMBOLS, "US")
+            if interval in US_INTERVALS:
+                return await _chart_yahoo(symbol, interval, box_pct, box_value, cfg, ma_period,
+                                           yf.US_INDEX_SYMBOLS, "US")
+            return await _chart_us_intraday(symbol, interval, box_pct, box_value, cfg, ma_period, days)
         if segment == "COMMODITY":
             return await _chart_yahoo(symbol, interval, box_pct, box_value, cfg, ma_period,
                                        yf.COMMODITY_SYMBOLS, "COMMODITY")
