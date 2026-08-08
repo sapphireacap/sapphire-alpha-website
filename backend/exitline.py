@@ -393,11 +393,35 @@ async def build_exitline_response(db, definedge, exitline_segment: str, symbol: 
     is_premarket = now.hour * 60 + now.minute < 9 * 60 + 15
     chart_date = datetime.strptime(levels_doc["prev_date"], "%Y-%m-%d").date() if is_premarket else now.date()
 
-    ltp, chart = await asyncio.gather(
+    # equity_quote and intraday_chart are independent failures: a missing
+    # live quote (market closed -- Definedge returns no `ltp` field for an
+    # option/future outside trading hours, confirmed live) must not also
+    # discard the intraday chart or the levels ladder, which don't depend
+    # on it at all. gather(..., return_exceptions=True) keeps one from
+    # taking the other down; intraday_chart already fails open to []
+    # internally and never actually raises, so only equity_quote needs
+    # handling here.
+    ltp_or_exc, chart = await asyncio.gather(
         definedge.equity_quote(resolved["segment"], resolved["token"]),
         intraday_chart(definedge, resolved["segment"], resolved["token"], interval_minutes, chart_date),
+        return_exceptions=True,
     )
-    zone = classify_and_suggest(levels_doc["levels"], ltp, levels_doc["close"])
+    if isinstance(ltp_or_exc, DefinedgeError):
+        logger.warning("Exitline: live quote unavailable for %s/%s: %s",
+                        resolved["segment"], resolved["token"], ltp_or_exc)
+        ltp = None
+        zone = {
+            "zone": None, "zone_label": "Live Price Unavailable", "bias": "Neutral",
+            "sl": None, "tp": None, "tp_alt": None, "trail_stop": False,
+            "reason": "No live quote right now (market may be closed) — levels are still shown "
+                      "against yesterday's close; zone/SL/TP need a live price.",
+            "commentary": None,
+        }
+    elif isinstance(ltp_or_exc, BaseException):
+        raise ltp_or_exc
+    else:
+        ltp = ltp_or_exc
+        zone = classify_and_suggest(levels_doc["levels"], ltp, levels_doc["close"])
 
     return {
         "segment": exitline_segment,

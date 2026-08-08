@@ -103,7 +103,7 @@ const fetchCryptoBars = async (symbol, interval) => {
 // are the default because they keep the box a constant *proportion* of
 // price, which is what makes one parameter set usable across instruments
 // trading at wildly different absolute levels.
-const BOX_SIZES = [0.1, 0.25, 0.5, 1, 2, 3];
+const BOX_SIZES = [0.01, 0.02, 0.05, 0.1, 0.25, 0.5, 1, 2, 3];
 
 // Fixed platform convention: close-only plotting, 3-box reversal, always.
 // Box size is the only construction dial — the backend doesn't accept a
@@ -689,27 +689,6 @@ const PnfGrid = forwardRef(({
         </div>
       )}
 
-      {/* Session-divider date labels — same real-screen-pixel HTML overlay
-          as the signal glyphs above, pinned to the top of each line. */}
-      {sessionDividers.length > 0 && (
-        <div style={{ position: "absolute", inset: 0, overflow: "hidden", pointerEvents: "none" }}>
-          {sessionDividers.map((b) => {
-            const left = toScreenX(b.x);
-            if (left < -40 || left > mainPxW + 40) return null;
-            return (
-              <div
-                key={`session-label-${b.index}`}
-                style={{
-                  position: "absolute", left, top: 4, transform: "translateX(2px)",
-                  fontSize: 10, lineHeight: 1, color: "#94A3B8", whiteSpace: "nowrap",
-                }}
-              >
-                {b.date}
-              </div>
-            );
-          })}
-        </div>
-      )}
       </div>
 
       {/* Price axis — a separate fixed-width pane so it stays put while the

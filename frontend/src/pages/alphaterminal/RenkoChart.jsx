@@ -77,7 +77,7 @@ const fetchCryptoBars = async (symbol, interval) => {
 
 // Book's own commonly-cited brick sizes (Ch.1: 0.25-1% short term,
 // 1-3% intermediate, 3-5% longer term).
-const BOX_SIZES = [0.1, 0.25, 0.5, 1, 2, 3, 5];
+const BOX_SIZES = [0.01, 0.02, 0.05, 0.1, 0.25, 0.5, 1, 2, 3, 5];
 
 // Fixed platform convention, same posture as PnfChart.jsx's REVERSAL:
 // Renko is always close-only, 2-box reversal (see backend/renko_engine.py
@@ -325,14 +325,6 @@ const RenkoGrid = forwardRef(({
     return pts.length > 1 ? pts.join(" ") : null;
   }, [showMa, indicators, priceToRow, brickX]);
 
-  // Real-screen-pixel conversion for the session-divider date labels below
-  // — SVG <text> sized in viewBox units goes sub-pixel at this app's usual
-  // zoom-out levels (same reasoning as PnfChart.jsx's identical helpers,
-  // which this file never previously needed since it has no HTML overlay).
-  const mainRect = mainSvgRef.current?.getBoundingClientRect();
-  const mainPxW = mainRect?.width || 900;
-  const toScreenX = useCallback((x) => ((x - vx) / viewW) * mainPxW, [vx, viewW, mainPxW]);
-
   // Exitline overlay — see PnfChart.jsx's identical computation.
   const exitlineLines = useMemo(() => {
     if (!exitlineLevels?.levels) return [];
@@ -450,27 +442,6 @@ const RenkoGrid = forwardRef(({
           ))}
         </svg>
 
-        {/* Session-divider date labels — real-screen-pixel HTML overlay,
-            same reasoning as PnfChart.jsx's identical block. */}
-        {sessionDividers.length > 0 && (
-          <div style={{ position: "absolute", inset: 0, overflow: "hidden", pointerEvents: "none" }}>
-            {sessionDividers.map((b) => {
-              const left = toScreenX(b.x);
-              if (left < -40 || left > mainPxW + 40) return null;
-              return (
-                <div
-                  key={`session-label-${b.index}`}
-                  style={{
-                    position: "absolute", left, top: 4, transform: "translateX(2px)",
-                    fontSize: 10, lineHeight: 1, color: "#94A3B8", whiteSpace: "nowrap",
-                  }}
-                >
-                  {b.date}
-                </div>
-              );
-            })}
-          </div>
-        )}
       </div>
 
       <div
