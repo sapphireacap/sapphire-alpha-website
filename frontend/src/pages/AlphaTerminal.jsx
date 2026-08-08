@@ -134,7 +134,7 @@ export const MomentumTable = ({ rows, onRowClick, disclaimer = DISCLAIMER }) => 
               data-testid={`momentum-row-${i}`}
             >
               <td className="px-6 py-5 whitespace-nowrap">
-                <span className="inline-flex items-center gap-1.5 font-display text-lg font-extrabold text-white tracking-tight">
+                <span className="inline-flex items-center gap-1.5 text-lg font-extrabold text-white tracking-tight">
                   <span className="group-hover:underline">{r.ticker}</span>
                   {(() => { const { Icon, color } = MOMENTUM_TREND[r.bias] || MOMENTUM_TREND.Neutral; return <Icon size={14} className={color} />; })()}
                 </span>
@@ -169,7 +169,7 @@ export const MomentumTable = ({ rows, onRowClick, disclaimer = DISCLAIMER }) => 
           data-testid={`momentum-card-${i}`}
         >
           <div className="flex items-center justify-between mb-3">
-            <span className="inline-flex items-center gap-1.5 font-display text-xl font-extrabold text-white tracking-tight">
+            <span className="inline-flex items-center gap-1.5 text-xl font-extrabold text-white tracking-tight">
               {r.ticker}
               {(() => { const { Icon, color } = MOMENTUM_TREND[r.bias] || MOMENTUM_TREND.Neutral; return <Icon size={15} className={color} />; })()}
             </span>
@@ -258,7 +258,7 @@ export const StraddleCompass = ({ signal, index = "NIFTY" }) => {
           <span className={`inline-flex h-12 w-12 items-center justify-center rounded-xl border ${style.ring} ${style.color}`}>
             <Icon size={26} />
           </span>
-          <span className={`font-display text-4xl md:text-5xl font-black tracking-tighter ${style.color}`} data-testid="compass-bias">
+          <span className={`font-display text-4xl md:text-5xl font-normal tracking-[-0.015em] ${style.color}`} data-testid="compass-bias">
             {bias.toUpperCase()}
           </span>
         </div>
@@ -383,7 +383,7 @@ const PausedDirectoryCard = ({ module, index }) => {
             <span className="font-mono-ui text-xs text-slate-500">{module.no}</span>
           </span>
         </div>
-        <h3 className="font-display text-xl font-bold text-white tracking-tight mb-1.5">{module.title}</h3>
+        <h3 className="text-xl font-bold text-white tracking-tight mb-1.5">{module.title}</h3>
         <p className="text-sm font-light text-slate-500 mb-6 leading-relaxed">{module.shortDescription}</p>
         <div className="flex items-center justify-end gap-3 pt-4 border-t border-white/[0.06]">
           <span className="inline-flex items-center gap-1.5 font-mono-ui text-[11px] uppercase tracking-wider text-slate-500">
@@ -429,7 +429,7 @@ const DirectoryCard = ({ module, index, onAbout }) => {
           </button>
         </div>
 
-        <h3 className="font-display text-xl font-bold text-white tracking-tight mb-1.5">{module.title}</h3>
+        <h3 className="text-xl font-bold text-white tracking-tight mb-1.5">{module.title}</h3>
         <p className="text-sm font-light text-slate-500 mb-6 leading-relaxed">{module.shortDescription}</p>
 
         <p className="pt-4 border-t border-white/[0.06] inline-flex items-center gap-1.5 text-xs font-medium text-sapphire-light group-hover:text-white transition-colors">
@@ -508,7 +508,7 @@ const UnavailableMarket = ({ market }) => (
     <span className="inline-flex h-16 w-16 items-center justify-center rounded-2xl border border-white/10 bg-white/[0.03] text-slate-500 mb-6">
       <Globe size={28} />
     </span>
-    <h2 className="font-display text-2xl md:text-3xl font-bold text-white tracking-tight mb-3">
+    <h2 className="text-2xl md:text-3xl font-bold text-white tracking-tight mb-3">
       Not Available in Your Country
     </h2>
     <p className="text-sm font-light text-slate-500 max-w-sm mb-8">
@@ -557,7 +557,7 @@ const AboutModuleModal = ({ module, onClose }) => (
         <X size={18} />
       </button>
       <p className="font-mono-ui text-[10px] uppercase tracking-[0.2em] text-sapphire-light mb-2">About Module</p>
-      <h3 className="font-display text-xl font-bold text-white tracking-tight mb-5">{module.title}</h3>
+      <h3 className="text-xl font-bold text-white tracking-tight mb-5">{module.title}</h3>
       <div className="space-y-4">
         <div>
           <p className="font-mono-ui text-[10px] uppercase tracking-[0.16em] text-slate-500 mb-1">Purpose</p>
@@ -593,7 +593,7 @@ const AboutTerminalPanel = ({ onClick }) => (
       <LayoutDashboard size={18} />
     </span>
     <span>
-      <span className="block font-display text-sm font-bold text-white tracking-tight">About Alpha Terminal</span>
+      <span className="block text-sm font-bold text-white tracking-tight">About Alpha Terminal</span>
       <span className="block text-xs font-light text-slate-500 mt-0.5">Explore how our modules give you an edge</span>
     </span>
     <ChevronRight size={16} className="text-slate-500 group-hover:text-sapphire-light transition-colors ml-2 shrink-0" />
@@ -628,7 +628,7 @@ const AboutTerminalModal = ({ onClose }) => (
         <X size={18} />
       </button>
       <p className="font-mono-ui text-[10px] uppercase tracking-[0.2em] text-sapphire-light mb-2">About Alpha Terminal</p>
-      <h3 className="font-display text-xl font-bold text-white tracking-tight mb-4">Market Intelligence</h3>
+      <h3 className="text-xl font-bold text-white tracking-tight mb-4">Market Intelligence</h3>
       <p className="text-sm text-slate-300 leading-relaxed">
         Research modules and screening engines for disciplined investors. Each module runs its own model against
         live market data -- open one to see its current reading, or tap "About Module" on any card for what it
@@ -687,7 +687,7 @@ export default function AlphaTerminal() {
                   <span className="inline-flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl border border-sapphire-light/30 bg-sapphire/15 text-sapphire-light">
                     <LayoutDashboard size={24} />
                   </span>
-                  <h1 className="font-display font-black tracking-tighter text-white text-4xl md:text-5xl leading-[0.95]">
+                  <h1 className="font-display font-normal tracking-[-0.015em] text-white text-4xl md:text-5xl leading-[0.95]">
                     Market Intelligence
                   </h1>
                 </motion.div>

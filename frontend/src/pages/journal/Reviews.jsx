@@ -52,7 +52,7 @@ const Reviews = () => {
   return (
     <div data-testid="journal-reviews">
       <div className="flex items-center justify-between mb-6 flex-wrap gap-3">
-        <h1 className="font-display text-2xl font-bold text-white">Reviews</h1>
+        <h1 className="text-2xl font-bold text-white">Reviews</h1>
         <div className="flex gap-3">
           <button onClick={() => generate("weekly")} disabled={generating !== null} className="btn-ghost !px-4 !py-2 text-sm disabled:opacity-70" data-testid="generate-weekly-btn">
             {generating === "weekly" ? <Loader2 size={14} className="animate-spin" /> : <Sparkles size={14} />} This Week

@@ -59,7 +59,7 @@ const ToolRow = ({ tool }) => {
           {tool.active && <LivePulseDot color="bg-emerald-400" size="h-2 w-2" />}
         </span>
         <span className="min-w-0">
-          <span className="block font-display text-sm md:text-base font-bold text-white tracking-tight truncate">{tool.title}</span>
+          <span className="block text-sm md:text-base font-bold text-white tracking-tight truncate">{tool.title}</span>
           <span className="hidden sm:block text-xs font-light text-slate-500 truncate">{tool.description}</span>
         </span>
       </span>

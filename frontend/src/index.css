@@ -7,7 +7,7 @@
 @tailwind utilities;
 
 :root {
-    --void: #030408;
+    --void: #060B18;
     --surface: #0a0d18;
     --surface-2: #12182b;
     --sapphire: #1f5fd0;
@@ -225,7 +225,7 @@ body {
        after components, the utility always won and drew an unintended rule
        above every label using the class. */
     .label-mono {
-        @apply font-mono-ui text-[11px] md:text-xs uppercase tracking-[0.28em] text-[#437EEB] font-bold;
+        @apply font-mono-ui text-[11px] md:text-xs uppercase tracking-[0.28em] text-bone/55 font-medium;
     }
 
     .container-x {

@@ -38,13 +38,13 @@ export const Contact = () => {
     "w-full min-w-0 rounded-lg border border-white/10 bg-white/[0.02] focus:border-sapphire-light focus:bg-white/[0.04] outline-none text-white font-light px-4 py-3 placeholder:text-slate-600 transition-all duration-300 focus:shadow-[0_0_0_3px_rgba(67,126,235,0.15)]";
 
   return (
-    <section id="contact" className="relative py-24 md:py-40" data-testid="contact-section">
+    <section id="contact" className="relative py-20 md:py-28" data-testid="contact-section">
       <div className="absolute inset-0 grid-bg opacity-30 pointer-events-none" />
       <div className="container-x relative">
         <div className="flex flex-col lg:grid lg:grid-cols-12 gap-12 md:gap-16">
           <Reveal className="lg:col-span-5">
             <p className="label-mono mb-6">Contact</p>
-            <h2 className="font-display font-black tracking-tighter text-white text-4xl md:text-6xl leading-[1.0]">
+            <h2 className="font-display font-normal tracking-[-0.015em] text-white text-4xl md:text-6xl leading-[1.0]">
               Let&apos;s build something meaningful.
             </h2>
             <p className="mt-6 text-base md:text-lg font-light text-slate-400 max-w-md">

@@ -15,7 +15,7 @@ const NotFound = () => (
       </div>
 
       <p className="label-mono mb-4">404</p>
-      <h1 className="font-display font-black tracking-tighter text-white text-5xl md:text-7xl mb-5">Page Not Found</h1>
+      <h1 className="font-display font-normal tracking-[-0.015em] text-white text-5xl md:text-7xl mb-5">Page Not Found</h1>
       <p className="text-base md:text-lg font-light text-slate-400 leading-relaxed">
         The page you're looking for doesn't exist or has moved.
       </p>

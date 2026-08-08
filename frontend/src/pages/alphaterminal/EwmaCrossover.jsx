@@ -51,7 +51,7 @@ const EwmaResults = ({ result }) => (
   <div data-testid="ewma-results">
     <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
       <div>
-        <p className="font-display text-xl font-bold text-white">{result.resolved_symbol}</p>
+        <p className="text-xl font-bold text-white">{result.resolved_symbol}</p>
         <p className="font-mono-ui text-[10px] uppercase tracking-[0.18em] text-slate-500 mt-1">
           {result.segment} · History {fmtDate(result.history_from)} – {fmtDate(result.history_to)}
           {result.resolved_expiry && <> · Expiry {fmtDate(result.resolved_expiry)}</>}

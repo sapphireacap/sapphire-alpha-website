@@ -17,7 +17,7 @@ export default function NotAvailablePage() {
             <Lock size={12} className="text-slate-500" />
             <span className="font-mono-ui text-xs uppercase tracking-wider text-slate-400">Not Available</span>
           </div>
-          <h1 className="font-display font-black tracking-tighter text-white text-3xl md:text-4xl leading-[0.95] mb-4">
+          <h1 className="font-display font-normal tracking-[-0.015em] text-white text-3xl md:text-4xl leading-[0.95] mb-4">
             Not Available In Your Country
           </h1>
           <p className="text-sm font-light text-slate-500 leading-relaxed mb-8">

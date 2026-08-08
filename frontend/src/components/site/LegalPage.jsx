@@ -65,14 +65,14 @@ export const LegalPage = ({ page }) => {
         </div>
 
         <p className="label-mono mb-4">Legal</p>
-        <h1 className="font-display font-black tracking-tighter text-white text-4xl md:text-6xl mb-3">{data.title}</h1>
+        <h1 className="font-display font-normal tracking-[-0.015em] text-white text-4xl md:text-6xl mb-3">{data.title}</h1>
         <p className="font-mono-ui text-xs text-slate-500 mb-12">{data.updated}</p>
         <p className="text-base md:text-lg font-light text-slate-300 leading-relaxed mb-14">{data.intro}</p>
 
         <div className="space-y-10">
           {data.sections.map((s) => (
             <div key={s.h}>
-              <h2 className="font-display text-xl md:text-2xl font-bold text-white mb-3">{s.h}</h2>
+              <h2 className="text-xl md:text-2xl font-bold text-white mb-3">{s.h}</h2>
               <p className="text-base font-light text-slate-400 leading-relaxed">{s.p}</p>
             </div>
           ))}

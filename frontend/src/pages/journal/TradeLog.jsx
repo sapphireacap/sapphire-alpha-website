@@ -56,7 +56,7 @@ const TradeLog = () => {
 
   return (
     <div data-testid="trade-log">
-      <h1 className="font-display text-2xl font-bold text-white mb-6">Trade Log</h1>
+      <h1 className="text-2xl font-bold text-white mb-6">Trade Log</h1>
 
       <div className="glass rounded-2xl p-5 mb-6 grid grid-cols-2 md:grid-cols-5 gap-3">
         <select value={filters.setup_tag} onChange={(e) => setFilters((f) => ({ ...f, setup_tag: e.target.value }))} style={{ colorScheme: "dark" }} className={selectCls}>
@@ -151,7 +151,7 @@ const TradeDetailModal = ({ trade, onClose, onUpdated }) => {
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm" onClick={onClose}>
       <div className="glass rounded-2xl p-6 md:p-8 w-full max-w-2xl max-h-[85vh] overflow-y-auto relative" onClick={(e) => e.stopPropagation()} data-testid="trade-detail-modal">
         <button onClick={onClose} className="absolute top-5 right-5 text-slate-500 hover:text-white"><X size={18} /></button>
-        <h2 className="font-display text-xl font-bold text-white mb-1">{trade.instrument} · {trade.strategy_family?.replace(/_/g, " ")}</h2>
+        <h2 className="text-xl font-bold text-white mb-1">{trade.instrument} · {trade.strategy_family?.replace(/_/g, " ")}</h2>
         <p className="text-xs text-slate-500 mb-6">{fmtDate(trade.entry_time)}</p>
 
         <div className="grid grid-cols-2 gap-4 mb-6 text-sm">
@@ -195,7 +195,7 @@ const TradeDetailModal = ({ trade, onClose, onUpdated }) => {
           </div>
         ) : (
           <div className="border-t border-white/10 pt-4">
-            <p className="font-display text-base font-bold text-white mb-3">Close Trade</p>
+            <p className="text-base font-bold text-white mb-3">Close Trade</p>
             <div className="space-y-2 mb-4">
               {trade.legs.map((l) => (
                 <div key={l.leg_id} className="flex items-center gap-3">

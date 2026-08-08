@@ -54,7 +54,7 @@ const Section = ({ no, title, children, testId, collapsible = false }) => {
       >
         <div className="flex items-baseline gap-3">
           <span className="font-mono-ui text-xs text-sapphire-light">{no}</span>
-          <h2 className="font-display text-2xl md:text-3xl font-bold text-white tracking-tight">{title}</h2>
+          <h2 className="text-2xl md:text-3xl font-bold text-white tracking-tight">{title}</h2>
         </div>
         {canCollapse && <ChevronDown size={18} className={`text-slate-500 transition-transform duration-300 shrink-0 ${open ? "rotate-180" : ""}`} />}
       </div>
@@ -78,7 +78,7 @@ const Header = ({ module }) => (
       </p>
 
       <div>
-        <h1 className="font-display font-black tracking-tighter text-white text-4xl md:text-5xl leading-[0.95]">{module.title}</h1>
+        <h1 className="font-display font-normal tracking-[-0.015em] text-white text-4xl md:text-5xl leading-[0.95]">{module.title}</h1>
         {module.shortDescription && (
           <p className="text-sm md:text-base text-slate-400 font-light mt-4 max-w-xl">{module.shortDescription}</p>
         )}
@@ -113,7 +113,7 @@ const SwingPicksTable = ({ rows }) => (
                 className="group border-b border-white/[0.05] last:border-0 transition-colors duration-300 hover:bg-sapphire/[0.06] cursor-pointer"
                 data-testid={`swing-picks-row-${i}`}
               >
-                <td className="px-6 py-5 font-display text-lg font-extrabold text-white whitespace-nowrap">
+                <td className="px-6 py-5 text-lg font-extrabold text-white whitespace-nowrap">
                   <span className="group-hover:underline">{r.ticker}</span>
                 </td>
                 <td className="px-6 py-5 text-sm text-slate-300 whitespace-nowrap">{r.company || "—"}</td>

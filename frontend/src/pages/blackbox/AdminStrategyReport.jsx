@@ -31,7 +31,7 @@ const Section = ({ no, title, children, testId }) => (
   >
     <div className="flex items-baseline gap-3 mb-5">
       <span className="font-mono-ui text-xs text-sapphire-light">{no}</span>
-      <h3 className="font-display text-xl font-bold text-white tracking-tight">{title}</h3>
+      <h3 className="text-xl font-bold text-white tracking-tight">{title}</h3>
     </div>
     {children}
   </motion.section>

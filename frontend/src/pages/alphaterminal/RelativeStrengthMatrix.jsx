@@ -38,7 +38,7 @@ const RankingTable = ({ ranking, groupSize }) => {
           <tbody>
             {ranking.map((r, i) => (
               <tr key={r.symbol} className="border-b border-white/[0.05] last:border-0" data-testid={`rs-rank-row-${i}`}>
-                <td className="px-5 py-3.5 font-display text-sm font-bold text-white whitespace-nowrap">
+                <td className="px-5 py-3.5 text-sm font-bold text-white whitespace-nowrap">
                   <span className="font-mono-ui text-[10px] text-slate-600 mr-2">#{i + 1}</span>
                   {r.symbol}
                 </td>
@@ -149,7 +149,7 @@ const RelativeStrengthMatrix = () => {
         <>
           <div className="flex flex-wrap items-center justify-between gap-3 mb-5">
             <div>
-              <p className="font-display text-xl font-bold text-white">{data.label}</p>
+              <p className="text-xl font-bold text-white">{data.label}</p>
               <p className="font-mono-ui text-[10px] uppercase tracking-[0.18em] text-slate-500 mt-1">
                 {data.symbols.length} instruments · As of {fmtDate(data.as_of)}
               </p>

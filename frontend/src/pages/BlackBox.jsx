@@ -44,7 +44,7 @@ const HowItWorks = () => (
         whileInView={{ opacity: 1, y: 0 }}
         viewport={{ once: true, margin: "-80px" }}
         transition={{ duration: 0.7, ease: EASE }}
-        className="font-display text-3xl md:text-4xl font-bold text-white tracking-tight mb-12 text-center"
+        className="font-display text-3xl md:text-4xl font-normal text-white tracking-tight mb-12 text-center"
       >
         How It Works
       </motion.h2>
@@ -72,7 +72,7 @@ const HowItWorks = () => (
               <s.Icon size={26} />
             </motion.span>
             <span className="font-mono-ui text-[11px] text-sapphire-light mb-2">STEP {s.step}</span>
-            <h3 className="font-display text-lg font-bold text-white tracking-tight mb-2">{s.title}</h3>
+            <h3 className="text-lg font-bold text-white tracking-tight mb-2">{s.title}</h3>
             <p className="text-sm font-light text-slate-500 leading-relaxed max-w-[220px]">{s.body}</p>
           </motion.div>
         ))}
@@ -99,7 +99,7 @@ const StrategyCounts = () => {
     <section className="relative pb-20 md:pb-28" data-testid="black-box-strategy-counts">
       <div className="container-x">
         <div className={`${SURFACE} max-w-3xl mx-auto p-8 md:p-10 text-center`}>
-          <h2 className="font-display text-2xl md:text-3xl font-bold text-white tracking-tight mb-3">
+          <h2 className="text-2xl md:text-3xl font-bold text-white tracking-tight mb-3">
             Available Strategies
           </h2>
           <p className="text-sm md:text-base font-light text-slate-400 leading-relaxed mb-8 max-w-lg mx-auto">
@@ -108,7 +108,7 @@ const StrategyCounts = () => {
           <div className="flex flex-wrap items-center justify-center gap-8 md:gap-12">
             {STATUS_LABELS.map((label) => (
               <div key={label}>
-                <p className="font-display text-3xl md:text-4xl font-black text-white tracking-tight">{counts[label]}</p>
+                <p className="font-display text-3xl md:text-4xl font-normal text-white tracking-tight">{counts[label]}</p>
                 <p className="font-mono-ui text-[10px] uppercase tracking-[0.14em] text-slate-500 mt-1">{label}</p>
               </div>
             ))}
@@ -131,7 +131,7 @@ const ValidationNotice = () => (
         className={`${SURFACE} max-w-3xl mx-auto p-8 md:p-10 text-center border-l-2 border-l-sapphire`}
       >
         <ShieldQuestion size={28} className="text-sapphire-light mx-auto mb-5" />
-        <h2 className="font-display text-2xl md:text-3xl font-bold text-white tracking-tight mb-4">
+        <h2 className="text-2xl md:text-3xl font-bold text-white tracking-tight mb-4">
           Why aren't all strategies available?
         </h2>
         <p className="text-sm md:text-base font-light text-slate-400 leading-relaxed mb-3">
@@ -154,7 +154,7 @@ const FaqItem = ({ item, open, onToggle }) => (
       className="w-full flex items-center justify-between gap-4 px-6 py-5 text-left"
       data-testid={`faq-toggle-${item.q.slice(0, 12)}`}
     >
-      <span className="font-display text-base md:text-lg font-bold text-white">{item.q}</span>
+      <span className="text-base md:text-lg font-bold text-white">{item.q}</span>
       <ChevronDown size={18} className={`text-slate-400 shrink-0 transition-transform duration-300 ${open ? "rotate-180" : ""}`} />
     </button>
     <AnimatePresence initial={false}>
@@ -183,7 +183,7 @@ const Faq = () => {
           whileInView={{ opacity: 1, y: 0 }}
           viewport={{ once: true, margin: "-80px" }}
           transition={{ duration: 0.7, ease: EASE }}
-          className="font-display text-3xl md:text-4xl font-bold text-white tracking-tight mb-10 text-center"
+          className="font-display text-3xl md:text-4xl font-normal text-white tracking-tight mb-10 text-center"
         >
           Frequently Asked Questions
         </motion.h2>
@@ -214,7 +214,7 @@ export default function BlackBox() {
               initial={{ opacity: 0, y: 24 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.9, ease: EASE }}
-              className="font-display font-black tracking-tighter text-white text-5xl md:text-7xl leading-[0.95]"
+              className="font-display font-normal tracking-[-0.015em] text-white text-5xl md:text-7xl leading-[0.95]"
             >
               The Black Box
             </motion.h1>

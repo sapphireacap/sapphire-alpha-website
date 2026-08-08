@@ -84,7 +84,7 @@ const IpoTable = ({ rows, onOpen }) => (
               data-testid={`ipo-row-${i}`}
             >
               <td className="px-6 py-5">
-                <span className="font-display text-base font-bold text-white tracking-tight">{r.company_name}</span>
+                <span className="text-base font-bold text-white tracking-tight">{r.company_name}</span>
                 {r.sector && <span className="block text-xs text-slate-500 mt-0.5">{r.sector}</span>}
               </td>
               <td className="px-6 py-5 text-sm text-slate-300 whitespace-nowrap">{(r.exchange || []).join(", ") || "—"}</td>
@@ -112,7 +112,7 @@ const IpoTable = ({ rows, onOpen }) => (
           data-testid={`ipo-card-${i}`}
         >
           <div className="flex items-center justify-between mb-2">
-            <span className="font-display text-lg font-bold text-white tracking-tight">{r.company_name}</span>
+            <span className="text-lg font-bold text-white tracking-tight">{r.company_name}</span>
             <IpoStatusBadge status={r.status} testid={`ipo-status-mobile-${i}`} />
           </div>
           {r.sector && <p className="text-xs text-slate-500 mb-3">{r.sector}</p>}
@@ -167,7 +167,7 @@ export default function Ipos() {
               initial={{ opacity: 0, y: 24 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.9, ease: EASE }}
-              className="font-display font-black tracking-tighter text-white text-5xl md:text-7xl leading-[0.95]"
+              className="font-display font-normal tracking-[-0.015em] text-white text-5xl md:text-7xl leading-[0.95]"
             >
               IPO Tracker
             </motion.h1>

@@ -115,7 +115,7 @@ const PricingCard = ({ plan, cycle, onCta }) => {
       }`}
       data-testid={`pricing-card-${plan.key}`}
     >
-      <h3 className="font-display text-xl font-bold text-white tracking-tight">{plan.name}</h3>
+      <h3 className="text-xl font-bold text-white tracking-tight">{plan.name}</h3>
       {plan.tagline && (
         <p className="mt-1.5 font-mono-ui text-[11px] uppercase tracking-[0.1em] text-sapphire-light">{plan.tagline}</p>
       )}
@@ -127,7 +127,7 @@ const PricingCard = ({ plan, cycle, onCta }) => {
           initial={{ opacity: 0, y: 8 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.3, ease: EASE }}
-          className="font-display text-4xl font-black tracking-tighter text-white"
+          className="font-display text-4xl font-normal tracking-[-0.015em] text-white"
           data-testid={`pricing-permonth-${plan.key}`}
         >
           {fmtCents(perMonth)}
@@ -174,7 +174,7 @@ const FaqItem = ({ item, isOpen, onClick, testId }) => (
       className="w-full flex items-center justify-between gap-4 py-6 text-left"
       aria-expanded={isOpen}
     >
-      <span className="font-display text-base md:text-lg font-medium text-white">{item.q}</span>
+      <span className="text-base md:text-lg font-medium text-white">{item.q}</span>
       <motion.span
         animate={{ rotate: isOpen ? 180 : 0 }}
         transition={{ duration: 0.3, ease: EASE }}
@@ -205,7 +205,7 @@ const Faq = () => {
     <section className="relative py-24 md:py-32 border-t border-white/5" data-testid="pricing-faq-section">
       <div className="container-x">
         <Reveal className="text-center max-w-2xl mx-auto mb-12 md:mb-16">
-          <h2 className="font-display font-black tracking-tighter text-white text-3xl md:text-5xl leading-[1.05]">
+          <h2 className="font-display font-normal tracking-[-0.015em] text-white text-3xl md:text-5xl leading-[1.05]">
             Frequently Asked Questions
           </h2>
         </Reveal>
@@ -253,7 +253,7 @@ export default function Pricing() {
               initial={{ opacity: 0, y: 24 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.9, ease: EASE }}
-              className="font-display font-black tracking-tighter text-white text-5xl md:text-7xl leading-[0.95]"
+              className="font-display font-normal tracking-[-0.015em] text-white text-5xl md:text-7xl leading-[0.95]"
             >
               Pricing
             </motion.h1>

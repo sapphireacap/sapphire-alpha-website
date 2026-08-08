@@ -126,8 +126,8 @@ const ClarityScoreCard = ({ scorecard }) => {
   return (
     <div className={`${SURFACE} p-6`} data-testid="clarity-score-card">
       <div className="flex items-center justify-between mb-5">
-        <h3 className="font-display text-base font-bold text-white">Clarity Score</h3>
-        <span className={`font-display text-4xl font-black ${CLARITY_TONE(final_score)}`}>{fmtNum(final_score, 1)}<span className="text-lg text-slate-600">/10</span></span>
+        <h3 className="text-base font-bold text-white">Clarity Score</h3>
+        <span className={`font-display text-4xl font-normal ${CLARITY_TONE(final_score)}`}>{fmtNum(final_score, 1)}<span className="text-lg text-slate-600">/10</span></span>
       </div>
       <div className="space-y-3">
         {Object.entries(sub_scores).map(([key, value]) => (
@@ -162,7 +162,7 @@ const FractureScanTable = ({ flags }) => {
     <div className={`${SURFACE} overflow-hidden`} data-testid="fracture-scan-table">
       <div className="flex items-center gap-2 px-6 pt-6 pb-2">
         <ShieldAlert size={16} className="text-sapphire-light" />
-        <h3 className="font-display text-base font-bold text-white">Fracture Scan</h3>
+        <h3 className="text-base font-bold text-white">Fracture Scan</h3>
       </div>
       <div className="overflow-x-auto">
         <table className="w-full text-left min-w-[520px]">
@@ -206,7 +206,7 @@ const LumenAgentPanel = ({ symbol }) => {
   return (
     <div className={`${SURFACE} p-6`} data-testid="lumen-agent-panel">
       <div className="flex items-center justify-between flex-wrap gap-3 mb-4">
-        <h3 className="font-display text-base font-bold text-white flex items-center gap-2"><Sparkles size={16} className="text-sapphire-light" /> Lumen Agent</h3>
+        <h3 className="text-base font-bold text-white flex items-center gap-2"><Sparkles size={16} className="text-sapphire-light" /> Lumen Agent</h3>
         {!result && (
           <button
             type="button"
@@ -281,7 +281,7 @@ const CruciblePanel = ({ symbol }) => {
   return (
     <div className={`${SURFACE} p-6`} data-testid="crucible-panel">
       <div className="flex items-center justify-between flex-wrap gap-3 mb-4">
-        <h3 className="font-display text-base font-bold text-white flex items-center gap-2"><Swords size={16} className="text-sapphire-light" /> The Crucible</h3>
+        <h3 className="text-base font-bold text-white flex items-center gap-2"><Swords size={16} className="text-sapphire-light" /> The Crucible</h3>
         {!result && (
           <button type="button" onClick={run} disabled={loading} className="btn-ghost !px-4 !py-2 text-sm disabled:opacity-50" data-testid="crucible-run-btn">
             {loading ? <><Loader2 size={14} className="animate-spin" /> Debating…</> : "Start Debate"}
@@ -374,7 +374,7 @@ export default function FacetView() {
             <Link to="/research" className="hover:text-white transition-colors">Aurora</Link> <span className="mx-1">›</span> Facet View
           </p>
           <div className="flex items-baseline gap-3 flex-wrap mb-1">
-            <h1 className="font-display text-4xl md:text-5xl font-bold text-white tracking-tight">{m.symbol}</h1>
+            <h1 className="font-display text-4xl md:text-5xl font-normal text-white tracking-tight">{m.symbol}</h1>
             <span className="font-mono-ui text-2xl text-slate-300">{fmtINR(latest?.close)}</span>
             {cm?.return_1d != null && <span className={`font-mono-ui text-sm ${toneOf(cm.return_1d)}`}>{fmtPct(cm.return_1d)}</span>}
           </div>
@@ -394,7 +394,7 @@ export default function FacetView() {
 
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-10">
             <div className={`${SURFACE} p-6`}>
-              <h3 className="font-display text-base font-bold text-white mb-4">Fundamentals</h3>
+              <h3 className="text-base font-bold text-white mb-4">Fundamentals</h3>
               {!f ? (
                 <p className="text-sm text-slate-500">Not yet ingested for this symbol.</p>
               ) : (
@@ -415,7 +415,7 @@ export default function FacetView() {
               )}
             </div>
             <div className={`${SURFACE} p-6`}>
-              <h3 className="font-display text-base font-bold text-white mb-4">Shareholding Pattern</h3>
+              <h3 className="text-base font-bold text-white mb-4">Shareholding Pattern</h3>
               <ShareholdingChart rows={shareholding} />
             </div>
           </div>

@@ -62,7 +62,7 @@ const SymbolSearch = () => {
               className="w-full text-left px-4 py-3 hover:bg-white/[0.04] transition-colors border-b border-white/[0.05] last:border-0"
               data-testid={`aurora-search-result-${r.symbol}`}
             >
-              <span className="font-display font-bold text-white">{r.symbol}</span>
+              <span className="font-bold text-white">{r.symbol}</span>
               <span className="ml-2 text-sm text-slate-500">{r.company_name}</span>
             </button>
           ))}
@@ -75,7 +75,7 @@ const SymbolSearch = () => {
 const MoverRow = ({ row, tone }) => (
   <div className="flex items-center justify-between px-5 py-3 border-b border-white/[0.05] last:border-0">
     <div>
-      <p className="font-display font-bold text-white">{row.symbol}</p>
+      <p className="font-bold text-white">{row.symbol}</p>
       <p className="text-xs text-slate-500">{row.company_name || "—"}</p>
     </div>
     <span className={`font-mono-ui text-sm font-semibold ${tone === "up" ? "text-emerald-400" : "text-red-400"}`}>
@@ -89,7 +89,7 @@ const BreadthGauge = ({ pct, counted }) => {
   return (
     <div className={`${SURFACE} p-6 text-center`} data-testid="aurora-breadth">
       <p className="font-mono-ui text-[10px] uppercase tracking-[0.24em] text-slate-500 mb-3">Market Breadth</p>
-      <p className={`font-display text-5xl font-black ${tone}`}>{pct == null ? "—" : `${pct.toFixed(0)}%`}</p>
+      <p className={`font-display text-5xl font-normal ${tone}`}>{pct == null ? "—" : `${pct.toFixed(0)}%`}</p>
       <p className="text-xs text-slate-500 mt-2">{counted ?? 0} stocks counted, of the Nifty 500</p>
     </div>
   );
@@ -141,7 +141,7 @@ export default function Aurora() {
                 initial={{ opacity: 0, y: 24 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ duration: 0.9, ease: EASE }}
-                className="font-display text-4xl md:text-6xl font-bold text-white tracking-tight mb-4"
+                className="font-display text-4xl md:text-6xl font-normal text-white tracking-tight mb-4"
               >
                 Aurora
               </motion.h1>

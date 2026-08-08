@@ -24,7 +24,7 @@ const AuthShell = ({ icon: Icon, title, subtitle, children }) => (
           <Icon size={18} className="text-sapphire-light" />
         </span>
         <div>
-          <h1 className="font-display text-xl font-bold text-white">{title}</h1>
+          <h1 className="text-xl font-bold text-white">{title}</h1>
           <p className="font-mono-ui text-[10px] uppercase tracking-[0.2em] text-slate-500">{subtitle}</p>
         </div>
       </div>

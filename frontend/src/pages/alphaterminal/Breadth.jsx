@@ -53,7 +53,7 @@ const withAverage = (series) => series.map((p, i) => {
 const StatChip = ({ label, value }) => (
   <div className="flex flex-col">
     <span className="font-mono-ui text-[10px] uppercase tracking-[0.16em] text-slate-500">{label}</span>
-    <span className="font-display text-lg font-bold text-white">{value}</span>
+    <span className="text-lg font-bold text-white">{value}</span>
   </div>
 );
 

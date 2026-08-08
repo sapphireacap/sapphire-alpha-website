@@ -6,7 +6,8 @@ import { scrollToId } from "./SmoothScroll";
 
 const EASE = [0.16, 1, 0.3, 1];
 
-const liveCount = MODULES.filter((m) => m.live).length;
+const liveModules = MODULES.filter((m) => m.live);
+const liveCount = liveModules.length;
 
 export const Hero = () => (
   <section
@@ -110,6 +111,29 @@ export const Hero = () => (
         </motion.aside>
       </div>
     </div>
+
+    {/* The plate's index. Fills the hero's lower band with the actual
+        contents of the terminal rather than decoration, and stays honest
+        by naming only the engines currently live. */}
+    <motion.div
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      transition={{ duration: 1.2, ease: EASE, delay: 0.5 }}
+      className="absolute inset-x-0 bottom-0 z-10 hidden md:block"
+    >
+      <div className="container-x pb-10">
+        <ul className="flex flex-wrap gap-x-7 gap-y-2.5 border-t border-bone/12 pt-4">
+          {liveModules.map((m) => (
+            <li
+              key={m.slug}
+              className="font-mono text-[10px] uppercase tracking-[0.16em] text-bone/60"
+            >
+              {m.title}
+            </li>
+          ))}
+        </ul>
+      </div>
+    </motion.div>
   </section>
 );
 

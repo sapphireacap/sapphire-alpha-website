@@ -125,7 +125,7 @@ export default function RenkoStudio() {
               initial={{ opacity: 0, y: 24 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.9, ease: EASE, delay: 0.05 }}
-              className="font-display font-black tracking-tighter text-white text-5xl md:text-7xl leading-[0.95]"
+              className="font-display font-normal tracking-[-0.015em] text-white text-5xl md:text-7xl leading-[0.95]"
             >
               Renko Studio
             </motion.h1>
@@ -153,7 +153,7 @@ export default function RenkoStudio() {
 
               {status === "logged-out" && (
                 <div data-testid="renko-studio-logged-out">
-                  <h3 className="font-display text-lg font-bold text-white">Sign in to continue</h3>
+                  <h3 className="text-lg font-bold text-white">Sign in to continue</h3>
                   <p className="mt-2 text-sm text-slate-400 leading-relaxed">
                     Renko Studio requires an account. Sign in if you already have one, or create one to get started.
                   </p>
@@ -174,7 +174,7 @@ export default function RenkoStudio() {
 
               {status === "no-access" && (
                 <div data-testid="renko-studio-no-access">
-                  <h3 className="font-display text-lg font-bold text-white">Activate a plan</h3>
+                  <h3 className="text-lg font-bold text-white">Activate a plan</h3>
                   <p className="mt-2 text-sm text-slate-400 leading-relaxed">
                     Signed in as <span className="text-white">{user?.email}</span>. Choose a billing cycle to request access.
                   </p>
@@ -195,7 +195,7 @@ export default function RenkoStudio() {
                   </div>
 
                   <div className="mt-5 flex items-end gap-1.5">
-                    <span className="font-display text-3xl font-black tracking-tighter text-white">${cycle.price}</span>
+                    <span className="font-display text-3xl font-normal tracking-[-0.015em] text-white">${cycle.price}</span>
                     <span className="text-sm text-slate-500 mb-1">/ {cycle.label.toLowerCase()}</span>
                   </div>
 
@@ -215,7 +215,7 @@ export default function RenkoStudio() {
 
               {status === "active" && (
                 <div data-testid="renko-studio-active">
-                  <h3 className="font-display text-lg font-bold text-white">You're all set</h3>
+                  <h3 className="text-lg font-bold text-white">You're all set</h3>
                   <p className="mt-2 text-sm text-slate-400 leading-relaxed">
                     Signed in as <span className="text-white">{user?.email}</span>.{" "}
                     {user?.role === "admin"

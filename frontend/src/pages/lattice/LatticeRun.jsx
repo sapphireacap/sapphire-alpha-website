@@ -30,7 +30,7 @@ const Section = ({ no, title, icon: Icon, children }) => (
     <div className="flex items-center gap-3 mb-5">
       <span className="font-mono-ui text-xs text-sapphire-light">{no}</span>
       {Icon && <Icon size={16} className="text-sapphire-light" />}
-      <h2 className="font-display text-xl font-bold text-white tracking-tight">{title}</h2>
+      <h2 className="text-xl font-bold text-white tracking-tight">{title}</h2>
     </div>
     {children}
   </motion.section>
@@ -87,7 +87,7 @@ export default function LatticeRun() {
               <span className="text-slate-300">{symbol}</span>
             </p>
             <div className="flex flex-wrap items-center justify-between gap-4">
-              <h1 className="font-display font-black tracking-tighter text-white text-4xl md:text-5xl leading-[0.95]">{symbol}</h1>
+              <h1 className="font-display font-normal tracking-[-0.015em] text-white text-4xl md:text-5xl leading-[0.95]">{symbol}</h1>
               <button
                 onClick={run} disabled={loading}
                 className="btn-sapphire disabled:opacity-70"
@@ -131,7 +131,7 @@ export default function LatticeRun() {
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div className={`${SURFACE} p-5 text-center`}>
                     <p className="font-mono-ui text-[10px] uppercase tracking-wider text-slate-500 mb-2">Clarity Score</p>
-                    <p className="font-display text-3xl font-black text-white">{result.clarity_score.final_score?.toFixed(1) ?? "—"}<span className="text-slate-600 text-lg">/10</span></p>
+                    <p className="font-display text-3xl font-normal text-white">{result.clarity_score.final_score?.toFixed(1) ?? "—"}<span className="text-slate-600 text-lg">/10</span></p>
                   </div>
                   <div className={`${SURFACE} p-5`}>
                     <p className="font-mono-ui text-[10px] uppercase tracking-wider text-slate-500 mb-2">Fracture Scan</p>

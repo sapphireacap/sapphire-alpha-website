@@ -25,7 +25,7 @@ const fmtPrice = (band) => {
 const FactCard = ({ label, value }) => (
   <div className="glass rounded-2xl p-5">
     <p className="font-mono-ui text-[10px] uppercase tracking-[0.18em] text-slate-500 mb-2">{label}</p>
-    <p className="font-display text-lg font-bold text-white tracking-tight">{value ?? "—"}</p>
+    <p className="text-lg font-bold text-white tracking-tight">{value ?? "—"}</p>
   </div>
 );
 
@@ -76,7 +76,7 @@ const GmpSourceRow = ({ s }) => (
       <span className="h-1.5 w-1.5 rounded-full" style={{ background: GMP_SOURCE_COLORS[s.source] || "#94A3B8" }} />
       GMP <span className="text-[9px] normal-case">({GMP_SOURCE_LABELS[s.source] || s.source})</span>
     </p>
-    <p className={`font-display text-2xl md:text-3xl font-black tracking-tight ${s.gmp > 0 ? "text-emerald-400" : s.gmp < 0 ? "text-red-400" : "text-white"}`}>
+    <p className={`text-2xl md:text-3xl font-black tracking-tight ${s.gmp > 0 ? "text-emerald-400" : s.gmp < 0 ? "text-red-400" : "text-white"}`}>
       {s.gmp > 0 ? "+" : ""}₹{s.gmp}
     </p>
     <p className="text-xs text-slate-500 mt-1">
@@ -214,7 +214,7 @@ export default function IpoDetail() {
             ) : (
               <>
                 <div className="flex flex-wrap items-center gap-4 mb-4">
-                  <h1 className="font-display font-black tracking-tighter text-white text-4xl md:text-6xl leading-[0.95]" data-testid="ipo-detail-name">
+                  <h1 className="font-display font-normal tracking-[-0.015em] text-white text-4xl md:text-6xl leading-[0.95]" data-testid="ipo-detail-name">
                     {ipo.company_name}
                   </h1>
                   <IpoStatusBadge status={ipo.status} testid="ipo-detail-status" />

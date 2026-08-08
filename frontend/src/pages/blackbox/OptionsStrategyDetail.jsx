@@ -49,7 +49,7 @@ const fmtFilterValue = (key, value) => {
 const SectionHeader = ({ no, title }) => (
   <div className="flex items-baseline gap-3 mb-5">
     <span className="font-mono-ui text-xs text-sapphire-light">{no}</span>
-    <h3 className="font-display text-xl font-bold text-white tracking-tight">{title}</h3>
+    <h3 className="text-xl font-bold text-white tracking-tight">{title}</h3>
   </div>
 );
 
@@ -252,7 +252,7 @@ function RulesAccordion({ strategyId }) {
         onClick={() => setOpen((o) => !o)}
         className="w-full flex items-center justify-between px-6 py-5 text-left"
       >
-        <span className="font-display text-lg font-bold text-white">Rules — exactly what this strategy does</span>
+        <span className="text-lg font-bold text-white">Rules — exactly what this strategy does</span>
         <ChevronDown size={18} className={`text-slate-400 transition-transform duration-300 ${open ? "rotate-180" : ""}`} />
       </button>
       {open && (
@@ -280,7 +280,7 @@ function StatusCard({ index, data }) {
   return (
     <div className={`${SURFACE} p-5`}>
       <div className="flex items-center justify-between mb-3">
-        <p className="font-display text-base font-bold text-white">{INDEX_LABEL[index]}</p>
+        <p className="text-base font-bold text-white">{INDEX_LABEL[index]}</p>
         <span className={`rounded-full border px-3 py-1 font-mono-ui text-[10px] uppercase tracking-wider ${STATUS_TONE[status] || STATUS_TONE.flat}`}>
           {status === "in_trade" ? "In Trade" : "Flat"}
         </span>

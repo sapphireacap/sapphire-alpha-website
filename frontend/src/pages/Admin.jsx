@@ -68,7 +68,7 @@ const Login = ({ onSuccess }) => {
             <ShieldCheck size={18} className="text-sapphire-light" />
           </span>
           <div>
-            <h1 className="font-display text-xl font-bold text-white">Admin Access</h1>
+            <h1 className="text-xl font-bold text-white">Admin Access</h1>
             <p className="font-mono-ui text-[10px] uppercase tracking-[0.2em] text-slate-500">Alpha Terminal Console</p>
           </div>
         </div>
@@ -200,7 +200,7 @@ const DefinedgeConnect = ({ onAuthError, onSignalUpdate }) => {
   return (
     <div className="glass rounded-2xl p-6 md:p-8 mb-6" data-testid="definedge-connect-panel">
       <div className="flex flex-wrap items-center justify-between gap-3 mb-2">
-        <h2 className="font-display text-xl font-bold text-white">Market Data Connection</h2>
+        <h2 className="text-xl font-bold text-white">Market Data Connection</h2>
         <span className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 font-mono-ui text-[10px] uppercase tracking-[0.18em] ${pill.cls}`} data-testid="definedge-status-pill">
           <span className={`h-1.5 w-1.5 rounded-full ${pill.dot}`} />
           <PillIcon size={12} /> {pill.label}
@@ -354,7 +354,7 @@ const SignalPanel = ({ onAuthError }) => {
     <div className="glass rounded-2xl p-6 md:p-8 mb-10" data-testid="admin-signal-panel">
       <div className="flex flex-wrap items-center justify-between gap-3 mb-2">
         <div className="flex items-center gap-3">
-          <h2 className="font-display text-xl font-bold text-white">Index Vector</h2>
+          <h2 className="text-xl font-bold text-white">Index Vector</h2>
           <span className="font-mono-ui text-[10px] uppercase tracking-[0.2em] text-sapphire-light">
             {chartMode === "6" ? "6-Chart Confluence" : "4-Chart Confluence (monthly-only)"}
           </span>
@@ -450,7 +450,7 @@ const IndexTrackRecordPanel = ({ onAuthError }) => {
 
   return (
     <div className="glass rounded-2xl p-6 md:p-8 mb-10" data-testid="admin-index-track-record-panel">
-      <h2 className="font-display text-xl font-bold text-white mb-4">Index Vector — Historical Performance</h2>
+      <h2 className="text-xl font-bold text-white mb-4">Index Vector — Historical Performance</h2>
       <IndexTabs indices={INDEX_OPTS} active={activeIndex} onChange={setActiveIndex} />
       <div className="rounded-2xl border border-white/10 bg-[#0A0D18] p-6 md:p-8">
         <TrackRecordPanel record={records[activeIndex]} />
@@ -509,7 +509,7 @@ const QuantLabRefreshCard = ({ title, endpointSlug, description, buttonLabel, te
   return (
     <div className="rounded-2xl border border-white/10 bg-[#0A0D18] p-6" data-testid={`admin-quant-lab-${endpointSlug}-card`}>
       <div className="flex flex-wrap items-center justify-between gap-3 mb-2">
-        <h3 className="font-display text-lg font-bold text-white">{title}</h3>
+        <h3 className="text-lg font-bold text-white">{title}</h3>
         <button
           onClick={refreshNow}
           disabled={starting || running}
@@ -537,7 +537,7 @@ const QuantLabPanel = ({ onAuthError }) => {
   if (QUANT_LAB_PAUSED) {
     return (
       <div className="glass rounded-2xl p-6 md:p-8 mb-10" data-testid="admin-quant-lab-panel">
-        <h2 className="font-display text-xl font-bold text-white mb-2">Quant Lab — Sharpe Dashboard / Momentum Dashboard / EWMA Scanner</h2>
+        <h2 className="text-xl font-bold text-white mb-2">Quant Lab — Sharpe Dashboard / Momentum Dashboard / EWMA Scanner</h2>
         <p className="text-sm text-slate-400 leading-relaxed">
           Paused to reduce backend memory usage. No code or data was deleted; this panel and its backend routes come back exactly as they were once re-enabled.
         </p>
@@ -547,7 +547,7 @@ const QuantLabPanel = ({ onAuthError }) => {
 
   return (
     <div className="glass rounded-2xl p-6 md:p-8 mb-10" data-testid="admin-quant-lab-panel">
-      <h2 className="font-display text-xl font-bold text-white mb-4">Quant Lab</h2>
+      <h2 className="text-xl font-bold text-white mb-4">Quant Lab</h2>
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <QuantLabRefreshCard
           title="Sharpe Dashboard"
@@ -588,7 +588,7 @@ const StrategyReportAccordion = ({ strategy, onAuthError }) => {
         <span className="flex items-center gap-3">
           <FileText size={16} className="text-sapphire-light shrink-0" />
           <span>
-            <span className="block font-display text-base font-bold text-white">{strategy.title}</span>
+            <span className="block text-base font-bold text-white">{strategy.title}</span>
             <span className="block text-xs text-slate-500">{strategy.internalStatus} · Full internal report</span>
           </span>
         </span>
@@ -651,7 +651,7 @@ const LumenLiveTrackingPanel = ({ onAuthError }) => {
   return (
     <div className="rounded-2xl border border-white/10 bg-[#0A0D18] p-6" data-testid="lumen-sip-live-panel">
       <div className="flex items-baseline justify-between flex-wrap gap-2 mb-4">
-        <h3 className="font-display text-base font-bold text-white">Live Tracking</h3>
+        <h3 className="text-base font-bold text-white">Live Tracking</h3>
         <span className="font-mono-ui text-xs text-slate-500">as of {status.as_of} · {status.days_tracked} day(s) tracked</span>
       </div>
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-5">
@@ -818,7 +818,7 @@ const BlackBoxPanel = ({ onAuthError }) => {
   if (LEGACY_BLACKBOX_PAUSED) {
     return (
       <div className="glass rounded-2xl p-6 md:p-8 mb-10" data-testid="admin-blackbox-panel">
-        <h2 className="font-display text-xl font-bold text-white mb-2">Black Box — Prism Alpha / Lumen SIP</h2>
+        <h2 className="text-xl font-bold text-white mb-2">Black Box — Prism Alpha / Lumen SIP</h2>
         <p className="text-sm text-slate-400 leading-relaxed">
           Paused to reduce backend memory usage — evaluation, backtesting, and status for Prism Alpha, Prism Alpha II, and Lumen SIP are all temporarily disabled.
           No code or data was deleted; this panel and its backend routes come back exactly as they were once re-enabled.
@@ -830,7 +830,7 @@ const BlackBoxPanel = ({ onAuthError }) => {
   return (
     <div className="glass rounded-2xl p-6 md:p-8 mb-10" data-testid="admin-blackbox-panel">
       <div className="flex flex-wrap items-center justify-between gap-3 mb-2">
-        <h2 className="font-display text-xl font-bold text-white">Black Box — Prism Alpha</h2>
+        <h2 className="text-xl font-bold text-white">Black Box — Prism Alpha</h2>
         <div className="flex flex-wrap items-center gap-3">
           <button onClick={evaluateNow} disabled={running} className="btn-ghost !px-4 !py-2 text-sm disabled:opacity-50" data-testid="prism-alpha-evaluate-now-btn">
             {running ? <><Loader2 size={16} className="animate-spin" /> Evaluating</> : <><RefreshCw size={15} /> Evaluate Now</>}
@@ -862,7 +862,7 @@ const BlackBoxPanel = ({ onAuthError }) => {
       )}
 
       <div className="flex flex-wrap items-center justify-between gap-3 mt-8 mb-2 pt-6 border-t border-white/10">
-        <h2 className="font-display text-xl font-bold text-white">Black Box — Lumen SIP</h2>
+        <h2 className="text-xl font-bold text-white">Black Box — Lumen SIP</h2>
         <div className="flex flex-wrap items-center gap-3">
           <button onClick={evaluateLumenSip} disabled={lumenRunning} className="btn-ghost !px-4 !py-2 text-sm disabled:opacity-50" data-testid="lumen-sip-evaluate-now-btn">
             {lumenRunning ? <><Loader2 size={16} className="animate-spin" /> Evaluating</> : <><RefreshCw size={15} /> Evaluate Now (Live)</>}
@@ -900,7 +900,7 @@ const BlackBoxPanel = ({ onAuthError }) => {
       </div>
 
       <div className="mt-8 pt-6 border-t border-white/10">
-        <h2 className="font-display text-xl font-bold text-white mb-1">Internal Strategy Reports</h2>
+        <h2 className="text-xl font-bold text-white mb-1">Internal Strategy Reports</h2>
         <p className="text-sm text-slate-500 mb-4">
           Full performance data — live/backtested trades, equity curves, drawdowns, risk analytics — for each strategy. Not visible anywhere
           on the public site; these routes require this admin session's token.
@@ -954,7 +954,7 @@ const LatticePanel = ({ onAuthError }) => {
   return (
     <div className="glass rounded-2xl p-6 md:p-8 mb-10" data-testid="admin-lattice-panel">
       <div className="flex flex-wrap items-center justify-between gap-3 mb-2">
-        <h2 className="font-display text-xl font-bold text-white">Lattice — Paper Portfolio</h2>
+        <h2 className="text-xl font-bold text-white">Lattice — Paper Portfolio</h2>
         <button onClick={evaluateNow} disabled={running} className="btn-ghost !px-4 !py-2 text-sm disabled:opacity-50" data-testid="lattice-evaluate-btn">
           {running ? <><Loader2 size={16} className="animate-spin" /> Evaluating</> : <><RefreshCw size={15} /> Evaluate Open Positions</>}
         </button>
@@ -1033,7 +1033,7 @@ const MomentumTrackRecordPanel = ({ onAuthError }) => {
   return (
     <div className="glass rounded-2xl p-6 md:p-8 mb-10" data-testid="admin-momentum-track-panel">
       <div className="flex flex-wrap items-center justify-between gap-3 mb-2">
-        <h2 className="font-display text-xl font-bold text-white">Intraday Momentum Leaders — Track Record</h2>
+        <h2 className="text-xl font-bold text-white">Intraday Momentum Leaders — Track Record</h2>
         <button onClick={evaluateNow} disabled={running} className="btn-ghost !px-4 !py-2 text-sm disabled:opacity-50" data-testid="momentum-track-evaluate-btn">
           {running ? <><Loader2 size={16} className="animate-spin" /> Evaluating</> : <><RefreshCw size={15} /> Evaluate Now</>}
         </button>
@@ -1111,7 +1111,7 @@ const PnfAccessPanel = ({ onAuthError }) => {
 
   return (
     <div className="glass rounded-2xl p-6 md:p-8 mb-10" data-testid="admin-pnf-access-panel">
-      <h2 className="font-display text-xl font-bold text-white mb-2">P&F Studio Access</h2>
+      <h2 className="text-xl font-bold text-white mb-2">P&F Studio Access</h2>
       <p className="text-sm text-slate-500 mb-6">
         Grant or extend a subscriber's paid access by email. Grants extend from the current expiry if still active,
         otherwise from today. Admin accounts always have access regardless of this field.
@@ -1274,7 +1274,7 @@ const IpoPanel = ({ onAuthError }) => {
   return (
     <div className="glass rounded-2xl p-6 md:p-8 mb-10" data-testid="admin-ipo-panel">
       <div className="flex flex-wrap items-center justify-between gap-3 mb-2">
-        <h2 className="font-display text-xl font-bold text-white">IPO Section</h2>
+        <h2 className="text-xl font-bold text-white">IPO Section</h2>
         <div className="flex items-center gap-3">
           <button onClick={refreshNse} disabled={refreshing} className="btn-ghost !px-4 !py-2 text-sm disabled:opacity-50" data-testid="ipo-refresh-nse-btn">
             {refreshing ? <><Loader2 size={16} className="animate-spin" /> Refreshing</> : <><RefreshCw size={15} /> Refresh from NSE</>}
@@ -1346,7 +1346,7 @@ const IpoPanel = ({ onAuthError }) => {
 
       {editing && (
         <div className="mt-6 border-t border-white/10 pt-6">
-          <h3 className="font-display text-base font-bold text-white mb-4">{editing.id ? "Edit IPO" : "Add IPO"}</h3>
+          <h3 className="text-base font-bold text-white mb-4">{editing.id ? "Edit IPO" : "Add IPO"}</h3>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
             <div className="col-span-2">
               <label className="font-mono-ui text-[10px] uppercase tracking-[0.18em] text-slate-500 block mb-1.5">Company Name</label>
@@ -1549,7 +1549,7 @@ const Dashboard = ({ onLogout }) => {
 
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-8">
           <div>
-            <h2 className="font-display text-2xl font-bold text-white">Manage Scanners</h2>
+            <h2 className="text-2xl font-bold text-white">Manage Scanners</h2>
             <p className="text-sm text-slate-500 mt-1">Add, edit, reorder, or remove entries. Changes go live on Save.</p>
           </div>
           <select

@@ -27,12 +27,12 @@ const PILLARS = [
 
 export const About = () => {
   return (
-    <section id="about" className="relative py-24 md:py-40" data-testid="about-section">
+    <section id="about" className="relative py-20 md:py-28" data-testid="about-section">
       <div className="container-x">
         <div className="flex flex-col md:grid md:grid-cols-12 gap-8 md:gap-16 items-end mb-16 md:mb-24">
           <Reveal className="md:col-span-7">
             <p className="label-mono mb-6">About · What We Build</p>
-            <h2 className="font-display font-black tracking-tighter text-white text-4xl md:text-6xl leading-[1.02]">
+            <h2 className="font-display font-normal tracking-[-0.015em] text-white text-4xl md:text-6xl leading-[1.02]">
               Precision at the intersection of data and markets.
             </h2>
           </Reveal>
@@ -63,7 +63,7 @@ export const About = () => {
                     <Icon className="text-sapphire-light" size={20} />
                   </span>
                 </div>
-                <h3 className="font-display text-2xl md:text-3xl font-bold text-white mb-4">{p.title}</h3>
+                <h3 className="text-2xl md:text-3xl font-bold text-white mb-4">{p.title}</h3>
                 <p className="text-sm md:text-base font-light text-slate-400 leading-relaxed">{p.body}</p>
               </Reveal>
             );

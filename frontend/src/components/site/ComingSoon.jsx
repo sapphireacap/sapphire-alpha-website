@@ -71,7 +71,7 @@ export const ComingSoon = () => {
   };
 
   return (
-    <section id="waitlist" className="relative py-24 md:py-40 overflow-hidden" data-testid="coming-soon-section">
+    <section id="waitlist" className="relative py-20 md:py-28 overflow-hidden" data-testid="coming-soon-section">
       <div className="container-x">
         <Reveal className="relative rounded-[2rem] p-px bg-gradient-to-br from-sapphire-light/40 via-white/10 to-transparent">
         <div className="relative glass rounded-[2rem] overflow-hidden px-6 py-16 md:px-20 md:py-28">
@@ -81,7 +81,7 @@ export const ComingSoon = () => {
           <WireframeGlobe />
           <div className="relative z-10 max-w-3xl">
             <p className="label-mono mb-6">Research Updates</p>
-            <h2 className="font-display font-black tracking-tighter text-white text-4xl md:text-6xl leading-[1.02]">
+            <h2 className="font-display font-normal tracking-[-0.015em] text-white text-4xl md:text-6xl leading-[1.02]">
               Stay close to the research.
             </h2>
             <p className="mt-6 text-base md:text-lg font-light text-slate-400 max-w-xl">

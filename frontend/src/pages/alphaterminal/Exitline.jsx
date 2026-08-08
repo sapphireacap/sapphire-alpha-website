@@ -292,7 +292,7 @@ const Ladder = ({ levels, ltp }) => {
 const ExitlineResults = ({ result, interval, onIntervalChange }) => (
   <div data-testid="exitline-results">
     <div className="mb-4">
-      <p className="font-display text-xl font-bold text-white">{result.tradingsymbol}</p>
+      <p className="text-xl font-bold text-white">{result.tradingsymbol}</p>
     </div>
 
     <TVChart chart={result.chart} levels={result.levels} ltp={result.ltp} interval={interval} onIntervalChange={onIntervalChange} fetchGen={result.__fetchGen} />

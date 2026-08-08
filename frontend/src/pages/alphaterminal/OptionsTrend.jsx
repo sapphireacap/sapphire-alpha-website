@@ -20,7 +20,7 @@ const legTone = (dir) => (dir === "bullish" ? "text-emerald-400" : dir === "bear
 const StatChip = ({ label, value }) => (
   <div className="flex flex-col">
     <span className="font-mono-ui text-[10px] uppercase tracking-[0.16em] text-slate-500">{label}</span>
-    <span className="font-display text-lg font-bold text-white">{value}</span>
+    <span className="text-lg font-bold text-white">{value}</span>
   </div>
 );
 
@@ -28,7 +28,7 @@ const Row = ({ r }) => {
   const { Icon, tone, box } = VERDICT_STYLE[r.verdict] || VERDICT_STYLE.Neutral;
   return (
     <tr className="border-b border-white/[0.05] last:border-0" data-testid={`options-trend-row-${r.symbol}`}>
-      <td className="px-5 py-3.5 font-display text-sm font-bold text-white whitespace-nowrap">{r.symbol}</td>
+      <td className="px-5 py-3.5 text-sm font-bold text-white whitespace-nowrap">{r.symbol}</td>
       <td className="px-5 py-3.5">
         <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md border font-mono-ui text-[11px] uppercase tracking-wider font-semibold ${box} ${tone}`}>
           <Icon size={12} />

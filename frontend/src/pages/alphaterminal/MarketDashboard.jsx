@@ -31,7 +31,7 @@ const HeadlineStrip = ({ rows }) => (
     {rows.map((r) => (
       <div key={r.index} className={`${SURFACE} p-4`}>
         <p className="font-mono-ui text-[10px] uppercase tracking-[0.12em] text-slate-500 truncate">{r.index}</p>
-        <p className="font-display text-lg font-bold text-white mt-1">{fmt(r.last, r.last > 1000 ? 0 : 2)}</p>
+        <p className="text-lg font-bold text-white mt-1">{fmt(r.last, r.last > 1000 ? 0 : 2)}</p>
         <p className={`font-mono-ui text-xs mt-0.5 flex items-center gap-1 ${changeColor(r.change_pct)}`}>
           {r.change_pct >= 0 ? <TrendingUp size={11} /> : <TrendingDown size={11} />}
           {fmtSigned(r.change)} ({fmtSigned(r.change_pct)}%)
@@ -122,11 +122,11 @@ const HiLoStat = ({ high, low }) => (
   <div className={`${SURFACE} p-5 grid grid-cols-2 gap-4`} data-testid="md-52w-hilo">
     <div>
       <p className="font-mono-ui text-[10px] uppercase tracking-[0.16em] text-slate-500">New 52W High</p>
-      <p className="font-display text-2xl font-bold text-emerald-400 mt-1">{high ?? "—"}</p>
+      <p className="text-2xl font-bold text-emerald-400 mt-1">{high ?? "—"}</p>
     </div>
     <div>
       <p className="font-mono-ui text-[10px] uppercase tracking-[0.16em] text-slate-500">New 52W Low</p>
-      <p className="font-display text-2xl font-bold text-red-400 mt-1">{low ?? "—"}</p>
+      <p className="text-2xl font-bold text-red-400 mt-1">{low ?? "—"}</p>
     </div>
   </div>
 );
@@ -165,7 +165,7 @@ const GlobalIndicesGrid = ({ rows }) => (
     {rows.map((r) => (
       <div key={r.key} className={`${SURFACE} p-4`}>
         <p className="font-mono-ui text-[10px] uppercase tracking-[0.12em] text-slate-500 truncate">{r.label}</p>
-        <p className="font-display text-lg font-bold text-white mt-1">{fmt(r.last, 0)}</p>
+        <p className="text-lg font-bold text-white mt-1">{fmt(r.last, 0)}</p>
         <p className={`font-mono-ui text-xs mt-0.5 ${changeColor(r.change_pct)}`}>{fmtSigned(r.change_pct)}%</p>
       </div>
     ))}
@@ -239,7 +239,7 @@ const MarketDashboardTool = () => {
           <div className={`${SURFACE} p-5`}>
             {indices?.vix ? (
               <>
-                <p className="font-display text-2xl font-bold text-white">{fmt(indices.vix.last)}</p>
+                <p className="text-2xl font-bold text-white">{fmt(indices.vix.last)}</p>
                 <p className={`font-mono-ui text-xs mt-1 ${changeColor(indices.vix.change_pct)}`}>{fmtSigned(indices.vix.change_pct)}%</p>
               </>
             ) : <p className="text-xs font-light text-slate-500">Unavailable.</p>}

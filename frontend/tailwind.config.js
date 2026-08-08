@@ -21,7 +21,11 @@ module.exports = {
         sm: 'calc(var(--radius) - 4px)'
       },
       colors: {
-        void: '#030408',
+        // `void` and `plate` are the same ground. The landing page committed
+        // to the plate value, and every other route reads bg-void -- keeping
+        // them apart left a visible seam between the landing page and the
+        // rest of the site.
+        void: '#060B18',
         surface: '#0A0D18',
         'surface-2': '#12182B',
         // Plate palette. `bone` is the engraved linework and the reading

@@ -19,7 +19,7 @@ export default function PausedFeature({ title, description }) {
             <Lock size={12} className="text-slate-500" />
             <span className="font-mono-ui text-xs uppercase tracking-wider text-slate-400">Coming Soon</span>
           </div>
-          <h1 className="font-display font-black tracking-tighter text-white text-3xl md:text-4xl leading-[0.95] mb-4">{title}</h1>
+          <h1 className="font-display font-normal tracking-[-0.015em] text-white text-3xl md:text-4xl leading-[0.95] mb-4">{title}</h1>
           {description && <p className="text-sm font-light text-slate-500 leading-relaxed mb-8">{description}</p>}
           <Link to="/" className="inline-flex items-center gap-1.5 text-sapphire-light hover:text-white transition-colors text-sm font-medium">
             Back to home <ArrowUpRight size={15} />

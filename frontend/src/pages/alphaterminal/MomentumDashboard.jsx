@@ -135,7 +135,7 @@ const ResultsTable = ({ results }) => {
           <tbody>
             {sorted.map((r, i) => (
               <tr key={r.symbol} className="border-b border-white/[0.05] last:border-0 hover:bg-sapphire/[0.06] transition-colors" data-testid={`momentum-row-${i}`}>
-                <td className="px-6 py-4"><span className="font-display text-base font-bold text-white">{displaySymbol(r)}</span></td>
+                <td className="px-6 py-4"><span className="text-base font-bold text-white">{displaySymbol(r)}</span></td>
                 <td className="px-6 py-4 font-mono-ui text-sm text-slate-300">{fmtNum(r.stats.momentum_score)}</td>
                 <td className={`px-6 py-4 font-mono-ui text-sm ${(r.stats.return_12_1 ?? 0) >= 0 ? "text-emerald-400" : "text-red-400"}`}>{fmtPctStat(r.stats.return_12_1)}</td>
                 <td className="px-6 py-4 font-mono-ui text-sm text-slate-300">{fmtPctStat(r.stats.volatility)}</td>
@@ -148,7 +148,7 @@ const ResultsTable = ({ results }) => {
       <div className="md:hidden divide-y divide-white/[0.06]">
         {sorted.map((r, i) => (
           <div key={r.symbol} className="p-5" data-testid={`momentum-card-${i}`}>
-            <p className="font-display text-lg font-bold text-white mb-3">{displaySymbol(r)}</p>
+            <p className="text-lg font-bold text-white mb-3">{displaySymbol(r)}</p>
             <div className="flex items-center gap-6 text-sm">
               <div>
                 <p className="font-mono-ui text-[10px] uppercase tracking-[0.18em] text-slate-500 mb-1">Score</p>

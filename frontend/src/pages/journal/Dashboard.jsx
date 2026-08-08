@@ -14,7 +14,7 @@ const StatCard = ({ label, value, Icon, tone = "text-white" }) => (
       <Icon size={14} className="text-sapphire-light" />
       <p className="font-mono-ui text-[10px] uppercase tracking-[0.18em] text-slate-500">{label}</p>
     </div>
-    <p className={`font-display text-3xl font-black tracking-tight ${tone}`}>{value}</p>
+    <p className={`font-display text-3xl font-normal tracking-tight ${tone}`}>{value}</p>
   </div>
 );
 
@@ -88,7 +88,7 @@ const Dashboard = () => {
   return (
     <div data-testid="journal-dashboard">
       <div className="flex items-center justify-between mb-6">
-        <h1 className="font-display text-2xl font-bold text-white">Dashboard</h1>
+        <h1 className="text-2xl font-bold text-white">Dashboard</h1>
         {analytics.low_sample_size && (
           <span className="inline-flex items-center rounded-full border border-amber-400/25 bg-amber-400/10 px-3 py-1 font-mono-ui text-[10px] uppercase tracking-wider text-amber-300" data-testid="low-sample-badge">
             Low sample size — {analytics.trade_count} closed trades
@@ -115,7 +115,7 @@ const Dashboard = () => {
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <div className="glass rounded-2xl p-6">
           <p className="font-mono-ui text-[10px] uppercase tracking-[0.18em] text-slate-500 mb-3">Rule Adherence</p>
-          <p className="font-display text-3xl font-black text-white">{(Number(analytics.rule_adherence_rate) * 100).toFixed(0)}%</p>
+          <p className="font-display text-3xl font-normal text-white">{(Number(analytics.rule_adherence_rate) * 100).toFixed(0)}%</p>
         </div>
         <div className="glass rounded-2xl p-6">
           <p className="font-mono-ui text-[10px] uppercase tracking-[0.18em] text-slate-500 mb-3">Emotion Breakdown</p>

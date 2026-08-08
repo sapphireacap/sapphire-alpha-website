@@ -73,7 +73,7 @@ const ModuleCard = ({ module, index, active, onSelect }) => {
             </span>
             <span className="font-mono-ui text-[10px] text-slate-500">{module.no}</span>
           </div>
-          <h3 className="font-display text-base font-bold text-white tracking-tight mb-1">{module.title}</h3>
+          <h3 className="text-base font-bold text-white tracking-tight mb-1">{module.title}</h3>
           <p className="text-xs font-light text-slate-500 leading-relaxed mb-4">{module.shortDescription}</p>
           <span className="inline-flex items-center gap-1.5 font-mono-ui text-[10px] uppercase tracking-wider text-slate-500">
             <Lock size={10} /> Coming Soon
@@ -100,7 +100,7 @@ const ModuleCard = ({ module, index, active, onSelect }) => {
           </span>
           <span className="font-mono-ui text-[10px] text-sapphire-light">{module.no}</span>
         </div>
-        <h3 className="font-display text-base font-bold text-white tracking-tight mb-1">{module.title}</h3>
+        <h3 className="text-base font-bold text-white tracking-tight mb-1">{module.title}</h3>
         <p className="text-xs font-light text-slate-500 leading-relaxed">{module.shortDescription}</p>
       </button>
     </motion.div>
@@ -217,7 +217,7 @@ const ChartModule = () => {
                 <span className="absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-60 animate-ping" />
                 <span className="relative inline-flex h-2 w-2 rounded-full bg-emerald-400" />
               </span>
-              <span className="font-display text-xl md:text-2xl font-bold text-white tracking-tight">{active?.name}</span>
+              <span className="text-xl md:text-2xl font-bold text-white tracking-tight">{active?.name}</span>
               <span className="font-mono-ui text-xs text-slate-500">{active?.short}/USDT</span>
             </div>
             <div className="flex items-baseline gap-3">
@@ -406,7 +406,7 @@ const ExitlineModule = () => {
         <>
           <div className={`rounded-2xl border p-5 md:p-6 mb-5 ${signal.bias === "Long" ? "border-emerald-400/25 bg-emerald-400/[0.04]" : signal.bias === "Short" ? "border-red-400/25 bg-red-400/[0.04]" : "border-white/10 bg-[#0A0D18]"}`} data-testid="exitline-signal-card">
             <div className="flex flex-wrap items-center justify-between gap-3 mb-3">
-              <span className="font-display text-lg font-bold text-white">{active?.name} — {signal.zoneLabel}</span>
+              <span className="text-lg font-bold text-white">{active?.name} — {signal.zoneLabel}</span>
               <span className={`font-mono-ui text-xs font-bold uppercase tracking-wider px-3 py-1 rounded-full border ${
                 signal.bias === "Long" ? "border-emerald-400/30 text-emerald-300" : signal.bias === "Short" ? "border-red-400/30 text-red-300" : "border-white/15 text-slate-400"
               }`}>

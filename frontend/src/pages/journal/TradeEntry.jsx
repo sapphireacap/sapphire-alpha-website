@@ -103,7 +103,7 @@ const TradeEntry = () => {
 
   return (
     <form onSubmit={submit} className="max-w-3xl" data-testid="trade-entry-form">
-      <h1 className="font-display text-2xl font-bold text-white mb-6">Log a Trade</h1>
+      <h1 className="text-2xl font-bold text-white mb-6">Log a Trade</h1>
 
       <div className="glass rounded-2xl p-6 md:p-8 mb-6">
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
@@ -200,7 +200,7 @@ const TradeEntry = () => {
           data-testid="toggle-context-btn"
         >
           <span className="flex items-center gap-3">
-            <span className="font-display text-base font-bold text-white">Context</span>
+            <span className="text-base font-bold text-white">Context</span>
             <span className="font-mono-ui text-[10px] uppercase tracking-wider text-slate-500">Optional — won't block save</span>
           </span>
           <span className="flex items-center gap-3">

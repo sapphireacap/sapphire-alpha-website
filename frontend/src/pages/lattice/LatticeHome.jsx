@@ -54,7 +54,7 @@ const SymbolSearch = () => {
               className="w-full text-left px-4 py-3 hover:bg-white/[0.04] transition-colors border-b border-white/[0.05] last:border-0"
               data-testid={`lattice-search-result-${r.symbol}`}
             >
-              <span className="font-display font-bold text-white">{r.symbol}</span>
+              <span className="font-bold text-white">{r.symbol}</span>
               <span className="ml-2 text-sm text-slate-500">{r.company_name}</span>
             </button>
           ))}
@@ -82,7 +82,7 @@ const PositionRow = ({ p, onClick }) => {
       data-testid={`lattice-position-${p.id}`}
     >
       <div>
-        <p className="font-display font-bold text-white">{p.symbol}</p>
+        <p className="font-bold text-white">{p.symbol}</p>
         <p className="text-xs text-slate-500">
           {p.status === "open" ? `Entry ${fmtINR(p.entry_price)}` : `${p.exit_reason} · exited ${p.exit_date}`}
         </p>
@@ -117,7 +117,7 @@ export default function LatticeHome() {
           <div className="container-x relative z-10">
             <motion.h1
               initial={{ opacity: 0, y: 24 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.9, ease: EASE }}
-              className="font-display font-black tracking-tighter text-white text-5xl md:text-7xl leading-[0.95]"
+              className="font-display font-normal tracking-[-0.015em] text-white text-5xl md:text-7xl leading-[0.95]"
             >
               Lattice
             </motion.h1>
