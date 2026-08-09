@@ -1,0 +1,37 @@
+name: Definedge — daily OTP auto-login
+
+# Runs the full daily Definedge OTP login automatically (trigger OTP ->
+# read it off the dedicated Gmail inbox -> verify), so the manual
+# "open the admin panel and paste in a code" step every trading morning
+# (Admin.jsx's DefinedgeConnect) is no longer required. See
+# backend/definedge_otp_email.py for the mailbox side and
+# server.py's /admin/definedge/otp-auto-login for the route.
+#
+# 03:30 UTC = 09:00 IST, 15 minutes before NSE's 09:15 open and before
+# index-vector-auto-refresh.yml's first tick (03:45 UTC) -- that cron
+# explicitly no-ops until this morning login has happened, so this one
+# needs to land first. Weekdays only; the route itself also skips
+# cleanly if Definedge isn't configured or a session is already
+# connected (e.g. this ran twice, or someone already logged in by hand).
+on:
+  schedule:
+    - cron: "30 3 * * 1-5"
+  workflow_dispatch: {}
+
+jobs:
+  login:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Call definedge/otp-auto-login
+        run: |
+          status=$(curl -s -o response.json -w "%{http_code}" -X POST \
+            --max-time 120 \
+            "https://sapphire-alpha-backend.onrender.com/api/admin/definedge/otp-auto-login" \
+            -H "X-Cron-Key: ${{ secrets.CRON_SECRET }}")
+          echo "HTTP status: $status"
+          cat response.json
+          echo
+          if [ "$status" != "200" ]; then
+            echo "::error::definedge/otp-auto-login failed with status $status"
+            exit 1
+          fi

@@ -57,6 +57,7 @@ DISABLED_FEATURES = set(
 )
 
 from definedge_service import DefinedgeService, DefinedgeError, derive_bias, derive_bias_4, INDEX_CONFIG
+import definedge_otp_email
 if "journal" not in DISABLED_FEATURES:
     from journal_routes import create_journal_router
     from journal_analytics import create_analytics_router
@@ -1477,6 +1478,40 @@ async def definedge_auto_refresh(request: Request):
         except DefinedgeError as e:
             results[idx] = {"error": str(e)}
     return results
+
+
+@api_router.post("/admin/definedge/otp-auto-login")
+async def definedge_otp_auto_login(request: Request):
+    """External-cron entry point -- runs the full daily OTP login
+    end-to-end (trigger -> read the OTP off the dedicated Gmail inbox
+    via definedge_otp_email.py -> verify) so nobody has to open the
+    admin panel and paste in a code by hand each morning. Same
+    X-Cron-Key gate as every other scheduled job; the manual
+    otp-init/otp-verify routes above still work unchanged as a fallback
+    if this ever misfires (wrong/no email, IMAP hiccup, etc.)."""
+    if not CRON_SECRET or request.headers.get("X-Cron-Key") != CRON_SECRET:
+        raise HTTPException(status_code=401, detail="Invalid cron key")
+    if not definedge.configured():
+        return {"skipped": "Definedge not configured"}
+    status = await definedge.status()
+    if status.get("connected"):
+        return {"skipped": "already connected today"}
+
+    try:
+        trigger = await definedge.trigger_otp()
+    except DefinedgeError as e:
+        raise HTTPException(status_code=400, detail=f"OTP trigger failed: {e}")
+
+    triggered_at = datetime.now(timezone.utc)
+    try:
+        otp = await definedge_otp_email.fetch_otp(after=triggered_at)
+    except definedge_otp_email.DefinedgeOtpEmailError as e:
+        raise HTTPException(status_code=502, detail=f"Could not read the OTP email: {e}")
+
+    try:
+        return await definedge.verify_otp(otp, trigger.get("otp_token"))
+    except DefinedgeError as e:
+        raise HTTPException(status_code=400, detail=f"OTP verify failed: {e}")
 
 
 # ---------------------------------------------------------------------------
