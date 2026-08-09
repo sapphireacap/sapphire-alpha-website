@@ -76,6 +76,7 @@ from market_dashboard_routes import create_market_dashboard_router
 if "stock_terminal" not in DISABLED_FEATURES:
     from stock_terminal_routes import create_stock_terminal_router
     from lattice_routes import create_lattice_router
+    from peter_tingle_routes import create_peter_tingle_router
 from swing_picks_lcp import update_swing_picks_lcp
 from momentum_track_record import (
     capture_entries as capture_track_record_entries,
@@ -1652,6 +1653,8 @@ if "stock_terminal" not in DISABLED_FEATURES:
     app.include_router(stock_terminal_router, prefix="/api")
     lattice_router = create_lattice_router(db, definedge, get_current_admin, CRON_SECRET)
     app.include_router(lattice_router, prefix="/api")
+    peter_tingle_router = create_peter_tingle_router(db, get_current_admin, CRON_SECRET)
+    app.include_router(peter_tingle_router, prefix="/api")
 
 app.add_middleware(
     CORSMiddleware,

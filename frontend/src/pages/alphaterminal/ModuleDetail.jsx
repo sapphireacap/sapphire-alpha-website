@@ -17,6 +17,7 @@ import RelativeStrengthMatrix from "./RelativeStrengthMatrix";
 import BreadthTool from "./Breadth";
 import OptionsTrendTool from "./OptionsTrend";
 import MarketDashboardTool from "./MarketDashboard";
+import PeterTingleTool from "./PeterTingle";
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 const EASE = [0.16, 1, 0.3, 1];
@@ -192,6 +193,7 @@ const LiveDashboard = ({ module, signals }) => (
     {module.kind === "breadth" && <BreadthTool />}
     {module.kind === "options-trend" && <OptionsTrendTool />}
     {module.kind === "market-dashboard" && <MarketDashboardTool />}
+    {module.kind === "peter-tingle" && <PeterTingleTool />}
   </Section>
 );
 

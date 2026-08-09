@@ -1,5 +1,5 @@
 import {
-  Compass, Crosshair, Activity, Radar, BarChart3, Sliders, TrendingUp, Target, Gauge, GitBranch, LayoutDashboard, Flame,
+  Compass, Crosshair, Activity, Radar, BarChart3, Sliders, TrendingUp, Target, Gauge, GitBranch, LayoutDashboard, Flame, ShieldAlert,
 } from "lucide-react";
 
 // Every research module shown on the Alpha Terminal directory and served at
@@ -12,6 +12,8 @@ import {
 //   "sharpe"    -> the standalone SharpeDashboardTool, embedded
 //   "exitline"  -> the standalone ExitlineTool, embedded (segment -> scrip
 //                  -> level ladder + SL/TP)
+//   "peter-tingle" -> the standalone PeterTingleTool, embedded (symbol
+//                  search -> technical + fundamental caution scan)
 // `live: false` modules are paused (2026-07-29) to cut backend memory/load
 // while the Render free-tier instance keeps crash-restarting on its memory
 // limit -- their pages show a "Coming Soon" placeholder and make no API
@@ -164,8 +166,22 @@ export const MODULES = [
     },
   },
   {
-    slug: "sharpe-dashboard",
+    slug: "peter-tingle",
     no: "10",
+    kind: "peter-tingle",
+    live: true,
+    icon: ShieldAlert,
+    title: "Peter Tingle",
+    shortDescription: "Technical and fundamental caution scan for one stock — India or US.",
+    overview: {
+      purpose: "A spider-sense check on a single stock — surfaces the technical and fundamental warning signs before you commit, in one place. Covers both the Nifty 500 (India) and the S&P 500 (US) via a market toggle.",
+      whatItMeasures: "Technical side (same rules both markets): trend structure, distance from its all-time high, short-term shocks, and multi-window momentum decay. Fundamental side is market-specific — India runs the same Fracture Scan rules used elsewhere on the terminal (promoter pledge, cash flow quality, receivables growth, leverage, interest coverage, promoter-holding erosion); US runs leverage, profitability, liquidity, short interest, and sell-side analyst outlook instead, since promoter-specific rules have no real US equivalent.",
+      interpret: "Clear means no rule tripped; Caution means one hard fail or a cluster of soft warnings; Danger means multiple hard fails across the two scans. Treat any FAIL as a specific, named reason to dig deeper — not a verdict to trade on by itself.",
+    },
+  },
+  {
+    slug: "sharpe-dashboard",
+    no: "11",
     kind: "sharpe",
     live: false,
     icon: BarChart3,
@@ -179,7 +195,7 @@ export const MODULES = [
   },
   {
     slug: "ewma-scanner",
-    no: "11",
+    no: "12",
     kind: "ewma",
     live: false,
     icon: Sliders,
@@ -193,7 +209,7 @@ export const MODULES = [
   },
   {
     slug: "breakout-candidates",
-    no: "12",
+    no: "13",
     kind: "scanner",
     live: false,
     scannerKey: "breakout",
