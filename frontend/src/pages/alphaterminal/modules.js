@@ -123,7 +123,7 @@ export const MODULES = [
     kind: "options-trend",
     live: true,
     icon: GitBranch,
-    title: "Options Trend Scanner",
+    title: "Gamma Pulse",
     shortDescription: "Confirms directional setups across future, call, and put together.",
     overview: {
       purpose: "Confirms a stock's directional setup isn't just a single-chart read — the underlying, its call, and its put all have to agree.",

@@ -75,7 +75,7 @@ const OptionsTrendTool = () => {
           <Loader2 className="animate-spin" size={16} /> Loading scanner…
         </div>
       ) : error || !data ? (
-        <EmptyState reason="Options Trend Scanner hasn't been computed yet — check back shortly." />
+        <EmptyState reason="Gamma Pulse hasn't been computed yet — check back shortly." />
       ) : (
         <>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
