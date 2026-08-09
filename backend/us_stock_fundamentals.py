@@ -1,15 +1,22 @@
 """
 US equity fundamentals for Peter Tingle -- Yahoo Finance's unofficial
-quoteSummary endpoint (same free/keyless, browser-User-Agent approach
-yahoo_finance_client.py already uses and has verified live for the chart
-endpoint). No Screener.in equivalent exists for US names, and no paid
-fundamentals API is configured on this deployment, so this is the only
-real (non-estimated) source available.
+quoteSummary endpoint (same free/keyless-of-an-API-key, browser-User-Agent
+approach yahoo_finance_client.py already uses for the chart endpoint). No
+Screener.in equivalent exists for US names, and no paid fundamentals API
+is configured on this deployment, so this is the only real
+(non-estimated) source available.
 
-quoteSummary is more locked-down than the chart endpoint upstream Yahoo
-serves it from and can return 401s/empty payloads without warning --
-every field read here is defensive (`.get` chains, never raises for a
-missing field) so a partial or failed fetch degrades to NA rule rows
+Unlike the chart endpoint, quoteSummary now hard-requires Yahoo's
+cookie+crumb handshake -- a bare request 401s (verified live, 2026-08-09).
+The handshake itself is still free and keyless: GET fc.yahoo.com for a
+session cookie, then GET /v1/test/getcrumb with that cookie for a crumb
+token, then send both on every quoteSummary call. The crumb is cached
+process-wide (module-level, not per-ticker) and only re-fetched if a
+request comes back 401 with it -- one handshake covers every ticker for
+the life of the process, not one per symbol.
+
+Every field read here is still defensive (`.get` chains, never raises for
+a missing field) so a partial or failed fetch degrades to NA rule rows
 downstream (peter_tingle.scan_us_fundamental_red_flags), never a
 fabricated number.
 """
@@ -20,6 +27,8 @@ from datetime import datetime, timezone
 import httpx
 
 BASE_URL = "https://query1.finance.yahoo.com/v10/finance/quoteSummary"
+CRUMB_URL = "https://query2.finance.yahoo.com/v1/test/getcrumb"
+COOKIE_URL = "https://fc.yahoo.com"
 MODULES = "financialData,defaultKeyStatistics"
 CACHE_COLLECTION = "us_stock_fundamentals_cache"
 
@@ -27,6 +36,24 @@ USER_AGENT = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
     "(KHTML, like Gecko) Chrome/124.0 Safari/537.36"
 )
+
+# Process-wide crumb/cookie cache -- one handshake serves every ticker.
+_crumb_cache: dict = {"crumb": None, "cookies": None}
+
+
+async def _get_crumb(force: bool = False) -> tuple[str, httpx.Cookies]:
+    if not force and _crumb_cache["crumb"]:
+        return _crumb_cache["crumb"], _crumb_cache["cookies"]
+
+    async with httpx.AsyncClient(timeout=15, headers={"User-Agent": USER_AGENT}) as c:
+        await c.get(COOKIE_URL)  # sets the session cookie Yahoo expects; 404 body itself is irrelevant
+        r = await c.get(CRUMB_URL, cookies=c.cookies)
+        r.raise_for_status()
+        crumb = r.text.strip()
+        cookies = c.cookies
+
+    _crumb_cache["crumb"], _crumb_cache["cookies"] = crumb, cookies
+    return crumb, cookies
 
 
 class UsFundamentalsError(Exception):
@@ -40,12 +67,24 @@ def _raw(block: dict, key: str):
 
 async def _fetch_live(ticker: str) -> dict:
     try:
+        crumb, cookies = await _get_crumb()
         async with httpx.AsyncClient(timeout=15) as c:
             r = await c.get(
                 f"{BASE_URL}/{ticker}",
-                params={"modules": MODULES},
+                params={"modules": MODULES, "crumb": crumb},
                 headers={"User-Agent": USER_AGENT, "Accept": "application/json"},
+                cookies=cookies,
             )
+            if r.status_code == 401:
+                # Crumb/cookie can go stale independent of process uptime --
+                # one forced re-handshake and retry before giving up.
+                crumb, cookies = await _get_crumb(force=True)
+                r = await c.get(
+                    f"{BASE_URL}/{ticker}",
+                    params={"modules": MODULES, "crumb": crumb},
+                    headers={"User-Agent": USER_AGENT, "Accept": "application/json"},
+                    cookies=cookies,
+                )
         r.raise_for_status()
         data = r.json()
     except httpx.HTTPError as e:

@@ -1,0 +1,28 @@
+name: Peter Tingle US — weekly universe sync
+
+# Keeps us_stock_symbol_master (Peter Tingle's US/S&P 500 symbol picker)
+# current. S&P 500 membership changes rarely, so weekly is plenty --
+# unlike the daily NSE price/breadth pipelines, there's no price data to
+# go stale here, only the constituent list itself.
+# 0 UTC Sunday -- outside both US and India market hours either way.
+on:
+  schedule:
+    - cron: "0 0 * * 0"
+  workflow_dispatch: {}
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Call peter-tingle/us/admin/sync-universe
+        run: |
+          status=$(curl -s -o response.json -w "%{http_code}" -X POST \
+            "https://sapphire-alpha-backend.onrender.com/api/peter-tingle/us/admin/sync-universe" \
+            -H "X-Cron-Key: ${{ secrets.CRON_SECRET }}")
+          echo "HTTP status: $status"
+          cat response.json
+          echo
+          if [ "$status" != "200" ]; then
+            echo "::error::peter-tingle/us/admin/sync-universe failed with status $status"
+            exit 1
+          fi

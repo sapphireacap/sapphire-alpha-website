@@ -49,16 +49,18 @@ const Section = ({ no, title, children, testId, collapsible = false }) => {
       className="py-10 md:py-14 border-t border-white/[0.06]"
       data-testid={testId}
     >
-      <div
-        className={`flex items-center justify-between gap-3 ${open ? "mb-6 md:mb-8" : ""} ${canCollapse ? "cursor-pointer" : ""}`}
-        onClick={canCollapse ? () => setOpen((o) => !o) : undefined}
-      >
-        <div className="flex items-baseline gap-3">
-          <span className="font-mono-ui text-xs text-sapphire-light">{no}</span>
-          <h2 className="text-2xl md:text-3xl font-bold text-white tracking-tight">{title}</h2>
+      {title && (
+        <div
+          className={`flex items-center justify-between gap-3 ${open ? "mb-6 md:mb-8" : ""} ${canCollapse ? "cursor-pointer" : ""}`}
+          onClick={canCollapse ? () => setOpen((o) => !o) : undefined}
+        >
+          <div className="flex items-baseline gap-3">
+            <span className="font-mono-ui text-xs text-sapphire-light">{no}</span>
+            <h2 className="text-2xl md:text-3xl font-bold text-white tracking-tight">{title}</h2>
+          </div>
+          {canCollapse && <ChevronDown size={18} className={`text-slate-500 transition-transform duration-300 shrink-0 ${open ? "rotate-180" : ""}`} />}
         </div>
-        {canCollapse && <ChevronDown size={18} className={`text-slate-500 transition-transform duration-300 shrink-0 ${open ? "rotate-180" : ""}`} />}
-      </div>
+      )}
       {(!canCollapse || open) && children}
     </motion.section>
   );
@@ -171,7 +173,7 @@ const ScannerDashboard = ({ scannerKey }) => {
 // last card spans both columns on md+ for a 2-1 formation instead of
 // leaving a dangling gap next to it.
 const LiveDashboard = ({ module, signals }) => (
-  <Section no="01" title="Current Reading" testId="section-live-dashboard">
+  <Section no="01" testId="section-live-dashboard">
     {module.kind === "vector" && (
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4" data-testid="vector-index-grid">
         {module.indices.map((idx, i) => {
@@ -375,7 +377,7 @@ export default function ModuleDetail() {
 // Shown instead of the live dashboard for a paused module (module.live ===
 // false, see modules.js) -- makes no API calls.
 const PausedModuleNotice = () => (
-  <Section no="01" title="Current Reading" testId="section-live-dashboard">
+  <Section no="01" testId="section-live-dashboard">
     <div className={`${SURFACE} border-dashed px-6 py-14 text-center`} data-testid="module-coming-soon">
       <p className="font-mono-ui text-[11px] uppercase tracking-[0.28em] text-slate-600 mb-3">Coming Soon</p>
       <p className="text-sm font-light text-slate-500 max-w-sm mx-auto">This module is temporarily paused. Research access will resume once it's back online.</p>
