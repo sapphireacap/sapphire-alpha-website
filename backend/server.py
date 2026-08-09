@@ -1497,12 +1497,22 @@ async def definedge_otp_auto_login(request: Request):
     if status.get("connected"):
         return {"skipped": "already connected today"}
 
+    # Captured BEFORE the trigger call, not after -- Definedge stamps the
+    # email's own Date header at send time, which can land a few seconds
+    # earlier than when our client finishes the round-trip and would
+    # otherwise mark "after". Confirmed live: a post-trigger timestamp
+    # wrongly filtered out the real OTP email as "too old" by a handful
+    # of seconds. A SMALL buffer on top absorbs the rest of any clock
+    # skew -- deliberately not generous (confirmed live: a 2-minute
+    # buffer picked up a stale OTP from an earlier trigger still sitting
+    # in the inbox, whose otp_token no longer matched THIS trigger's,
+    # and Definedge correctly rejected the mismatched verify).
+    triggered_at = datetime.now(timezone.utc) - timedelta(seconds=15)
     try:
         trigger = await definedge.trigger_otp()
     except DefinedgeError as e:
         raise HTTPException(status_code=400, detail=f"OTP trigger failed: {e}")
 
-    triggered_at = datetime.now(timezone.utc)
     try:
         otp = await definedge_otp_email.fetch_otp(after=triggered_at)
     except definedge_otp_email.DefinedgeOtpEmailError as e:

@@ -36,12 +36,16 @@ EMAIL_APP_PASSWORD = os.environ.get("DEFINEDGE_OTP_EMAIL_APP_PASSWORD")
 # right after trigger_otp() and giving up.
 POLL_INTERVAL_SECONDS = 5
 POLL_TIMEOUT_SECONDS = 90
-# Definedge's exact OTP email copy isn't documented anywhere in this
-# codebase (confirmed -- see the investigation this module came out of);
-# this looks for any standalone 4-8 digit run in the subject or body,
-# which covers every common OTP length without hard-coding wording that
-# might not match Definedge's real template.
-OTP_PATTERN = re.compile(r"\b(\d{4,8})\b")
+# Definedge's real template (confirmed live, 2026-08-10): "Please use OTP
+# code XXXXXX to login to Definedge Securities Application...". Anchored
+# on "OTP code" specifically -- a bare \d{4,8} match was tried first and
+# confirmed live to grab a FALSE positive (a "2026" from a LibreOffice-
+# generated <meta> timestamp sitting earlier in the HTML part than the
+# real OTP paragraph), so phrase-anchoring is required, not optional.
+# The bare-digit pattern stays as a fallback only, in case Definedge ever
+# changes this wording without changing the underlying OTP concept.
+OTP_PHRASE_PATTERN = re.compile(r"otp\s*(?:code)?\s*(?:is|:|-)?\s*(\d{4,8})", re.IGNORECASE)
+OTP_FALLBACK_PATTERN = re.compile(r"\b(\d{4,8})\b")
 
 
 class DefinedgeOtpEmailError(Exception):
@@ -77,10 +81,24 @@ def _extract_body(msg) -> str:
 def _extract_otp(msg) -> str | None:
     subject = str(make_header(decode_header(msg.get("Subject", ""))))
     body = _extract_body(msg)
-    for text in (subject, body):
-        match = OTP_PATTERN.search(text)
+    texts = (subject, body)
+
+    # Phrase-anchored first, across both subject and body -- the only
+    # reliable match given the false-positive risk from HTML head/meta
+    # content (see OTP_PHRASE_PATTERN's comment).
+    for text in texts:
+        match = OTP_PHRASE_PATTERN.search(text)
         if match:
             return match.group(1)
+
+    # Fallback: bare digit run, but only within the HTML/text BODY's tag
+    # stripped down to visible text, not the raw markup -- reduces (does
+    # not eliminate) the odds of matching a metadata timestamp instead of
+    # the real code.
+    visible = re.sub(r"<[^>]+>", " ", body)
+    match = OTP_FALLBACK_PATTERN.search(visible)
+    if match:
+        return match.group(1)
     return None
 
 
