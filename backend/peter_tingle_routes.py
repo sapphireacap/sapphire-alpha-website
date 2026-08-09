@@ -2,6 +2,14 @@
 Peter Tingle routes -- combined technical + fundamental caution scan for
 one stock, India and US.
 
+Every read route in this router is admin-only (Depends(get_current_admin))
+-- Peter Tingle is an internal research tool, not a public-facing module
+(see modules.js's `adminOnly: true` on its directory entry and
+ModuleDetail.jsx's AdminOnlyNotice for the matching frontend gate). Same
+posture and same per-route Depends pattern as blackbox_routes.py. The two
+universe-sync routes keep their existing cron-secret / admin split --
+that gate predates and is independent of this one.
+
 India (`/scan/{symbol}`) reuses Stock Research Terminal's already-ingested
 collections and its Fracture Scan fundamental ruleset directly, rather
 than standing up a second ingestion pipeline -- symbol search stays on
@@ -34,7 +42,7 @@ def create_peter_tingle_router(db, get_current_admin, cron_secret: str) -> APIRo
     router = APIRouter(prefix="/peter-tingle")
 
     @router.get("/scan/{symbol}")
-    async def scan(symbol: str):
+    async def scan(symbol: str, admin: dict = Depends(get_current_admin)):
         symbol = symbol.strip().upper()
         master = await db.stock_symbol_master.find_one({"symbol": symbol}, {"_id": 0})
         if not master:
@@ -58,7 +66,7 @@ def create_peter_tingle_router(db, get_current_admin, cron_secret: str) -> APIRo
         }
 
     @router.get("/us/symbols/search")
-    async def search_us_symbols(q: str = ""):
+    async def search_us_symbols(q: str = "", admin: dict = Depends(get_current_admin)):
         q = q.strip()
         if len(q) < 1:
             return []
@@ -70,7 +78,7 @@ def create_peter_tingle_router(db, get_current_admin, cron_secret: str) -> APIRo
         return rows
 
     @router.get("/us/scan/{symbol}")
-    async def scan_us(symbol: str):
+    async def scan_us(symbol: str, admin: dict = Depends(get_current_admin)):
         symbol = symbol.strip().upper()
         master = await db.us_stock_symbol_master.find_one({"symbol": symbol}, {"_id": 0})
         if not master:

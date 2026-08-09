@@ -86,6 +86,28 @@ export const RequireAuth = ({ tokenKey, loginPath, children }) => {
 };
 
 /**
+ * Non-redirecting admin check — for greying out UI (an Alpha Terminal
+ * directory card, say) rather than gating a whole page. Checks both
+ * token keys since an admin may be signed in via /admin33 (ADMIN_TOKEN_KEY)
+ * or as a trader account whose role happens to be "admin" (TRADER_TOKEN_KEY,
+ * same precedent RequirePnfAccess's role check uses). Returns null while
+ * loading, then a real boolean — never redirects, never blocks.
+ */
+export const useIsAdmin = () => {
+  const [isAdmin, setIsAdmin] = useState(null);
+
+  useEffect(() => {
+    const token = localStorage.getItem(ADMIN_TOKEN_KEY) || localStorage.getItem(TRADER_TOKEN_KEY);
+    if (!token) { setIsAdmin(false); return; }
+    axios.get(`${API}/auth/me`, { headers: { Authorization: `Bearer ${token}` } })
+      .then((r) => setIsAdmin(r.data.role === "admin"))
+      .catch(() => setIsAdmin(false));
+  }, []);
+
+  return isAdmin;
+};
+
+/**
  * P&F Studio's gate: requires a signed-in trader with an active
  * pnf_access_until (or an admin). Anyone else is bounced to the /pnf-studio
  * marketing/subscribe page rather than /login, since that page is what

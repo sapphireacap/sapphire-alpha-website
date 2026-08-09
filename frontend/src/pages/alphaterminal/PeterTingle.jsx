@@ -3,8 +3,19 @@ import axios from "axios";
 import { ShieldAlert } from "lucide-react";
 import { field, label, LoadingParticles, EmptyState } from "./QuantLab";
 import BiasBadge from "../../components/site/BiasBadge";
+import { ADMIN_TOKEN_KEY } from "../../lib/auth";
+import { TRADER_TOKEN_KEY } from "../Auth";
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
+// Peter Tingle's own routes (backend/peter_tingle_routes.py) are
+// admin-gated -- only an admin ever reaches this component at all (see
+// ModuleDetail.jsx's AdminOnlyNotice), but the calls themselves still
+// need the JWT attached. Checks both token keys since an admin may be
+// signed in via /admin33 or as a trader account with role "admin" (same
+// precedent as lib/auth.js's useIsAdmin).
+const authHeaders = () => ({
+  headers: { Authorization: `Bearer ${localStorage.getItem(ADMIN_TOKEN_KEY) || localStorage.getItem(TRADER_TOKEN_KEY)}` },
+});
 
 const FLAG_STYLE = {
   PASS: { color: "text-emerald-400", bg: "bg-emerald-400/10 border-emerald-400/25" },
@@ -51,7 +62,7 @@ const SymbolPicker = ({ market, onSelect }) => {
     if (v.trim().length < 1) { setOptions([]); setOpen(false); return; }
     debounceRef.current = setTimeout(async () => {
       try {
-        const { data } = await axios.get(`${API}${market.searchPath}`, { params: { q: v.trim() } });
+        const { data } = await axios.get(`${API}${market.searchPath}`, { params: { q: v.trim() }, ...authHeaders() });
         setOptions(data || []);
         setOpen(true);
       } catch {
@@ -142,7 +153,7 @@ const PeterTingleTool = () => {
     setLoading(true);
     setResult(null);
     try {
-      const { data } = await axios.get(`${API}${market.scanPath}/${sym}`);
+      const { data } = await axios.get(`${API}${market.scanPath}/${sym}`, authHeaders());
       setResult(data);
     } catch {
       setResult({ has_data: false });

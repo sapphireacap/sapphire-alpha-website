@@ -26,6 +26,11 @@ import {
 // `no` is renumbered sequentially to match this visual order rather than
 // the historical build order, so the badge on each card always reads
 // top-to-bottom, left-to-right with no gaps/out-of-order jumps.
+// `adminOnly: true` (Peter Tingle) greys out the directory card and
+// blocks the module page for anyone whose /auth/me role isn't "admin" --
+// see AlphaTerminal.jsx's useIsAdmin() gate and ModuleDetail.jsx's
+// AdminOnlyNotice. The backend routes are independently admin-gated too
+// (peter_tingle_routes.py), so this is UI-layer, not the only enforcement.
 export const MODULES = [
   {
     slug: "index-vector",
@@ -170,6 +175,7 @@ export const MODULES = [
     no: "10",
     kind: "peter-tingle",
     live: true,
+    adminOnly: true,
     icon: ShieldAlert,
     title: "Peter Tingle",
     shortDescription: "Technical and fundamental analysis that assesses a stock's overall risk and caution signals.",

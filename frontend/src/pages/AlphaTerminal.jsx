@@ -8,6 +8,7 @@ import Footer from "../components/site/Footer";
 import BiasBadge from "../components/site/BiasBadge";
 import { MODULES } from "./alphaterminal/modules";
 import CryptoDashboard from "./alphaterminal/CryptoDashboard";
+import { useIsAdmin } from "../lib/auth";
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 const EASE = [0.16, 1, 0.3, 1];
@@ -358,12 +359,13 @@ export const TrackRecordPanel = ({ record }) => (
 
 /* ------------------------------ Directory card ------------------------------ */
 
-// Paused modules (module.live === false, see modules.js) skip the live-data
-// hook entirely (no API call) and render a locked card instead — same
-// visual treatment as Black Box's "Coming Soon" cards, so a paused Alpha
-// Terminal module and a not-yet-released Black Box strategy read
-// consistently across the site.
-const PausedDirectoryCard = ({ module, index }) => {
+// Paused modules (module.live === false) and admin-only modules a non-admin
+// viewer can't open (module.adminOnly, see modules.js) both skip the
+// live-data hook entirely (no API call, not even a Link) and render this
+// locked card instead — same visual treatment as Black Box's "Coming Soon"
+// cards, just a different badge label, so every "you can't open this right
+// now" case on Alpha Terminal reads consistently.
+const LockedDirectoryCard = ({ module, index, label }) => {
   const Icon = module.icon;
   return (
     <motion.div
@@ -387,7 +389,7 @@ const PausedDirectoryCard = ({ module, index }) => {
         <p className="text-sm font-light text-slate-500 mb-6 leading-relaxed">{module.shortDescription}</p>
         <div className="flex items-center justify-end gap-3 pt-4 border-t border-white/[0.06]">
           <span className="inline-flex items-center gap-1.5 font-mono-ui text-[11px] uppercase tracking-wider text-slate-500">
-            <Lock size={10} /> Coming Soon
+            <Lock size={10} /> {label}
           </span>
         </div>
       </div>
@@ -395,10 +397,13 @@ const PausedDirectoryCard = ({ module, index }) => {
   );
 };
 
-const DirectoryCard = ({ module, index, onAbout }) => {
+const DirectoryCard = ({ module, index, onAbout, isAdmin }) => {
   const Icon = module.icon;
 
-  if (!module.live) return <PausedDirectoryCard module={module} index={index} />;
+  if (!module.live) return <LockedDirectoryCard module={module} index={index} label="Coming Soon" />;
+  // isAdmin === null is still loading /auth/me -- treat as locked until
+  // resolved rather than flashing the real card open then yanking it away.
+  if (module.adminOnly && !isAdmin) return <LockedDirectoryCard module={module} index={index} label="Admin Only" />;
 
   return (
     <motion.div
@@ -667,6 +672,7 @@ export default function AlphaTerminal() {
   const [aboutModule, setAboutModule] = useState(null);
   const [aboutTerminalOpen, setAboutTerminalOpen] = useState(false);
   const [activeMarket, setActiveMarket] = useState("india");
+  const isAdmin = useIsAdmin();
   useEffect(() => { window.scrollTo(0, 0); }, []);
   const market = MARKETS.find((m) => m.id === activeMarket) || MARKETS[0];
 
@@ -732,7 +738,7 @@ export default function AlphaTerminal() {
                   className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5"
                   data-testid="module-directory"
                 >
-                  {MODULES.map((m, i) => <DirectoryCard key={m.slug} module={m} index={i} onAbout={setAboutModule} />)}
+                  {MODULES.map((m, i) => <DirectoryCard key={m.slug} module={m} index={i} onAbout={setAboutModule} isAdmin={isAdmin} />)}
                 </motion.div>
               )}
             </AnimatePresence>

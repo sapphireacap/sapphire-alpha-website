@@ -18,6 +18,7 @@ import BreadthTool from "./Breadth";
 import OptionsTrendTool from "./OptionsTrend";
 import MarketDashboardTool from "./MarketDashboard";
 import PeterTingleTool from "./PeterTingle";
+import { useIsAdmin } from "../../lib/auth";
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 const EASE = [0.16, 1, 0.3, 1];
@@ -314,6 +315,7 @@ export default function ModuleDetail() {
   const navigate = useNavigate();
   const module = getModule(slug);
   const [signals, setSignals] = useState({});
+  const isAdmin = useIsAdmin();
 
   useEffect(() => {
     window.scrollTo(0, 0);
@@ -357,15 +359,17 @@ export default function ModuleDetail() {
       <main className="relative bg-void min-h-screen">
         <Header module={module} />
         <div className="container-x">
-          {module.live ? (
+          {!module.live ? (
+            <PausedModuleNotice />
+          ) : module.adminOnly && isAdmin !== true ? (
+            <AdminOnlyNotice loading={isAdmin === null} />
+          ) : (
             <>
               <LiveDashboard module={module} signals={signals} />
               {module.kind !== "exitline" && module.kind !== "matrix" && module.kind !== "breadth" && module.kind !== "options-trend" && module.kind !== "market-dashboard" && (
                 <HistoricalPerformance module={module} />
               )}
             </>
-          ) : (
-            <PausedModuleNotice />
           )}
         </div>
       </main>
@@ -381,6 +385,29 @@ const PausedModuleNotice = () => (
     <div className={`${SURFACE} border-dashed px-6 py-14 text-center`} data-testid="module-coming-soon">
       <p className="font-mono-ui text-[11px] uppercase tracking-[0.28em] text-slate-600 mb-3">Coming Soon</p>
       <p className="text-sm font-light text-slate-500 max-w-sm mx-auto">This module is temporarily paused. Research access will resume once it's back online.</p>
+    </div>
+  </Section>
+);
+
+// Shown instead of the live dashboard for an admin-only module
+// (module.adminOnly, see modules.js) when useIsAdmin() resolves to
+// anything but true -- covers a non-admin hitting the URL directly (the
+// directory card itself isn't even a link for them, see AlphaTerminal.jsx's
+// LockedDirectoryCard). `loading` covers the brief /auth/me round trip so
+// this doesn't flash "Admin Access Required" at an admin before their
+// role comes back. The backend (peter_tingle_routes.py) is independently
+// admin-gated too -- this is UI-layer, not the only enforcement.
+const AdminOnlyNotice = ({ loading }) => (
+  <Section no="01" testId="section-live-dashboard">
+    <div className={`${SURFACE} border-dashed px-6 py-14 text-center`} data-testid="module-admin-only">
+      {loading ? (
+        <Loader2 size={18} className="animate-spin text-slate-600 mx-auto" />
+      ) : (
+        <>
+          <p className="font-mono-ui text-[11px] uppercase tracking-[0.28em] text-slate-600 mb-3">Admin Access Required</p>
+          <p className="text-sm font-light text-slate-500 max-w-sm mx-auto">This module is restricted to admin accounts.</p>
+        </>
+      )}
     </div>
   </Section>
 );
