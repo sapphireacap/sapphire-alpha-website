@@ -1,5 +1,6 @@
 """Alpaca Market Data client — the live/intraday data source for the US
-Indices segment of the P&F and Renko charting platforms.
+Stocks segment (indices and individual equities) of the P&F and Renko
+charting platforms.
 
 Daily/weekly/monthly history for US Indices still comes from
 yahoo_finance_client.py's real index tickers (^NDX, ^GSPC) — that's a
@@ -8,16 +9,19 @@ and this client doesn't touch it. What Yahoo's free endpoint cannot do at
 all is real intraday history, and Alpaca can: this module fills exactly
 that gap, nothing more.
 
-The tradeoff this introduces, and why it's disclosed rather than hidden:
-Alpaca has no index-level product (^NDX/^GSPC aren't tradable securities,
-confirmed live — the API 400s on them), only real securities. So intraday
-bars come from each index's most liquid tracking ETF (QQQ for Nasdaq 100,
-SPY for S&P 500) — the same proxy relationship this platform already uses
-for Gold (COMEX futures standing in for spot XAUUSD, see
-yahoo_finance_client.py's COMMODITY_SYMBOLS). The daily chart and an
-intraday chart of "the same" instrument are therefore reading two
-related-but-distinct instruments; callers must surface that, the same way
-the Gold segment already discloses its own proxy in the UI.
+The tradeoff this introduces for INDICES specifically, and why it's
+disclosed rather than hidden: Alpaca has no index-level product (^NDX/
+^GSPC aren't tradable securities, confirmed live — the API 400s on them),
+only real securities. So intraday bars for an index come from its most
+liquid tracking ETF (QQQ for Nasdaq 100, SPY for S&P 500) — the same
+proxy relationship this platform already uses for Gold (COMEX futures
+standing in for spot XAUUSD, see yahoo_finance_client.py's
+COMMODITY_SYMBOLS). The daily chart and an intraday chart of "the same"
+index are therefore reading two related-but-distinct instruments; callers
+must surface that, the same way the Gold segment already discloses its
+own proxy in the UI. This proxy relationship does NOT apply to individual
+equities (see intraday_bars_for_ticker below) — a stock ticker is the
+real, tradable instrument itself, nothing stands in for it.
 
 Feed is IEX (free tier) — real trades, one exchange's worth of the tape,
 not the full consolidated SIP feed (which needs a paid subscription).
@@ -69,21 +73,17 @@ def _auth_headers() -> dict:
     return {"APCA-API-KEY-ID": ALPACA_API_KEY_ID, "APCA-API-SECRET-KEY": ALPACA_API_SECRET_KEY}
 
 
-async def intraday_bars(symbol_key: str, interval: str, days: int = 30) -> list:
-    """Real intraday OHLC bars for a US index's tracking ETF, already at
-    the requested granularity — Alpaca aggregates server-side, unlike the
-    Binance client elsewhere in this codebase which fetches 1-minute bars
-    and rolls them up locally.
+async def _fetch_intraday_bars(ticker: str, interval: str, days: int) -> list:
+    """Real intraday OHLC bars for any real Alpaca-covered security,
+    already at the requested granularity — Alpaca aggregates server-side,
+    unlike the Binance client elsewhere in this codebase which fetches
+    1-minute bars and rolls them up locally.
 
     Labelled in US/Eastern local time (this segment's own exchange
     session), the same convention NSE bars use IST — a UTC or IST label on
     a 9:30am ET open would read as meaningless to the person looking at
     it. `ts` is DDMMYYYYHHMM to match this platform's existing intraday
     bar shape (see pnf_chart.py's aggregate_minutes / _bar_label)."""
-    symbol_key = symbol_key.strip().upper()
-    proxy = US_INDEX_PROXY.get(symbol_key)
-    if not proxy:
-        raise AlpacaError(f"No US index proxy configured for {symbol_key}.")
     timeframe = TIMEFRAME_MAP.get(interval)
     if not timeframe:
         raise AlpacaError(f"Unsupported intraday interval {interval!r}.")
@@ -94,7 +94,7 @@ async def intraday_bars(symbol_key: str, interval: str, days: int = 30) -> list:
     try:
         async with httpx.AsyncClient(timeout=15) as c:
             r = await c.get(
-                f"{BASE_URL}/stocks/{proxy['ticker']}/bars",
+                f"{BASE_URL}/stocks/{ticker}/bars",
                 params={"timeframe": timeframe, "start": start, "limit": 10000, "feed": FEED,
                         "adjustment": "raw"},
                 headers=_auth_headers(),
@@ -108,7 +108,7 @@ async def intraday_bars(symbol_key: str, interval: str, days: int = 30) -> list:
 
     raw_bars = data.get("bars") or []
     if not raw_bars:
-        raise AlpacaError(f"No intraday bars returned for {proxy['ticker']}.")
+        raise AlpacaError(f"No intraday bars returned for {ticker}.")
 
     bars = []
     for b in raw_bars:
@@ -121,3 +121,23 @@ async def intraday_bars(symbol_key: str, interval: str, days: int = 30) -> list:
             "open": b["o"], "high": b["h"], "low": b["l"], "close": b["c"],
         })
     return bars
+
+
+async def intraday_bars(symbol_key: str, interval: str, days: int = 30) -> list:
+    """Real intraday bars for a US index's tracking ETF -- symbol_key is
+    the platform's own index selector (NDX/SPX), resolved through
+    US_INDEX_PROXY to the real ETF ticker Alpaca actually serves."""
+    symbol_key = symbol_key.strip().upper()
+    proxy = US_INDEX_PROXY.get(symbol_key)
+    if not proxy:
+        raise AlpacaError(f"No US index proxy configured for {symbol_key}.")
+    return await _fetch_intraday_bars(proxy["ticker"], interval, days)
+
+
+async def intraday_bars_for_ticker(ticker: str, interval: str, days: int = 30) -> list:
+    """Real intraday bars for an arbitrary US equity ticker directly --
+    no proxy lookup, unlike intraday_bars(): indices have no tradable
+    product of their own (hence the ETF stand-in), but an individual
+    stock IS the real instrument. Used by the US Stocks segment once a
+    real equity, not an index, is selected."""
+    return await _fetch_intraday_bars(ticker.strip().upper(), interval, days)

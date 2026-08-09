@@ -23,7 +23,7 @@ const SEGMENTS = [
   { key: "NSE", label: "NSE (Cash)" },
   { key: "FUT", label: "Futures" },
   { key: "OPT", label: "Options" },
-  { key: "US", label: "US Indices" },
+  { key: "US", label: "US Stocks" },
   { key: "COMMODITY", label: "Commodities" },
   { key: "CRYPTO", label: "Crypto" },
 ];
@@ -64,6 +64,11 @@ const LIVE_REFRESH_MS = {
 // there is no separate US_INTERVALS list any more because there is
 // nothing left for it to restrict.
 const COMMODITY_INTERVALS = ["daily", "weekly", "monthly"];
+
+// The only two selectors under "US" that are index proxies rather than
+// real, tradable instruments — see alpaca_client.py's module docstring.
+// Every other US symbol is an individual S&P 500 equity, the real thing.
+const US_INDEX_KEYS = ["NDX", "SPX"];
 
 // Crypto bars are fetched straight from the browser, not proxied through
 // the backend -- Binance's public klines API sends a wildcard CORS header
@@ -1101,7 +1106,7 @@ const PnfChart = () => {
           )}
         </div>
 
-        {segment === "US" && (
+        {segment === "US" && US_INDEX_KEYS.includes(symbol) && (
           <p className="text-[11px] text-slate-500 mt-2 max-w-3xl">
             {COMMODITY_INTERVALS.includes(interval)
               ? "Nasdaq 100 and S&P 500 are plotted from the real index (daily/weekly/monthly)."

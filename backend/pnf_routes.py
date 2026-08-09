@@ -78,6 +78,15 @@ def create_pnf_router(db, definedge, get_current_subscriber) -> APIRouter:
             q = (query or "").strip().upper()
             syms = [k for k in yf.US_INDEX_SYMBOLS
                     if q in k or q in yf.US_INDEX_SYMBOLS[k]["label"].upper()]
+            # Individual US equities (S&P 500 universe) alongside the two
+            # index selectors above -- see us_stock_universe.py, the same
+            # symbol master Peter Tingle's US toggle already uses.
+            rows = await db.us_stock_symbol_master.find(
+                {"$or": [{"symbol": {"$regex": q, "$options": "i"}},
+                         {"company_name": {"$regex": q, "$options": "i"}}]},
+                {"_id": 0, "symbol": 1},
+            ).limit(20).to_list(20)
+            syms += [r["symbol"] for r in rows if r["symbol"] not in syms]
             return {"symbols": syms}
         if segment == "COMMODITY":
             q = (query or "").strip().upper()
@@ -175,6 +184,80 @@ def create_pnf_router(db, definedge, get_current_subscriber) -> APIRouter:
         }
         return payload
 
+    async def _chart_yahoo_equity(symbol: str, interval: str, box_pct: Optional[float],
+                                  box_value: Optional[float], cfg, xo_lookback: int,
+                                  ma_period: int) -> dict:
+        """Individual US equities (S&P 500 universe, us_stock_symbol_master
+        — same list Peter Tingle's US toggle syncs) — same Yahoo daily/
+        weekly/monthly path as _chart_yahoo, but through
+        yahoo_finance_client.equity_bars() (arbitrary ticker, no fixed
+        map) since these are real securities, not the index/commodity
+        proxies _chart_yahoo's symbol_map handles."""
+        sym = symbol.strip().upper()
+        master = await db.us_stock_symbol_master.find_one({"symbol": sym}, {"_id": 0})
+        if not master:
+            raise HTTPException(status_code=404, detail=f"No instrument found for {symbol}.")
+        if interval not in US_INTERVALS:
+            raise HTTPException(status_code=400,
+                                detail="This instrument is available at daily, weekly or monthly intervals only.")
+        try:
+            bars = await yf.equity_bars(db, sym)
+            bars = pnf_chart.resample_daily(bars, interval)
+            payload = pnf_chart.build_chart(
+                bars, box_pct=box_pct, box_value=box_value,
+                reversal=pnf_chart.DEFAULT_REVERSAL, cfg=cfg,
+                xo_lookback=xo_lookback, ma_period=ma_period,
+            )
+        except pnf_chart.PnfError as e:
+            raise HTTPException(status_code=400, detail=str(e))
+        except yf.YahooFinanceError as e:
+            logger.warning("Yahoo Finance fetch failed for %s: %s", sym, e)
+            raise HTTPException(status_code=502,
+                                detail="Chart data is temporarily unavailable — please try again shortly.")
+        payload["params"]["interval"] = interval
+        payload["instrument"] = {
+            "symbol": sym,
+            "selector_segment": "US",
+            "tradingsymbol": master.get("company_name") or sym,
+        }
+        return payload
+
+    async def _chart_us_stock_intraday(symbol: str, interval: str, box_pct: Optional[float],
+                                       box_value: Optional[float], cfg, xo_lookback: int,
+                                       ma_period: int, days: int) -> dict:
+        """Individual US equities, intraday — real bars straight from
+        Alpaca for the actual ticker (no tracking-ETF proxy needed, unlike
+        _chart_us_intraday's indices — see alpaca_client.py's module
+        docstring)."""
+        sym = symbol.strip().upper()
+        master = await db.us_stock_symbol_master.find_one({"symbol": sym}, {"_id": 0})
+        if not master:
+            raise HTTPException(status_code=404, detail=f"No instrument found for {symbol}.")
+        if interval not in ac.TIMEFRAME_MAP:
+            raise HTTPException(status_code=400,
+                                detail=f"interval must be one of {', '.join(US_INTERVALS)} (daily+) "
+                                       f"or {', '.join(ac.TIMEFRAME_MAP)} (intraday minutes) for US Stocks.")
+        try:
+            bars = await ac.intraday_bars_for_ticker(sym, interval, days=days)
+            payload = pnf_chart.build_chart(
+                bars, box_pct=box_pct, box_value=box_value,
+                reversal=pnf_chart.DEFAULT_REVERSAL, cfg=cfg,
+                xo_lookback=xo_lookback, ma_period=ma_period,
+            )
+        except pnf_chart.PnfError as e:
+            raise HTTPException(status_code=400, detail=str(e))
+        except ac.AlpacaError as e:
+            logger.warning("Alpaca fetch failed for %s: %s", sym, e)
+            raise HTTPException(status_code=502,
+                                detail="Live intraday data is temporarily unavailable — please try again shortly.")
+        payload["params"]["interval"] = interval
+        payload["instrument"] = {
+            "symbol": sym,
+            "selector_segment": "US",
+            "tradingsymbol": master.get("company_name") or sym,
+        }
+        return payload
+
     @router.get("/chart")
     async def chart(symbol: str, segment: str = "NSE", interval: str = "daily",
                     box_pct: Optional[float] = pnf_chart.DEFAULT_BOX_PCT,
@@ -207,10 +290,15 @@ def create_pnf_router(db, definedge, get_current_subscriber) -> APIRouter:
         )
 
         if segment == "US":
+            is_index = symbol.strip().upper() in yf.US_INDEX_SYMBOLS
             if interval in US_INTERVALS:
-                return await _chart_yahoo(symbol, interval, box_pct, box_value, cfg, xo_lookback, ma_period,
-                                          yf.US_INDEX_SYMBOLS, "US")
-            return await _chart_us_intraday(symbol, interval, box_pct, box_value, cfg, xo_lookback, ma_period, days)
+                if is_index:
+                    return await _chart_yahoo(symbol, interval, box_pct, box_value, cfg, xo_lookback, ma_period,
+                                              yf.US_INDEX_SYMBOLS, "US")
+                return await _chart_yahoo_equity(symbol, interval, box_pct, box_value, cfg, xo_lookback, ma_period)
+            if is_index:
+                return await _chart_us_intraday(symbol, interval, box_pct, box_value, cfg, xo_lookback, ma_period, days)
+            return await _chart_us_stock_intraday(symbol, interval, box_pct, box_value, cfg, xo_lookback, ma_period, days)
         if segment == "COMMODITY":
             return await _chart_yahoo(symbol, interval, box_pct, box_value, cfg, xo_lookback, ma_period,
                                       yf.COMMODITY_SYMBOLS, "COMMODITY")

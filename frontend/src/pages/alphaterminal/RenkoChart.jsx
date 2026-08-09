@@ -23,7 +23,7 @@ const SEGMENTS = [
   { key: "NSE", label: "NSE (Cash)" },
   { key: "FUT", label: "Futures" },
   { key: "OPT", label: "Options" },
-  { key: "US", label: "US Indices" },
+  { key: "US", label: "US Stocks" },
   { key: "COMMODITY", label: "Commodities" },
   { key: "CRYPTO", label: "Crypto" },
 ];
@@ -48,6 +48,9 @@ const LIVE_REFRESH_MS = {
 // now has intraday too (real bars from Alpaca, via each index's tracking
 // ETF); COMMODITY (Gold) still doesn't and stays on this list alone.
 const COMMODITY_INTERVALS = ["daily", "weekly", "monthly"];
+
+// See PnfChart.jsx's identical constant for the full reasoning.
+const US_INDEX_KEYS = ["NDX", "SPX"];
 
 // Same client-side Binance fetch as PnfChart.jsx, for the same reason
 // (geo-blocked from the backend's own server) — see that file's comment.
@@ -804,7 +807,7 @@ const RenkoChart = () => {
           )}
         </div>
 
-        {segment === "US" && (
+        {segment === "US" && US_INDEX_KEYS.includes(symbol) && (
           <p className="text-[11px] text-slate-500 mt-2 max-w-3xl">
             {COMMODITY_INTERVALS.includes(interval)
               ? "Nasdaq 100 and S&P 500 are plotted from the real index (daily/weekly/monthly)."
