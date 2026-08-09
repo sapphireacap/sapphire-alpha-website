@@ -19,7 +19,7 @@ Data flow:
   - Admin can also add/edit rhp_url (and sector, which no source here
     exposes) via POST/PUT /api/ipos. Saving a new-or-changed rhp_url
     schedules _generate_report() as a FastAPI BackgroundTask, so the save
-    returns immediately rather than blocking on a ~15-30s PDF fetch + Gemini
+    returns immediately rather than blocking on a ~15-30s PDF fetch + Groq
     call — same background path the SEBI backfill uses.
   - `status` is never admin input — it's computed from today vs. the three
     date fields on every read (_compute_status), so it can't go stale.
@@ -35,9 +35,6 @@ from typing import List, Optional
 
 import httpx
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request
-from google import genai
-from google.genai import errors as genai_errors
-from google.genai import types as genai_types
 from pydantic import BaseModel, ConfigDict, Field
 from pypdf import PdfReader
 
@@ -52,7 +49,7 @@ BROWSER_USER_AGENT = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
     "(KHTML, like Gecko) Chrome/120.0 Safari/537.36"
 )
-MAX_RHP_CHARS = 350_000  # generous cap so a pathological huge PDF can't blow up the request
+MAX_RHP_CHARS = 200_000  # bounds total map-reduce chunk count (see _call_groq) as well as PDF-fetch pathological-size protection
 MIN_EXTRACTED_CHARS = 500  # below this, treat as "couldn't extract" (e.g. scanned/image-only PDF)
 
 NSE_UPCOMING_URL = "https://www.nseindia.com/api/all-upcoming-issues?category=ipo"
@@ -60,7 +57,37 @@ NSE_MONTHS = {m: i + 1 for i, m in enumerate(
     ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
 )}
 
-GEMINI_MODEL = os.environ.get("GEMINI_MODEL", "gemini-2.5-flash")
+# Groq, not Gemini: Google's Generative Language API started rejecting
+# every newly-issued key (the "AQ." auth-key format replacing "AIzaSy")
+# with a 401 ACCESS_TOKEN_TYPE_UNSUPPORTED, confirmed live 2026-08-10 --
+# both via the google-genai SDK and a raw REST call with the documented
+# ?key= param, and matching a wide, still-open batch of reports on
+# Google's own AI Developer Forum. Groq's free tier needs no billing
+# card and has hit none of that -- OpenAI-compatible chat/completions
+# endpoint, called directly over httpx rather than pulling in a second
+# SDK for one call site.
+# Map-reduce, not one shot: a full RHP is commonly 60k-90k+ tokens once
+# extracted, which blows straight through Groq's free-tier per-request
+# TPM cap on any model (confirmed live 2026-08-10: a 79k-token single-
+# shot request was rejected on llama-3.3-70b-versatile's 12k TPM limit;
+# even the higher-throughput 8B model tops out around 30k TPM, still not
+# enough for a large RHP in one call). Each CHUNK_CHARS-sized slice gets
+# a cheap, terse fact-extraction pass on the fast/high-throughput 8B
+# model; the combined (much smaller) extract then gets one real
+# synthesis pass on the higher-quality 70B model for the final report.
+GROQ_MAP_MODEL = os.environ.get("GROQ_MAP_MODEL", "llama-3.1-8b-instant")
+GROQ_MODEL = os.environ.get("GROQ_MODEL", "llama-3.3-70b-versatile")
+GROQ_API_URL = "https://api.groq.com/openai/v1/chat/completions"
+CHUNK_CHARS = 8_000  # ~2k tokens/chunk, comfortably under the 8B model's free-tier TPM even a few chunks into the same minute
+MAP_SYSTEM_PROMPT = (
+    "You are extracting facts from one section of an Indian company's Red Herring "
+    "Prospectus (RHP), for later summarization. From the text below, list any concrete "
+    "facts found about: the business/operations, financial figures (revenue, profit, "
+    "debt), objects of the issue (what the IPO proceeds will fund), risk factors, and "
+    "the market lot size (number of equity shares per lot). Terse bullet points only, "
+    "no commentary, no invented numbers. If this section has nothing relevant, reply "
+    "with exactly: (no relevant facts)"
+)
 REPORT_SYSTEM_PROMPT = (
     "You are a neutral equity-research assistant summarizing an Indian IPO's Red "
     "Herring Prospectus (RHP) for retail investors. Write a short, plain-text report "
@@ -195,28 +222,92 @@ async def _extract_rhp_text(rhp_url: str) -> str:
     return text
 
 
-async def _call_gemini(ipo: dict, rhp_text: str) -> dict:
+GROQ_RETRY_WAIT_RE = re.compile(r"try again in ([\d.]+)s", re.IGNORECASE)
+GROQ_MAX_RETRIES = 2  # per chunk -- a 429 that still hasn't cleared after this many waits skips the chunk (see _call_groq's per-chunk-failure-is-ok design), rather than stalling the whole background job indefinitely
+
+
+async def _groq_chat(model: str, system: str, user: str, max_tokens: int) -> str:
+    api_key = os.environ.get("GROQ_API_KEY")
+    if not api_key:
+        raise ReportGenerationError("GROQ_API_KEY is not configured on the server.")
+
+    for attempt in range(GROQ_MAX_RETRIES + 1):
+        try:
+            async with httpx.AsyncClient(timeout=60) as c:
+                r = await c.post(
+                    GROQ_API_URL,
+                    headers={"Authorization": f"Bearer {api_key}"},
+                    json={
+                        "model": model,
+                        "messages": [
+                            {"role": "system", "content": system},
+                            {"role": "user", "content": user},
+                        ],
+                        "max_tokens": max_tokens,
+                    },
+                )
+        except httpx.HTTPError as e:
+            raise ReportGenerationError(f"Groq API request failed: {e}")
+
+        if r.status_code == 429 and attempt < GROQ_MAX_RETRIES:
+            # Groq's free-tier TPM budget is real and per-account (confirmed
+            # live, 2026-08-10: 6,000 TPM on llama-3.1-8b-instant, lower
+            # than the ~30,000 public docs advertise) -- respect the
+            # "try again in Xs" the error itself gives rather than
+            # guessing a fixed backoff, capped so one stubborn chunk can't
+            # stall the whole background job for minutes.
+            m = GROQ_RETRY_WAIT_RE.search(r.text)
+            wait_s = min(float(m.group(1)), 30.0) if m else 5.0
+            await asyncio.sleep(wait_s + 0.5)
+            continue
+        if r.status_code != 200:
+            raise ReportGenerationError(f"Groq API error ({r.status_code}): {r.text[:300]}")
+
+        data = r.json()
+        text = ((data.get("choices") or [{}])[0].get("message", {}).get("content") or "").strip()
+        if not text:
+            raise ReportGenerationError("Groq returned an empty response.")
+        return text
+    raise ReportGenerationError("Groq rate limit did not clear after retrying.")
+
+
+async def _call_groq(ipo: dict, rhp_text: str) -> dict:
     """Returns {"report": str, "lot_size": int | None} — lot_size is parsed
     off the model's own trailing LOT_SIZE: line rather than a second API
-    call, since it's already reading the full RHP text for the report."""
-    api_key = os.environ.get("GEMINI_API_KEY")
-    if not api_key:
-        raise ReportGenerationError("GEMINI_API_KEY is not configured on the server.")
-    client = genai.Client(api_key=api_key)
-    try:
-        resp = await client.aio.models.generate_content(
-            model=GEMINI_MODEL,
-            contents=f"Company: {ipo.get('company_name')}\n\nRHP text:\n\n{rhp_text}",
-            config=genai_types.GenerateContentConfig(
-                system_instruction=REPORT_SYSTEM_PROMPT,
-                max_output_tokens=1500,
-            ),
-        )
-    except genai_errors.APIError as e:
-        raise ReportGenerationError(f"Gemini API error: {e}")
-    full_text = (resp.text or "").strip()
-    if not full_text:
-        raise ReportGenerationError("Gemini returned an empty report.")
+    call. Map-reduce over the full RHP text (see CHUNK_CHARS's comment for
+    why a single call can't handle a full document on Groq's free tier):
+    one cheap extraction pass per chunk, one real synthesis pass over the
+    combined extract. A single chunk failing (a transient API hiccup) is
+    logged and skipped rather than failing the whole report — the
+    synthesis step still has every OTHER chunk's facts to work from."""
+    company = ipo.get("company_name")
+    chunks = [rhp_text[i:i + CHUNK_CHARS] for i in range(0, len(rhp_text), CHUNK_CHARS)]
+
+    extracts = []
+    for i, chunk in enumerate(chunks):
+        if i > 0:
+            # Proactive pacing, not just reactive 429 backoff -- spreads
+            # requests out so the TPM window doesn't fill up in the first
+            # handful of chunks (confirmed live: bursting all chunks with
+            # no delay hit 429 on nearly every request after the second).
+            await asyncio.sleep(3)
+        try:
+            fact = await _groq_chat(GROQ_MAP_MODEL, MAP_SYSTEM_PROMPT, f"Company: {company}\n\n{chunk}", max_tokens=400)
+        except ReportGenerationError as e:
+            logger.warning("RHP chunk extraction failed for %s: %s", company, e)
+            continue
+        if fact and "no relevant facts" not in fact.lower():
+            extracts.append(fact)
+
+    if not extracts:
+        raise ReportGenerationError("Could not extract any relevant facts from the RHP text.")
+
+    combined = "\n\n".join(extracts)
+    full_text = await _groq_chat(
+        GROQ_MODEL, REPORT_SYSTEM_PROMPT,
+        f"Company: {company}\n\nFacts extracted from the RHP, section by section (not raw RHP text):\n\n{combined}",
+        max_tokens=1500,
+    )
 
     lot_size = None
     m = LOT_SIZE_LINE_RE.search(full_text)
@@ -238,7 +329,7 @@ async def _generate_report(db, ipo_id: str):
         return
     try:
         text = await _extract_rhp_text(ipo["rhp_url"])
-        result = await _call_gemini(ipo, text)
+        result = await _call_groq(ipo, text)
     except ReportGenerationError as e:
         await db.ipos.update_one({"id": ipo_id}, {"$set": {"report_error": str(e), "updated_at": now()}})
         return
@@ -514,7 +605,7 @@ async def _fetch_zerodha_lot_size(detail_url: str) -> Optional[int]:
 async def _backfill_lot_sizes(db) -> int:
     """For every IPO still missing lot_size (and with an nse_symbol to match
     on), try Zerodha's public IPO pages. Never touches rows that already
-    have a lot_size — admin edits (or an earlier Gemini extraction) always
+    have a lot_size — admin edits (or an earlier Groq extraction) always
     win. Best-effort: any failure here is swallowed rather than breaking the
     NSE refresh it rides along with."""
     missing = await db.ipos.find(
