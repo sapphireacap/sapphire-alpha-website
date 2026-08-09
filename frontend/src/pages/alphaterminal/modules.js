@@ -14,6 +14,10 @@ import {
 //                  -> level ladder + SL/TP)
 //   "peter-tingle" -> the standalone PeterTingleTool, embedded (symbol
 //                  search -> technical + fundamental caution scan)
+//   "us-exitline" / "us-momentum-leaders" / "us-momentum-investing" /
+//   "us-breadth" / "us-relative-strength" / "us-market-assessment" ->
+//                  US_MODULES below, each its own standalone tool
+//                  component, same one-kind-per-module pattern
 // `live: false` modules are paused (2026-07-29) to cut backend memory/load
 // while the Render free-tier instance keeps crash-restarting on its memory
 // limit -- their pages show a "Coming Soon" placeholder and make no API
@@ -230,4 +234,104 @@ export const MODULES = [
   },
 ];
 
-export const getModule = (slug) => MODULES.find((m) => m.slug === slug) || null;
+// US Markets — same directory-of-pages shape as MODULES above (own
+// slug, own /alpha-terminal/:slug page via ModuleDetail.jsx), shown
+// instead of MODULES when the Alpha Terminal market selector is set to
+// "US Markets" (see AlphaTerminal.jsx). Index Vector and Options Trend
+// Scanner have no US equivalent yet — both read live options-market
+// structure, and Definedge (the only options data source in this
+// codebase) is India-only; Alpaca does serve real US options quotes
+// (confirmed live) but replicating those two modules' full P&F
+// confluence engines is separate, dedicated work. Swing Picks also has
+// no US equivalent (hand-curated pick data on the India side, not a
+// live scan). All six US modules reuse an existing engine unchanged,
+// just pointed at Yahoo/Alpaca instead of Definedge — see each
+// component and backend/us_markets_routes.py for the specifics.
+export const US_MODULES = [
+  {
+    slug: "us-exitline",
+    no: "01",
+    kind: "us-exitline",
+    live: true,
+    icon: Crosshair,
+    title: "US Exitline",
+    shortDescription: "Intraday levels with a suggested SL and TP.",
+    overview: {
+      purpose: "Same Camarilla level ladder and SL/TP logic as Intraday Exitline, for US equities.",
+      whatItMeasures: "Classifies the current price into a mean-reversion Trading Zone or a trend-day Breakout Zone against yesterday's close, and derives SL/TP from that read.",
+      interpret: "Near the H3/L3 edge, treat it as a mean-reversion trigger; beyond H4/L4, treat it as a trend day — trail the stop, no fixed target.",
+    },
+  },
+  {
+    slug: "us-momentum-leaders",
+    no: "02",
+    kind: "us-momentum-leaders",
+    live: true,
+    icon: Activity,
+    title: "Momentum Leaders",
+    shortDescription: "Ranks 1w/1m momentum across the S&P 500.",
+    overview: {
+      purpose: "Surfaces the S&P 500 names showing the strongest short-term momentum right now.",
+      whatItMeasures: "Ranks stocks by a blend of 1-week and 1-month return, computed from real Yahoo Finance daily bars.",
+      interpret: "A higher score reflects stronger short-term momentum — treat the list as a daily research starting point, not a buy list.",
+    },
+  },
+  {
+    slug: "us-momentum-investing",
+    no: "03",
+    kind: "us-momentum-investing",
+    live: true,
+    icon: Flame,
+    title: "Momentum Investing",
+    shortDescription: "Risk-adjusted momentum ranking across the S&P 500.",
+    overview: {
+      purpose: "Ranks positional investment candidates by momentum, not raw price performance alone.",
+      whatItMeasures: "Trailing 12-month return (excluding the most recent month) divided by realized volatility over the same window — same \"12-1\" methodology as the India-side Momentum Investing module.",
+      interpret: "Use it to build or review a positional watchlist, not as a same-day trigger — this is a periodic-rebalance style read, not an intraday signal.",
+    },
+  },
+  {
+    slug: "us-breadth",
+    no: "04",
+    kind: "us-breadth",
+    live: true,
+    icon: Gauge,
+    title: "Market Breadth",
+    shortDescription: "Percentage of the S&P 500 currently trending bullish.",
+    overview: {
+      purpose: "Reads US market health from participation, not just the index level.",
+      whatItMeasures: "Percentage of S&P 500 constituents currently in a bullish P&F swing on their own chart, independent of every other constituent.",
+      interpret: "Above 75% or below 25% is an extreme zone — trends can sit there for a long stretch, so treat it as a caution flag for fresh entries, not a standalone reversal trigger.",
+    },
+  },
+  {
+    slug: "us-relative-strength",
+    no: "05",
+    kind: "us-relative-strength",
+    live: true,
+    icon: Radar,
+    title: "Relative Strength Engine",
+    shortDescription: "Pairwise strength matrix across US sector groups.",
+    overview: {
+      purpose: "Ranks every stock in a US GICS sector against every other stock in that sector, not just against a single benchmark.",
+      whatItMeasures: "For each pair, builds a Point & Figure chart of their price ratio — a rising ratio favors the first stock, a falling ratio favors the second.",
+      interpret: "Run across short, medium and long-term box sizes at once — a stock outperforming most of its peers on all three is showing broader, more durable strength than one that only ranks well on a single timeframe.",
+    },
+  },
+  {
+    slug: "us-market-assessment",
+    no: "06",
+    kind: "us-market-assessment",
+    live: true,
+    icon: LayoutDashboard,
+    title: "Market Assessment",
+    shortDescription: "Single-screen US market health.",
+    overview: {
+      purpose: "A single-screen read on overall US market health — index levels, sector performance, breadth, and movers.",
+      whatItMeasures: "S&P 500 and Nasdaq 100 levels, S&P 500 breadth percentage, 1-day sector performance by GICS sector, and the day's biggest gainers/losers.",
+      interpret: "Use it as market context before drilling into any other US module — broad sector participation supports conviction; a narrow or negative sector spread is a caution flag even when the headline index looks fine.",
+    },
+  },
+];
+
+export const getModule = (slug) => MODULES.find((m) => m.slug === slug) || US_MODULES.find((m) => m.slug === slug) || null;

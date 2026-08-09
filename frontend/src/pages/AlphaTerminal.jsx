@@ -6,9 +6,8 @@ import { ArrowUpRight, ChevronRight, TrendingUp, TrendingDown, Minus, ExternalLi
 import Navbar from "../components/site/Navbar";
 import Footer from "../components/site/Footer";
 import BiasBadge from "../components/site/BiasBadge";
-import { MODULES } from "./alphaterminal/modules";
+import { MODULES, US_MODULES } from "./alphaterminal/modules";
 import CryptoDashboard from "./alphaterminal/CryptoDashboard";
-import USMarketsDashboard from "./alphaterminal/USMarketsDashboard";
 import { useIsAdmin } from "../lib/auth";
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
@@ -695,7 +694,7 @@ export default function AlphaTerminal() {
                     <LayoutDashboard size={24} />
                   </span>
                   <h1 className="font-display font-normal tracking-[-0.015em] text-white text-4xl md:text-5xl leading-[0.95]">
-                    Market Intelligence
+                    Alpha Terminal
                   </h1>
                 </motion.div>
                 <motion.p
@@ -729,16 +728,6 @@ export default function AlphaTerminal() {
                 >
                   <CryptoDashboard />
                 </motion.div>
-              ) : market.id === "us" ? (
-                <motion.div
-                  key={market.id}
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: 1 }}
-                  exit={{ opacity: 0 }}
-                  transition={{ duration: 0.25, ease: EASE }}
-                >
-                  <USMarketsDashboard />
-                </motion.div>
               ) : (
                 <motion.div
                   key={market.id}
@@ -749,7 +738,9 @@ export default function AlphaTerminal() {
                   className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5"
                   data-testid="module-directory"
                 >
-                  {MODULES.map((m, i) => <DirectoryCard key={m.slug} module={m} index={i} onAbout={setAboutModule} isAdmin={isAdmin} />)}
+                  {(market.id === "us" ? US_MODULES : MODULES).map((m, i) => (
+                    <DirectoryCard key={m.slug} module={m} index={i} onAbout={setAboutModule} isAdmin={isAdmin} />
+                  ))}
                 </motion.div>
               )}
             </AnimatePresence>

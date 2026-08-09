@@ -19,6 +19,9 @@ import OptionsTrendTool from "./OptionsTrend";
 import MarketDashboardTool from "./MarketDashboard";
 import PeterTingleTool from "./PeterTingle";
 import { useIsAdmin } from "../../lib/auth";
+import USExitlineTool from "./USExitline";
+import { USMomentumLeadersTool, USMomentumInvestingTool } from "./USMomentum";
+import USMarketAssessmentTool from "./USMarketAssessment";
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 const EASE = [0.16, 1, 0.3, 1];
@@ -197,6 +200,12 @@ const LiveDashboard = ({ module, signals }) => (
     {module.kind === "options-trend" && <OptionsTrendTool />}
     {module.kind === "market-dashboard" && <MarketDashboardTool />}
     {module.kind === "peter-tingle" && <PeterTingleTool />}
+    {module.kind === "us-exitline" && <USExitlineTool />}
+    {module.kind === "us-momentum-leaders" && <USMomentumLeadersTool />}
+    {module.kind === "us-momentum-investing" && <USMomentumInvestingTool />}
+    {module.kind === "us-breadth" && <BreadthTool seriesPath="/us-markets/breadth" fixedGroup="sp500" />}
+    {module.kind === "us-relative-strength" && <RelativeStrengthMatrix groupPrefix="us-" defaultGroup="us-technology" />}
+    {module.kind === "us-market-assessment" && <USMarketAssessmentTool />}
   </Section>
 );
 
@@ -366,7 +375,9 @@ export default function ModuleDetail() {
           ) : (
             <>
               <LiveDashboard module={module} signals={signals} />
-              {module.kind !== "exitline" && module.kind !== "matrix" && module.kind !== "breadth" && module.kind !== "options-trend" && module.kind !== "market-dashboard" && (
+              {!["exitline", "matrix", "breadth", "options-trend", "market-dashboard",
+                 "us-exitline", "us-momentum-leaders", "us-momentum-investing", "us-breadth", "us-relative-strength", "us-market-assessment",
+                ].includes(module.kind) && (
                 <HistoricalPerformance module={module} />
               )}
             </>
