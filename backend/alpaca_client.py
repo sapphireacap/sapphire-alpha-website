@@ -141,3 +141,29 @@ async def intraday_bars_for_ticker(ticker: str, interval: str, days: int = 30) -
     stock IS the real instrument. Used by the US Stocks segment once a
     real equity, not an index, is selected."""
     return await _fetch_intraday_bars(ticker.strip().upper(), interval, days)
+
+
+async def latest_trade(ticker: str) -> float:
+    """Live last-traded price for one US equity ticker -- the US Markets
+    section's Exitline module uses this the same way Definedge's
+    equity_quote() feeds NSE Exitline's live LTP. IEX feed, same as every
+    other Alpaca call in this module."""
+    ticker = ticker.strip().upper()
+    try:
+        async with httpx.AsyncClient(timeout=15) as c:
+            r = await c.get(
+                f"{BASE_URL}/stocks/{ticker}/trades/latest",
+                params={"feed": FEED},
+                headers=_auth_headers(),
+            )
+        r.raise_for_status()
+        data = r.json()
+    except httpx.HTTPStatusError as e:
+        raise AlpacaError(f"Alpaca request failed ({e.response.status_code}): {e.response.text[:200]}") from e
+    except httpx.HTTPError as e:
+        raise AlpacaError(f"Alpaca request failed: {e}") from e
+
+    price = (data.get("trade") or {}).get("p")
+    if price is None:
+        raise AlpacaError(f"No live trade data for {ticker}.")
+    return float(price)

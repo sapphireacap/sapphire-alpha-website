@@ -8,6 +8,7 @@ import Footer from "../components/site/Footer";
 import BiasBadge from "../components/site/BiasBadge";
 import { MODULES } from "./alphaterminal/modules";
 import CryptoDashboard from "./alphaterminal/CryptoDashboard";
+import USMarketsDashboard from "./alphaterminal/USMarketsDashboard";
 import { useIsAdmin } from "../lib/auth";
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
@@ -450,7 +451,7 @@ const DirectoryCard = ({ module, index, onAbout, isAdmin }) => {
 // this file branches on a specific market id.
 const MARKETS = [
   { id: "india", flag: "🇮🇳", name: "Indian Markets", available: true },
-  { id: "us", flag: "🇺🇸", name: "US Markets", available: false },
+  { id: "us", flag: "🇺🇸", name: "US Markets", available: true },
   { id: "forex", flag: "💱", name: "Forex", available: false },
   { id: "crypto", flag: "₿", name: "Crypto", available: true },
 ];
@@ -727,6 +728,16 @@ export default function AlphaTerminal() {
                   transition={{ duration: 0.25, ease: EASE }}
                 >
                   <CryptoDashboard />
+                </motion.div>
+              ) : market.id === "us" ? (
+                <motion.div
+                  key={market.id}
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  exit={{ opacity: 0 }}
+                  transition={{ duration: 0.25, ease: EASE }}
+                >
+                  <USMarketsDashboard />
                 </motion.div>
               ) : (
                 <motion.div

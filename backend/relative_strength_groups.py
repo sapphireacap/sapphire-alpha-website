@@ -84,6 +84,41 @@ GROUPS = {
         "source": "YAHOO",
         "symbols": ["AAPL", "MSFT", "NVDA", "AMZN", "GOOGL", "META", "TSLA", "AVGO", "AMD", "NFLX"],
     },
+    # GICS sector baskets for the US Markets section — same "hand-curated,
+    # source: YAHOO" shape as us-mega-cap, tickers picked from the S&P 500
+    # (us_stock_symbol_master, synced via us_stock_universe.py) as
+    # well-known, liquid names per sector rather than every constituent,
+    # matching the ~8-12-symbol size of the NSE sector groups above.
+    "us-technology": {
+        "label": "US Technology",
+        "source": "YAHOO",
+        "symbols": ["AAPL", "MSFT", "NVDA", "AVGO", "ORCL", "CRM", "ADBE", "AMD", "CSCO", "QCOM"],
+    },
+    "us-financials": {
+        "label": "US Financials",
+        "source": "YAHOO",
+        "symbols": ["JPM", "BAC", "WFC", "GS", "MS", "SCHW", "BLK", "C", "AXP", "SPGI"],
+    },
+    "us-healthcare": {
+        "label": "US Healthcare",
+        "source": "YAHOO",
+        "symbols": ["LLY", "UNH", "JNJ", "ABBV", "MRK", "TMO", "ABT", "PFE", "DHR", "AMGN"],
+    },
+    "us-energy": {
+        "label": "US Energy",
+        "source": "YAHOO",
+        "symbols": ["XOM", "CVX", "COP", "EOG", "SLB", "WMB", "PSX", "MPC", "OKE", "KMI"],
+    },
+    "us-consumer": {
+        "label": "US Consumer",
+        "source": "YAHOO",
+        "symbols": ["AMZN", "WMT", "HD", "MCD", "NKE", "SBUX", "TGT", "LOW", "COST", "PG"],
+    },
+    "us-industrials": {
+        "label": "US Industrials",
+        "source": "YAHOO",
+        "symbols": ["GE", "CAT", "RTX", "HON", "UNP", "BA", "DE", "LMT", "UPS", "ADP"],
+    },
 }
 
 

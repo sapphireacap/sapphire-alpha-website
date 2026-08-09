@@ -98,30 +98,35 @@ const BreadthChart = ({ series }) => (
   </div>
 );
 
-const BreadthTool = () => {
-  const [groups, setGroups] = useState([]);
-  const [group, setGroup] = useState("nifty-50");
+// `groupsPath`/`seriesPath` let this same tool point at a different
+// market's breadth endpoint — the US Markets section has only one group
+// (S&P 500, no group picker needed) so it skips the /groups fetch
+// entirely via `fixedGroup` and calls seriesPath with no `group` param.
+const BreadthTool = ({ groupsPath = "/terminal/breadth/groups", seriesPath = "/terminal/breadth/x-percent", fixedGroup = null }) => {
+  const [groups, setGroups] = useState(fixedGroup ? [] : []);
+  const [group, setGroup] = useState(fixedGroup || "nifty-50");
   const [zoom, setZoom] = useState("3m");
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
 
   useEffect(() => {
-    axios.get(`${API}/terminal/breadth/groups`)
+    if (fixedGroup) return;
+    axios.get(`${API}${groupsPath}`)
       .then(({ data: d }) => setGroups(d.groups))
       .catch(() => {});
-  }, []);
+  }, [groupsPath, fixedGroup]);
 
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
     setError(false);
-    axios.get(`${API}/terminal/breadth/x-percent`, { params: { group } })
+    axios.get(`${API}${seriesPath}`, { params: fixedGroup ? {} : { group } })
       .then(({ data: d }) => { if (!cancelled) setData(d); })
       .catch(() => { if (!cancelled) setError(true); })
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
-  }, [group]);
+  }, [group, seriesPath, fixedGroup]);
 
   const seriesWithAvg = useMemo(() => (data?.series?.length ? withAverage(data.series) : []), [data]);
   const latest = seriesWithAvg.length ? seriesWithAvg[seriesWithAvg.length - 1] : null;

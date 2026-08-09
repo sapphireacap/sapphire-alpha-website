@@ -96,9 +96,14 @@ const MatrixGrid = ({ symbols, grid }) => (
   </div>
 );
 
-const RelativeStrengthMatrix = () => {
+// `groupPrefix` scopes the selector to one market's groups out of the
+// single shared GROUPS registry (relative_strength_groups.py) — e.g.
+// "us-" for the US Markets section, so its dropdown doesn't also list
+// Nifty Bank/IT/Auto alongside US Technology/Financials/etc. Omit it
+// (India's usage) to show every group, unfiltered, as before.
+const RelativeStrengthMatrix = ({ groupPrefix = null, defaultGroup = "nifty-bank" }) => {
   const [groups, setGroups] = useState([]);
-  const [group, setGroup] = useState("nifty-bank");
+  const [group, setGroup] = useState(defaultGroup);
   const [boxTab, setBoxTab] = useState("1");
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -106,9 +111,9 @@ const RelativeStrengthMatrix = () => {
 
   useEffect(() => {
     axios.get(`${API}/terminal/relative-strength/groups`)
-      .then(({ data: d }) => setGroups(d.groups))
+      .then(({ data: d }) => setGroups(groupPrefix ? d.groups.filter((g) => g.key.startsWith(groupPrefix)) : d.groups))
       .catch(() => {});
-  }, []);
+  }, [groupPrefix]);
 
   useEffect(() => {
     let cancelled = false;

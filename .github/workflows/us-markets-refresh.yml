@@ -1,0 +1,55 @@
+name: US Markets — daily refresh
+
+# Recomputes Momentum Investing (12-1 risk-adjusted), Momentum Leaders
+# (1w/1m), and X-Percent Breadth for the S&P 500 universe once daily
+# after the US close. Each /us-markets/*/admin/refresh route only kicks
+# off its background job and returns immediately (a full ~503-symbol
+# pass is a multi-minute job, same shape as quant-lab-momentum-refresh.yml)
+# -- this cron just triggers all three, it doesn't wait for completion.
+# 22:00 UTC comfortably clears the US market's 4pm ET close year-round
+# (20:00 UTC during EDT, 21:00 UTC during EST), weekdays only.
+on:
+  schedule:
+    - cron: "0 22 * * 1-5"
+  workflow_dispatch: {}
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Call us-markets/momentum-investing/admin/refresh
+        run: |
+          status=$(curl -s -o response.json -w "%{http_code}" -X POST \
+            "https://sapphire-alpha-backend.onrender.com/api/us-markets/momentum-investing/admin/refresh" \
+            -H "X-Cron-Key: ${{ secrets.CRON_SECRET }}")
+          echo "HTTP status: $status"
+          cat response.json
+          echo
+          if [ "$status" != "200" ]; then
+            echo "::error::us-markets/momentum-investing/admin/refresh failed with status $status"
+            exit 1
+          fi
+      - name: Call us-markets/momentum-leaders/admin/refresh
+        run: |
+          status=$(curl -s -o response.json -w "%{http_code}" -X POST \
+            "https://sapphire-alpha-backend.onrender.com/api/us-markets/momentum-leaders/admin/refresh" \
+            -H "X-Cron-Key: ${{ secrets.CRON_SECRET }}")
+          echo "HTTP status: $status"
+          cat response.json
+          echo
+          if [ "$status" != "200" ]; then
+            echo "::error::us-markets/momentum-leaders/admin/refresh failed with status $status"
+            exit 1
+          fi
+      - name: Call us-markets/breadth/admin/refresh
+        run: |
+          status=$(curl -s -o response.json -w "%{http_code}" -X POST \
+            "https://sapphire-alpha-backend.onrender.com/api/us-markets/breadth/admin/refresh" \
+            -H "X-Cron-Key: ${{ secrets.CRON_SECRET }}")
+          echo "HTTP status: $status"
+          cat response.json
+          echo
+          if [ "$status" != "200" ]; then
+            echo "::error::us-markets/breadth/admin/refresh failed with status $status"
+            exit 1
+          fi
