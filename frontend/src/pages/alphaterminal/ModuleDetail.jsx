@@ -16,7 +16,6 @@ import ExitlineTool from "./Exitline";
 import RelativeStrengthMatrix from "./RelativeStrengthMatrix";
 import BreadthTool from "./Breadth";
 import OptionsTrendTool from "./OptionsTrend";
-import MarketDashboardTool from "./MarketDashboard";
 import PeterTingleTool from "./PeterTingle";
 import { useIsAdmin } from "../../lib/auth";
 import USExitlineTool from "./USExitline";
@@ -198,7 +197,6 @@ const LiveDashboard = ({ module, signals }) => (
     {module.kind === "matrix" && <RelativeStrengthMatrix />}
     {module.kind === "breadth" && <BreadthTool />}
     {module.kind === "options-trend" && <OptionsTrendTool />}
-    {module.kind === "market-dashboard" && <MarketDashboardTool />}
     {module.kind === "peter-tingle" && <PeterTingleTool />}
     {module.kind === "us-exitline" && <USExitlineTool />}
     {module.kind === "us-momentum-leaders" && <USMomentumLeadersTool />}
@@ -375,7 +373,7 @@ export default function ModuleDetail() {
           ) : (
             <>
               <LiveDashboard module={module} signals={signals} />
-              {!["exitline", "matrix", "breadth", "options-trend", "market-dashboard",
+              {!["exitline", "matrix", "breadth", "options-trend",
                  "us-exitline", "us-momentum-leaders", "us-momentum-investing", "us-breadth", "us-relative-strength", "us-market-assessment",
                 ].includes(module.kind) && (
                 <HistoricalPerformance module={module} />

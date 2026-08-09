@@ -26,6 +26,7 @@ const EASE = [0.16, 1, 0.3, 1];
 // top-level link.
 const PRIMARY_LINKS = [
   { label: "Lattice", to: "/lattice" },
+  { label: "Market", to: "/market" },
   { label: "Alpha Terminal", to: "/alpha-terminal" },
   { label: "The Black Box", to: "/black-box" },
   { label: "Pricing", to: "/pricing" },
@@ -44,7 +45,7 @@ const MORE_LINKS = [
   { label: "About", id: "about", icon: User },
 ];
 
-const ALL_LINKS = [...PRIMARY_LINKS.slice(0, 1), ...CHARTING_LINKS, ...PRIMARY_LINKS.slice(1), ...MORE_LINKS];
+const ALL_LINKS = [...PRIMARY_LINKS.slice(0, 2), ...CHARTING_LINKS, ...PRIMARY_LINKS.slice(2), ...MORE_LINKS];
 
 export const Navbar = () => {
   const [scrolled, setScrolled] = useState(false);
@@ -130,7 +131,7 @@ export const Navbar = () => {
         </button>
 
         <div className="hidden md:flex items-center gap-8 lg:gap-10">
-          {PRIMARY_LINKS.slice(0, 1).map((l) => (
+          {PRIMARY_LINKS.slice(0, 2).map((l) => (
             <button
               key={l.id || l.to}
               onClick={() => handleLink(l)}
@@ -177,7 +178,7 @@ export const Navbar = () => {
             </AnimatePresence>
           </div>
 
-          {PRIMARY_LINKS.slice(1).map((l) => (
+          {PRIMARY_LINKS.slice(2).map((l) => (
             <button
               key={l.id || l.to}
               onClick={() => handleLink(l)}

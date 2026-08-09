@@ -132,22 +132,8 @@ export const MODULES = [
     },
   },
   {
-    slug: "market-dashboard",
-    no: "07",
-    kind: "market-dashboard",
-    live: true,
-    icon: LayoutDashboard,
-    title: "Market Assessment",
-    shortDescription: "Single-screen market health, built entirely from free public data.",
-    overview: {
-      purpose: "A single-screen read on overall market health — index levels, participation, sentiment — independent of any broker session.",
-      whatItMeasures: "Sector and segment performance, market-wide advance/decline, India VIX, 52-week high/low counts, FII/DII cash-market flows, and global index levels.",
-      interpret: "Use it as market context before drilling into any other module — broad participation (many sectors green, advances beating declines) supports conviction; narrow or negative breadth is a caution flag even when the headline index looks fine.",
-    },
-  },
-  {
     slug: "swing-picks",
-    no: "08",
+    no: "07",
     kind: "scanner",
     live: true,
     scannerKey: "swing_picks",
@@ -162,7 +148,7 @@ export const MODULES = [
   },
   {
     slug: "momentum-investing",
-    no: "09",
+    no: "08",
     kind: "momentum-investing",
     live: true,
     icon: Flame,
@@ -176,7 +162,7 @@ export const MODULES = [
   },
   {
     slug: "peter-tingle",
-    no: "10",
+    no: "09",
     kind: "peter-tingle",
     live: true,
     adminOnly: true,
@@ -191,7 +177,7 @@ export const MODULES = [
   },
   {
     slug: "sharpe-dashboard",
-    no: "11",
+    no: "10",
     kind: "sharpe",
     live: false,
     icon: BarChart3,
@@ -205,7 +191,7 @@ export const MODULES = [
   },
   {
     slug: "ewma-scanner",
-    no: "12",
+    no: "11",
     kind: "ewma",
     live: false,
     icon: Sliders,
@@ -219,7 +205,7 @@ export const MODULES = [
   },
   {
     slug: "breakout-candidates",
-    no: "13",
+    no: "12",
     kind: "scanner",
     live: false,
     scannerKey: "breakout",

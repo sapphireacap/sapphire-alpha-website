@@ -37,6 +37,7 @@ const Aurora = lazy(() => import("@/pages/research/Aurora"));
 const FacetView = lazy(() => import("@/pages/research/FacetView"));
 const LatticeHome = lazy(() => import("@/pages/lattice/LatticeHome"));
 const LatticeRun = lazy(() => import("@/pages/lattice/LatticeRun"));
+const Market = lazy(() => import("@/pages/Market"));
 const Admin = lazy(() => import("@/pages/Admin"));
 const SignupPage = lazy(() => import("@/pages/Auth").then((m) => ({ default: m.SignupPage })));
 const LoginPage = lazy(() => import("@/pages/Auth").then((m) => ({ default: m.LoginPage })));
@@ -103,6 +104,7 @@ const AppShell = () => {
             <Route path="/research/:symbol" element={<FacetView />} />
             <Route path="/lattice" element={<RequireAuth tokenKey={TRADER_TOKEN_KEY} loginPath="/login"><LatticeHome /></RequireAuth>} />
             <Route path="/lattice/:symbol" element={<RequireAuth tokenKey={TRADER_TOKEN_KEY} loginPath="/login"><LatticeRun /></RequireAuth>} />
+            <Route path="/market" element={<Market />} />
             <Route path="/admin33" element={<Admin />} />
             <Route path="/signup" element={<SignupPage />} />
             <Route path="/login" element={<LoginPage />} />
