@@ -172,7 +172,7 @@ export const MODULES = [
     live: true,
     icon: ShieldAlert,
     title: "Peter Tingle",
-    shortDescription: "Technical and fundamental caution scan for one stock — India or US.",
+    shortDescription: "Technical and fundamental analysis that assesses a stock's overall risk and caution signals.",
     overview: {
       purpose: "A spider-sense check on a single stock — surfaces the technical and fundamental warning signs before you commit, in one place. Covers both the Nifty 500 (India) and the S&P 500 (US) via a market toggle.",
       whatItMeasures: "Technical side (same rules both markets): trend structure, distance from its all-time high, short-term shocks, and multi-window momentum decay. Fundamental side is market-specific — India runs the same Fracture Scan rules used elsewhere on the terminal (promoter pledge, cash flow quality, receivables growth, leverage, interest coverage, promoter-holding erosion); US runs leverage, profitability, liquidity, short interest, and sell-side analyst outlook instead, since promoter-specific rules have no real US equivalent.",

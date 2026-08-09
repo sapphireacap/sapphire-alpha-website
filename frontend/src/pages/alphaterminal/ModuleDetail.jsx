@@ -46,7 +46,7 @@ const Section = ({ no, title, children, testId, collapsible = false }) => {
       initial={{ opacity: 0, y: 16 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.6, ease: EASE }}
-      className="py-10 md:py-14 border-t border-white/[0.06]"
+      className={`${title ? "pt-10 md:pt-14" : "pt-5 md:pt-6"} pb-10 md:pb-14 border-t border-white/[0.06]`}
       data-testid={testId}
     >
       {title && (
