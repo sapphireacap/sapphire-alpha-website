@@ -16,6 +16,20 @@ const fmt = (n, digits = 2) => (n == null ? "—" : Number(n).toLocaleString("en
 const fmtSigned = (n, digits = 2) => (n == null ? "—" : `${n >= 0 ? "+" : ""}${fmt(n, digits)}`);
 const changeColor = (n) => (n == null ? "text-slate-500" : n >= 0 ? "text-emerald-400" : "text-red-400");
 
+// NSE cash session: 09:15-15:30 IST, weekdays. The backend snapshot itself
+// only moves during this window (market-dashboard-refresh.yml's cron is
+// weekdays-only, 09:15-15:30 IST) -- polling outside it would just hit the
+// same cached doc repeatedly, so this gates the interval below rather than
+// running it unconditionally.
+const isSessionLive = () => {
+  const now = new Date();
+  const istMinutes = Math.floor((now.getTime() + (330 + now.getTimezoneOffset()) * 60000) / 60000);
+  const day = new Date(istMinutes * 60000).getUTCDay();
+  if (day === 0 || day === 6) return false;
+  const minuteOfDay = istMinutes % 1440;
+  return minuteOfDay >= 9 * 60 + 15 && minuteOfDay <= 15 * 60 + 30;
+};
+
 const SectionLabel = ({ children }) => (
   <p className="font-mono-ui text-[10px] uppercase tracking-[0.16em] text-slate-500 mb-3">{children}</p>
 );
@@ -172,6 +186,21 @@ const GlobalIndicesGrid = ({ rows }) => (
   </div>
 );
 
+const StatusBar = ({ updatedAt }) => {
+  const live = isSessionLive();
+  const time = updatedAt
+    ? new Date(updatedAt).toLocaleTimeString("en-IN", { timeZone: "Asia/Kolkata", hour: "2-digit", minute: "2-digit" })
+    : "—";
+  return (
+    <div className="flex items-center gap-2 mb-6" data-testid="md-status">
+      <span className={`h-1.5 w-1.5 rounded-full shrink-0 ${live ? "bg-emerald-400 animate-pulse" : "bg-slate-600"}`} />
+      <p className="font-mono-ui text-[10px] uppercase tracking-[0.14em] text-slate-500">
+        {live ? "Live — updating every minute" : `Market closed — last updated ${time} IST`}
+      </p>
+    </div>
+  );
+};
+
 const MarketDashboardTool = () => {
   const [data, setData] = useState(null);
   const [adHistory, setAdHistory] = useState(null);
@@ -180,18 +209,37 @@ const MarketDashboardTool = () => {
   const [error, setError] = useState(false);
 
   useEffect(() => {
-    Promise.all([
-      axios.get(`${API}/terminal/market-dashboard/snapshot`),
-      axios.get(`${API}/terminal/market-dashboard/advance-decline-intraday`).catch(() => ({ data: { points: [] } })),
-      axios.get(`${API}/terminal/market-dashboard/fii-dii-history`).catch(() => ({ data: { rows: [] } })),
-    ])
-      .then(([snap, ad, fd]) => {
-        setData(snap.data);
-        setAdHistory(ad.data.points || []);
-        setFiiDiiHistory(fd.data.rows || []);
-      })
-      .catch(() => setError(true))
-      .finally(() => setLoading(false));
+    let cancelled = false;
+
+    const load = (isInitial) => {
+      Promise.all([
+        axios.get(`${API}/terminal/market-dashboard/snapshot`),
+        axios.get(`${API}/terminal/market-dashboard/advance-decline-intraday`).catch(() => ({ data: { points: [] } })),
+        axios.get(`${API}/terminal/market-dashboard/fii-dii-history`).catch(() => ({ data: { rows: [] } })),
+      ])
+        .then(([snap, ad, fd]) => {
+          if (cancelled) return;
+          setData(snap.data);
+          setAdHistory(ad.data.points || []);
+          setFiiDiiHistory(fd.data.rows || []);
+          setError(false);
+        })
+        .catch(() => { if (!cancelled) setError(true); })
+        .finally(() => { if (!cancelled && isInitial) setLoading(false); });
+    };
+
+    load(true);
+
+    // Polls every minute while the NSE cash session is live, self-stopping
+    // the moment it isn't -- re-checked on every tick rather than just once
+    // at mount, so a tab left open through the 15:30 close stops polling
+    // instead of hitting the same cached snapshot forever.
+    const id = setInterval(() => {
+      if (!isSessionLive()) return;
+      load(false);
+    }, 60000);
+
+    return () => { cancelled = true; clearInterval(id); };
   }, []);
 
   const errors = data?.errors || {};
@@ -210,6 +258,7 @@ const MarketDashboardTool = () => {
 
   return (
     <div data-testid="market-dashboard-tool">
+      <StatusBar updatedAt={data.updated_at} />
       {indices?.headline?.length ? <HeadlineStrip rows={indices.headline} /> : <CardError reason="Index levels unavailable." />}
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
