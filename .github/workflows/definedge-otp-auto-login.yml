@@ -10,12 +10,15 @@ name: Definedge — daily OTP auto-login
 # 03:30 UTC = 09:00 IST, 15 minutes before NSE's 09:15 open and before
 # index-vector-auto-refresh.yml's first tick (03:45 UTC) -- that cron
 # explicitly no-ops until this morning login has happened, so this one
-# needs to land first. Weekdays only; the route itself also skips
-# cleanly if Definedge isn't configured or a session is already
-# connected (e.g. this ran twice, or someone already logged in by hand).
+# needs to land first. EVERY day, not just weekdays (by request) -- the
+# route itself still skips cleanly if Definedge isn't configured or a
+# session is already connected (e.g. this ran twice, or someone already
+# logged in by hand), so a weekend/holiday run just triggers a harmless
+# extra login rather than anything actually running against a closed
+# market.
 on:
   schedule:
-    - cron: "30 3 * * 1-5"
+    - cron: "30 3 * * *"
   workflow_dispatch: {}
 
 jobs:
