@@ -203,6 +203,10 @@ const MomentumRankingModule = ({ apiPath, scoreKey, scoreFmt, notReadyLabel }) =
       })));
     }).catch(() => { if (!cancelled) { setReason("Could not load right now."); setRows([]); } });
     return () => { cancelled = true; };
+    // scoreFmt/scoreKey are plain literal functions passed inline by the
+    // caller (new reference every render) -- only apiPath should trigger
+    // a refetch, not a parent re-render.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [apiPath]);
 
   if (rows === null) return <div className="h-64 flex items-center justify-center text-slate-500 font-mono-ui text-sm gap-3"><Loader2 className="animate-spin" size={16} /> Loading…</div>;
