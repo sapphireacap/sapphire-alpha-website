@@ -122,9 +122,9 @@ export default function LatticeHome() {
               Lattice
             </motion.h1>
             <p className="mt-6 text-base md:text-lg font-light text-slate-400 leading-relaxed max-w-2xl">
-              A systematic decision pipeline for NSE stocks — Lumen Agent gathers, The Crucible debates, The Forge
-              proposes, The Temper checks, The Vault decides, The Strata remembers. Every call is a paper trade,
-              tracked against a simulated portfolio, with the full reasoning trail behind it.
+              Systematic calls on NSE stocks, made the same way every time. No discretion, no live orders. Every
+              position is paper only, tracked in one simulated portfolio, with the reasoning written down before
+              the outcome is known.
             </p>
             <div className="mt-8"><SymbolSearch /></div>
           </div>

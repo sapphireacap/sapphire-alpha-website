@@ -72,6 +72,8 @@ from pnf_routes import create_pnf_router
 from renko_routes import create_renko_router
 from relative_strength_routes import create_relative_strength_router
 from breadth_routes import create_breadth_router
+from intraday_breadth_routes import create_intraday_breadth_router
+from multi_asset_returns_routes import create_multi_asset_returns_router
 from options_trend_routes import create_options_trend_router
 from market_dashboard_routes import create_market_dashboard_router
 if "stock_terminal" not in DISABLED_FEATURES:
@@ -1674,6 +1676,8 @@ pnf_router = create_pnf_router(db, definedge, get_current_pnf_subscriber)
 renko_router = create_renko_router(db, definedge, get_current_pnf_subscriber)
 relative_strength_router = create_relative_strength_router(db, definedge)
 breadth_router = create_breadth_router(db, definedge, get_current_admin, CRON_SECRET)
+intraday_breadth_router = create_intraday_breadth_router(db, definedge, get_current_admin, CRON_SECRET)
+multi_asset_returns_router = create_multi_asset_returns_router()
 options_trend_router = create_options_trend_router(db, definedge, get_current_admin, CRON_SECRET)
 market_dashboard_router = create_market_dashboard_router(db, get_current_admin, CRON_SECRET)
 
@@ -1685,6 +1689,8 @@ app.include_router(pnf_router, prefix="/api")
 app.include_router(renko_router, prefix="/api")
 app.include_router(relative_strength_router, prefix="/api")
 app.include_router(breadth_router, prefix="/api")
+app.include_router(intraday_breadth_router, prefix="/api")
+app.include_router(multi_asset_returns_router, prefix="/api")
 app.include_router(options_trend_router, prefix="/api")
 app.include_router(market_dashboard_router, prefix="/api")
 

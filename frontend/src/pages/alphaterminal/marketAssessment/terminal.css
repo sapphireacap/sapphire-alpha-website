@@ -1,0 +1,80 @@
+/* Bloomberg/terminal-style LAYOUT for Market Assessment (dense rows,
+   hairline borders, no radius, monospace) with the site's OWN brand
+   palette, not a generic Bloomberg amber/black skin -- --term-amber/
+   --term-cyan keep their names (every component reads these two tokens
+   for "primary accent" / "secondary accent") but resolve to the site's
+   sapphire blues; bg/border/text match the void/surface/border-white
+   tokens already used everywhere else on this site (tailwind.config.js's
+   `void`/`surface` colors, and the border-white/10 convention used in
+   every other card on the site) rather than true black. Scoped entirely
+   under .mkt-terminal so none of this leaks into the rest of the site. */
+.mkt-terminal {
+  --term-amber: #437eeb;   /* sapphire-light -- primary accent (was amber) */
+  --term-cyan: #1f5fd0;    /* sapphire DEFAULT -- secondary accent (was cyan) */
+  --term-green: #34d399;   /* emerald-400, same green used sitewide for gains */
+  --term-red: #f87171;     /* red-400, same red used sitewide for losses */
+  --term-grey: #64748b;    /* slate-500, same muted-label color used sitewide */
+  --term-text: #ffffff;
+  --term-bg: #060b18;      /* void */
+  --term-panel-head: #0a0d18; /* surface */
+  --term-border: rgba(255, 255, 255, 0.08);
+
+  background: var(--term-bg);
+  color: var(--term-text);
+  font-family: ui-monospace, "JetBrains Mono", "SF Mono", Menlo, Consolas, monospace;
+  font-variant-numeric: tabular-nums;
+  border: 1px solid var(--term-border);
+}
+
+.mkt-terminal * {
+  border-radius: 0 !important;
+}
+
+.mkt-terminal .term-panel-head {
+  background: var(--term-panel-head);
+  border-bottom: 1px solid var(--term-border);
+  color: var(--term-amber);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-size: 11px;
+}
+
+.mkt-terminal .term-label {
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-size: 11px;
+  color: var(--term-grey);
+}
+
+.mkt-terminal .term-green { color: var(--term-green); }
+.mkt-terminal .term-red { color: var(--term-red); }
+.mkt-terminal .term-grey { color: var(--term-grey); }
+.mkt-terminal .term-amber { color: var(--term-amber); }
+.mkt-terminal .term-cyan { color: var(--term-cyan); }
+
+/* Flash-on-change: a short-lived background tint, toggled via a class
+   (see useFlash.js) on the specific cell whose value just changed --
+   never a permanent recolor, fades out over ~400ms. */
+@keyframes term-flash-up {
+  0% { background-color: rgba(52, 211, 153, 0.35); }
+  100% { background-color: transparent; }
+}
+@keyframes term-flash-down {
+  0% { background-color: rgba(248, 113, 113, 0.35); }
+  100% { background-color: transparent; }
+}
+.mkt-terminal .term-flash-up { animation: term-flash-up 400ms ease-out; }
+.mkt-terminal .term-flash-down { animation: term-flash-down 400ms ease-out; }
+
+/* Bottom ticker marquee -- continuous scroll, pauses on hover so a
+   reader can actually track a number if they want to. */
+@keyframes term-marquee {
+  from { transform: translateX(0); }
+  to { transform: translateX(-50%); }
+}
+.mkt-terminal .term-marquee-track {
+  animation: term-marquee 40s linear infinite;
+}
+.mkt-terminal .term-marquee-track:hover {
+  animation-play-state: paused;
+}

@@ -98,6 +98,14 @@ async def _fetch_daily(yahoo_symbol: str, range_: str = "10y") -> list:
     return bars
 
 
+async def daily_bars_for_ticker(yahoo_symbol: str, range_: str = "3mo") -> list:
+    """Real daily OHLC for an arbitrary Yahoo ticker, no caching -- for
+    one-off cross-asset comparisons (see multi_asset_returns_routes.py)
+    where accumulate-forever Mongo caching isn't the right shape (a
+    handful of Yahoo calls per page load, not a 500-symbol universe)."""
+    return await _fetch_daily(yahoo_symbol, range_)
+
+
 def _merge_bars(existing: list, fresh: list) -> list:
     """Union by date, fresh values win on overlap, sorted ascending --
     never truncated, only ever grows. Same shape as the old Alpha Vantage
