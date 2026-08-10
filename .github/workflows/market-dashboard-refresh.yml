@@ -6,6 +6,7 @@ name: Market Dashboard — auto refresh
 # that doesn't need the daily OTP login, so it can run on this schedule
 # with no "not connected" skip the way Index Vector's cron has.
 # 03:45-10:00 UTC = 09:15-15:30 IST, weekdays only, every 5 minutes.
+# Re-saved 2026-08-10 to force GitHub to re-register this schedule -- every cron in this repo went silent after the 2026-08-06/07 GitHub Actions outage (confirmed: last scheduled run was 2026-08-07, workflow still showed state=active, GitHub never resumed firing it on its own).
 on:
   schedule:
     - cron: "45,50,55 3 * * 1-5"

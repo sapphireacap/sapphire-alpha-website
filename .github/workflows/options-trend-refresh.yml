@@ -11,6 +11,7 @@ name: Options Trend Scanner — daily refresh
 # 10:30 UTC = 16:00 IST, 30 min after NSE's 15:30 IST close (and after
 # Breadth's own 15:45 IST refresh, so the two heavy jobs don't overlap),
 # weekdays only.
+# Re-saved 2026-08-10 to force GitHub to re-register this schedule -- every cron in this repo went silent after the 2026-08-06/07 GitHub Actions outage (confirmed: last scheduled run was 2026-08-07, workflow still showed state=active, GitHub never resumed firing it on its own).
 on:
   schedule:
     - cron: "30 10 * * 1-5"

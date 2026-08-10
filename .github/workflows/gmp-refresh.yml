@@ -6,6 +6,7 @@ name: IPO GMP — refresh every 30 minutes during market hours
 # don't move fast enough intraday to justify more than every 30 min (see the
 # endpoint's own docstring in backend/ipo_routes.py). 03:45-10:00 UTC =
 # 09:15-15:30 IST, NSE's own trading hours, weekdays only.
+# Re-saved 2026-08-10 to force GitHub to re-register this schedule -- every cron in this repo went silent after the 2026-08-06/07 GitHub Actions outage (confirmed: last scheduled run was 2026-08-07, workflow still showed state=active, GitHub never resumed firing it on its own).
 on:
   schedule:
     - cron: "15,45 3-9 * * 1-5"

@@ -8,6 +8,7 @@ name: Lattice — evaluate open paper positions
 # intraday polling, once a day is the right cadence here -- there's
 # nothing to catch mid-session.
 # 10:15 UTC = 15:45 IST, 15 minutes after NSE's 15:30 close, weekdays only.
+# Re-saved 2026-08-10 to force GitHub to re-register this schedule -- every cron in this repo went silent after the 2026-08-06/07 GitHub Actions outage (confirmed: last scheduled run was 2026-08-07, workflow still showed state=active, GitHub never resumed firing it on its own).
 on:
   schedule:
     - cron: "15 10 * * 1-5"

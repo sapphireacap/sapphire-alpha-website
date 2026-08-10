@@ -25,6 +25,7 @@ name: Index Vector — auto refresh
 # Now greps the body for a per-index "error" key and fails the job if any
 # index reported one, so a silent per-index failure shows up as a red run
 # instead of going unnoticed for days.
+# Re-saved 2026-08-10 to force GitHub to re-register this schedule -- every cron in this repo went silent after the 2026-08-06/07 GitHub Actions outage (confirmed: last scheduled run was 2026-08-07, workflow still showed state=active, GitHub never resumed firing it on its own).
 on:
   schedule:
     - cron: "45,50,55 3 * * 1-5"

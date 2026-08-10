@@ -8,6 +8,7 @@ name: Momentum track record — daily evaluation
 # updating. 10:15 UTC = 15:45 IST, 15 minutes after NSE close, weekdays only.
 # Safe to run on a holiday/weekend — evaluate_pending() just finds nothing to
 # evaluate and returns cleanly (see backend/momentum_track_record.py).
+# Re-saved 2026-08-10 to force GitHub to re-register this schedule -- every cron in this repo went silent after the 2026-08-06/07 GitHub Actions outage (confirmed: last scheduled run was 2026-08-07, workflow still showed state=active, GitHub never resumed firing it on its own).
 on:
   schedule:
     - cron: "15 10 * * 1-5"

@@ -19,6 +19,7 @@ name: Prism Alpha — live evaluation
 # scopes this call to just prism_alpha_2 regardless, so this schedule
 # firing evaluates that variant only even though the endpoint's own name
 # still says "both".
+# Re-saved 2026-08-10 to force GitHub to re-register this schedule -- every cron in this repo went silent after the 2026-08-06/07 GitHub Actions outage (confirmed: last scheduled run was 2026-08-07, workflow still showed state=active, GitHub never resumed firing it on its own).
 on:
   schedule:
     - cron: "45,50,55 3 * * 1-5"
