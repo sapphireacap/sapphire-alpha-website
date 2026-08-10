@@ -10,6 +10,10 @@ import IndexSetupPanel from "./marketAssessment/IndexSetupPanel";
 import IntradayBreadthPanel from "./marketAssessment/IntradayBreadthPanel";
 import MultiAssetReturnsPanel from "./marketAssessment/MultiAssetReturnsPanel";
 import TickerBar from "./marketAssessment/TickerBar";
+import GlobalIndicesPanel from "./marketAssessment/GlobalIndicesPanel";
+import SectorsInActionPanel from "./marketAssessment/SectorsInActionPanel";
+import GainersLosersPanel from "./marketAssessment/GainersLosersPanel";
+import OiBuildupPanel from "./marketAssessment/OiBuildupPanel";
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 
@@ -91,6 +95,7 @@ const MarketDashboardTool = () => {
   return (
     <div className="mkt-terminal min-h-screen w-full text-[13px]" data-testid="market-dashboard-tool">
       <HeaderBar live={live} />
+      <TickerBar />
 
       {indices?.headline?.length ? <IndexStrip rows={indices.headline} /> : (
         <div className="p-6 text-center term-grey text-[11px]">Index levels unavailable.</div>
@@ -121,6 +126,18 @@ const MarketDashboardTool = () => {
         </div>
       </div>
 
+      <div className="grid grid-cols-1 lg:grid-cols-[1.35fr_1fr] border-b" style={{ borderColor: "var(--term-border)" }}>
+        <div className="border-b lg:border-b-0 lg:border-r" style={{ borderColor: "var(--term-border)" }}>
+          <SectorsInActionPanel sectors={indices?.sectors} />
+        </div>
+        <div className="grid grid-cols-1 sm:grid-cols-2">
+          <GlobalIndicesPanel rows={data.global_indices} />
+          <div className="border-t sm:border-t-0 sm:border-l" style={{ borderColor: "var(--term-border)" }}>
+            <GainersLosersPanel />
+          </div>
+        </div>
+      </div>
+
       <div className="grid grid-cols-1 lg:grid-cols-2 border-b" style={{ borderColor: "var(--term-border)" }}>
         <div className="border-b lg:border-b-0 lg:border-r" style={{ borderColor: "var(--term-border)" }}>
           <IntradayBreadthPanel />
@@ -130,7 +147,9 @@ const MarketDashboardTool = () => {
         </div>
       </div>
 
-      <TickerBar />
+      <div className="border-b" style={{ borderColor: "var(--term-border)" }}>
+        <OiBuildupPanel />
+      </div>
     </div>
   );
 };

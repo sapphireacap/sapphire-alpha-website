@@ -1,0 +1,32 @@
+name: OI Build-Up — auto refresh
+
+# Recomputes the long/short buildup classification for every NSE F&O
+# stock (NSE's own OI-spurts endpoint + Definedge price %change per
+# symbol) throughout the trading session. Needs a live Definedge session
+# for the price leg -- self-skips via oi_buildup.py's own per-symbol
+# guard if the session is down, same as every other Definedge-backed
+# cron in this repo.
+# Every 15 minutes during the session (heavier than the N50 board --
+# ~207 F&O stocks, not 50) -- 03:45-10:00 UTC = 09:15-15:30 IST, weekdays only.
+on:
+  schedule:
+    - cron: "45 3 * * 1-5"
+    - cron: "0,15,30,45 4-9 * * 1-5"
+  workflow_dispatch: {}
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Call oi-buildup/admin/refresh
+        run: |
+          status=$(curl -s -o response.json -w "%{http_code}" -X POST \
+            "https://sapphire-alpha-backend.onrender.com/api/terminal/oi-buildup/admin/refresh" \
+            -H "X-Cron-Key: ${{ secrets.CRON_SECRET }}")
+          echo "HTTP status: $status"
+          cat response.json
+          echo
+          if [ "$status" != "200" ]; then
+            echo "::error::oi-buildup/admin/refresh failed with status $status"
+            exit 1
+          fi
