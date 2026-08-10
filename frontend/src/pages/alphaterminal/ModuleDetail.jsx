@@ -194,7 +194,7 @@ const LiveDashboard = ({ module, signals }) => (
     {module.kind === "sharpe" && <SharpeDashboardTool />}
     {module.kind === "momentum-investing" && <MomentumDashboardTool />}
     {module.kind === "exitline" && <ExitlineTool />}
-    {module.kind === "matrix" && <RelativeStrengthMatrix />}
+    {module.kind === "matrix" && <RelativeStrengthMatrix groupPrefix="nifty-" />}
     {module.kind === "breadth" && <BreadthTool />}
     {module.kind === "options-trend" && <OptionsTrendTool />}
     {module.kind === "peter-tingle" && <PeterTingleTool />}
@@ -363,7 +363,17 @@ export default function ModuleDetail() {
   return (
     <>
       <Navbar />
-      <main className="relative bg-void min-h-screen">
+      {/* Keyed by slug -- every module (India/US/crypto alike) shares this
+          same route+component, so switching modules only re-renders with
+          new props by default rather than unmounting. Nested tools
+          (RelativeStrengthMatrix, Exitline, etc.) keep their own internal
+          state (selected group, fetched rows) in useState, which would
+          otherwise survive the switch and briefly show the PREVIOUS
+          module's data under the NEW module's chrome -- confirmed live on
+          mobile as India/US Relative Strength data bleeding together. The
+          key forces a full unmount/remount of everything below on every
+          slug change, so each module always starts clean. */}
+      <main key={module.slug} className="relative bg-void min-h-screen">
         <Header module={module} />
         <div className="container-x">
           {!module.live ? (

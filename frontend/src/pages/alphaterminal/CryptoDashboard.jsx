@@ -505,11 +505,7 @@ const MomentumModule = () => {
   }
   return (
     <div data-testid="crypto-momentum-module">
-      <MomentumTable
-        rows={rows}
-        onRowClick={openBinanceChart}
-        disclaimer="Real 24h price-change data via Binance across major USDT pairs (leveraged tokens and stablecoin pairs excluded). Ranked mechanically by momentum, not a curated pick list. For informational purposes only — not investment advice."
-      />
+      <MomentumTable rows={rows} onRowClick={openBinanceChart} />
     </div>
   );
 };
@@ -536,7 +532,7 @@ export default function CryptoDashboard() {
 
       {activeModule && (
         <p className="text-xs font-light text-slate-500 leading-relaxed mt-6 max-w-2xl" data-testid="crypto-disclaimer">
-          Live market data via Binance, refreshed every few seconds. For informational purposes only — not investment advice.
+          For informational purposes only — not investment advice.
         </p>
       )}
     </div>

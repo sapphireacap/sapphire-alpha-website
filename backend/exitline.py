@@ -269,60 +269,121 @@ def resolve_instrument(df: pd.DataFrame, exitline_segment: str, symbol: str,
 
 
 # ---------------------------------------------------------------------------
-# Intraday chart — today's session, aggregated from real 1-minute OHLC (not
-# just close) into a caller-chosen bucket size, for Exitline's candlestick
-# chart with the level ladder overlaid as reference lines.
+# Intraday chart — aggregated from real 1-minute OHLC (not just close) into
+# a caller-chosen bucket size, for Exitline's candlestick chart with each
+# session's own level ladder overlaid as reference lines.
 # ---------------------------------------------------------------------------
 VALID_INTERVALS = (1, 3, 5, 15, 30, 60)
+HISTORY_SESSIONS = 30  # trading days of chart + per-session levels Exitline shows
 
 
-def _aggregate_bars(bars: list, minutes: int) -> list:
-    """Group 1-minute bars into `minutes`-wide buckets aligned to market
-    open (09:15) — bucket N covers [09:15 + N*minutes, 09:15 + (N+1)*minutes)."""
+def _aggregate_bars(bars: list, minutes: int, open_hour: int = 9, open_minute: int = 15) -> list:
+    """Group 1-minute bars into `minutes`-wide buckets aligned to the
+    market's own open (09:15 IST for NSE; callers on a different exchange
+    calendar, e.g. US Exitline's 09:30 ET, pass their own open_hour/
+    open_minute) — bucket N covers [open + N*minutes, open + (N+1)*minutes).
+    Each bar's own calendar date drives its bucket alignment, so bars
+    spanning many different days (a multi-session history fetch, not just
+    one day) still bucket correctly per-day without any extra grouping
+    step — every bucket key also carries its own `date` for the caller."""
     buckets = {}
     for b in bars:
         try:
             dt = datetime.strptime(b["ts"], "%d%m%Y%H%M")
         except ValueError:
             continue
-        minutes_since_open = (dt.hour * 60 + dt.minute) - (9 * 60 + 15)
+        minutes_since_open = (dt.hour * 60 + dt.minute) - (open_hour * 60 + open_minute)
         if minutes_since_open < 0:
             continue
-        bucket_start = dt.replace(hour=9, minute=15, second=0, microsecond=0) + timedelta(minutes=minutes * (minutes_since_open // minutes))
+        bucket_start = dt.replace(hour=open_hour, minute=open_minute, second=0, microsecond=0) + timedelta(minutes=minutes * (minutes_since_open // minutes))
         key = bucket_start.strftime("%d%m%Y%H%M")
         if key not in buckets:
-            buckets[key] = {"ts": key, "open": b["open"], "high": b["high"], "low": b["low"], "close": b["close"]}
+            buckets[key] = {"ts": key, "date": bucket_start.date().isoformat(), "_sort": bucket_start,
+                             "open": b["open"], "high": b["high"], "low": b["low"], "close": b["close"]}
         else:
             bucket = buckets[key]
             bucket["high"] = max(bucket["high"], b["high"])
             bucket["low"] = min(bucket["low"], b["low"])
             bucket["close"] = b["close"]  # bars arrive time-sorted, so the latest overwrite is the bucket's real close
-    return [buckets[k] for k in sorted(buckets)]
+    # Sort by the real parsed datetime, NOT the "ts" string -- DDMMYYYYHHMM
+    # sorts correctly within a single day (the original single-day use
+    # case, where DD/MM/YYYY are constant), but lexicographic string sort
+    # scrambles month/day boundaries once bars span multiple months (a real
+    # bug hit live: "01082026..." (Aug 1) sorts BEFORE "31072026..." (Jul
+    # 31) as strings, since '0' < '3' in the DAY digit alone) -- exactly
+    # the multi-session case this function now also serves.
+    ordered = sorted(buckets.values(), key=lambda v: v["_sort"])
+    for v in ordered:
+        del v["_sort"]
+    return ordered
 
 
-async def intraday_chart(definedge, segment: str, token: str, interval_minutes: int = 5, target_date=None) -> list:
-    """`target_date`'s session as `interval_minutes`-wide candles (defaults
-    to today) — best-effort: an empty list (holiday, or an illiquid
-    contract with zero prints that day) is a normal, valid result, not an
-    error, and must never take down the rest of the /levels response (the
-    ladder doesn't depend on this at all).
+def build_session_ladder(daily_bars: list, now_local: datetime, session_open_minutes: int, window: int = HISTORY_SESSIONS) -> list:
+    """Pure, unit-testable: given real daily bars (each {date: 'YYYY-MM-DD',
+    high, low, close}, ascending, real trading days only) and the caller's
+    own "now" already converted to the exchange's local wall-clock time,
+    returns up to `window` {date, prev_date, high, low, close, levels}
+    entries, ascending by date — one per session, each with its OWN
+    Camarilla ladder computed from THAT session's own previous-day H/L/C
+    (levels are NOT the same day to day, unlike a naive "today's levels"
+    read).
 
-    Caller picks `target_date` — build_exitline_response() passes the last
-    COMPLETED session's date pre-market, so the chart keeps showing that
-    session (never goes blank) right up until the next one actually opens,
-    rather than resetting to an empty chart the instant the calendar date
-    rolls over at midnight."""
+    The most recent entry is the ACTIVE session: if the exchange's session
+    hasn't opened yet today (now_local's minute-of-day < session_open_minutes),
+    that's the last COMPLETED day, not today -- today's own levels (though
+    already mathematically computable from yesterday's close) aren't shown
+    until the session they actually apply to has started. This is the fix
+    for a real gap: previously, levels flipped to "today's" the instant the
+    calendar date rolled over at midnight, hours before the market itself
+    opened and while the chart was still (correctly) showing yesterday's
+    session -- levels and chart could disagree about which session was
+    current."""
+    if not daily_bars:
+        return []
+    today_str = now_local.date().isoformat()
+    minute_of_day = now_local.hour * 60 + now_local.minute
+    session_open_today = minute_of_day >= session_open_minutes
+
+    completed = [b for b in daily_bars if b["date"] < today_str]
+    if not completed:
+        return []
+
+    session_dates = ([today_str] if session_open_today else []) + [b["date"] for b in reversed(completed)]
+    session_dates = session_dates[:window]
+
+    out = []
+    for date in session_dates:
+        prev_bar = next((b for b in reversed(completed) if b["date"] < date), None)
+        if prev_bar is None:
+            continue
+        levels = compute_camarilla_levels(prev_bar["high"], prev_bar["low"], prev_bar["close"])
+        out.append({
+            "date": date, "prev_date": prev_bar["date"],
+            "high": prev_bar["high"], "low": prev_bar["low"], "close": prev_bar["close"],
+            "levels": levels,
+        })
+    return list(reversed(out))  # ascending -- oldest session first, active session last
+
+
+async def multi_session_chart(definedge, segment: str, token: str, sessions: list,
+                               interval_minutes: int, open_hour: int = 9, open_minute: int = 15) -> list:
+    """One continuous candle series spanning every session in `sessions`
+    (ascending), each bar tagged with its own `date` so the frontend can
+    match it to that day's own level ladder -- best-effort: an empty list
+    (illiquid contract, no prints in the window) is a normal, valid result,
+    not an error, and must never take down the rest of the /levels
+    response (the ladder doesn't depend on this at all)."""
+    if not sessions:
+        return []
     now = datetime.now(IST)
-    target_date = target_date or now.date()
-    date_str = target_date.strftime("%d%m%Y")
-    frm = f"{date_str}0915"
-    to = now.strftime("%d%m%Y%H%M") if target_date == now.date() else f"{date_str}1530"
+    frm = f"{datetime.strptime(sessions[0]['date'], '%Y-%m-%d').strftime('%d%m%Y')}0000"
+    to = now.strftime("%d%m%Y%H%M")
     try:
         bars = await definedge.minute_ohlc(segment, token, frm=frm, to=to)
     except DefinedgeError as e:
-        logger.warning("Exitline: intraday chart unavailable for %s/%s: %s", segment, token, e)
+        logger.warning("Exitline: multi-session chart unavailable for %s/%s: %s", segment, token, e)
         return []
-    agg = _aggregate_bars(bars, interval_minutes)
+    agg = _aggregate_bars(bars, interval_minutes, open_hour, open_minute)
     out = []
     for b in agg:
         try:
@@ -331,7 +392,8 @@ async def intraday_chart(definedge, segment: str, token: str, interval_minutes: 
             time = int(dt.timestamp())
         except ValueError:
             label, time = b["ts"], None
-        out.append({"t": label, "time": time, "open": b["open"], "high": b["high"], "low": b["low"], "close": b["close"]})
+        out.append({"t": label, "time": time, "date": b["date"],
+                     "open": b["open"], "high": b["high"], "low": b["low"], "close": b["close"]})
     return out
 
 
@@ -351,31 +413,6 @@ async def previous_day_ohlc(definedge, segment: str, token: str) -> dict:
     return {"date": b["date"], "high": b["high"], "low": b["low"], "close": b["close"]}
 
 
-async def get_or_compute_levels(db, definedge, segment: str, token: str, tradingsymbol: str) -> dict:
-    """Camarilla levels are fixed for the day — computed once from the
-    previous day's H/L/C and cached per (date, segment, token)."""
-    today = datetime.now(IST).date().isoformat()
-    key = {"date": today, "segment": segment, "token": token}
-    cached = await db.exitline_levels.find_one(key, {"_id": 0})
-    if cached:
-        return cached
-
-    prev = await previous_day_ohlc(definedge, segment, token)
-    levels = compute_camarilla_levels(prev["high"], prev["low"], prev["close"])
-    doc = {
-        **key,
-        "tradingsymbol": tradingsymbol,
-        "prev_date": prev["date"],
-        "high": prev["high"],
-        "low": prev["low"],
-        "close": prev["close"],
-        "levels": levels,
-        "computed_at": datetime.now(timezone.utc).isoformat(),
-    }
-    await db.exitline_levels.update_one(key, {"$set": doc}, upsert=True)
-    return doc
-
-
 async def build_exitline_response(db, definedge, exitline_segment: str, symbol: str,
                                    expiry: str = None, strike: float = None, option_type: str = None,
                                    interval_minutes: int = 5) -> dict:
@@ -384,26 +421,31 @@ async def build_exitline_response(db, definedge, exitline_segment: str, symbol: 
     if not resolved:
         raise DefinedgeError("Instrument not found — check the symbol, expiry, strike, and option type.")
 
-    levels_doc = await get_or_compute_levels(db, definedge, resolved["segment"], resolved["token"], resolved["tradingsymbol"])
-
-    # Pre-market, the chart should keep showing the last COMPLETED session
-    # (never go blank) right up until the next one actually opens — same
-    # "most recent real session" date the ladder's own H/L/C already uses.
+    # Camarilla levels are cheap pure math (see build_session_ladder) --
+    # recomputed fresh from real daily bars every request instead of
+    # cached in Mongo, since there's no expensive work worth caching here
+    # (one daily_history call, same one previous_day_ohlc used to make
+    # anyway) and a cache keyed only by "today" was exactly what let
+    # levels flip to the new session before that session had actually
+    # opened (see build_session_ladder's docstring).
+    daily_bars = await definedge.daily_history(resolved["segment"], resolved["token"], years=1)
     now = datetime.now(IST)
-    is_premarket = now.hour * 60 + now.minute < 9 * 60 + 15
-    chart_date = datetime.strptime(levels_doc["prev_date"], "%Y-%m-%d").date() if is_premarket else now.date()
+    sessions = build_session_ladder(daily_bars, now, session_open_minutes=9 * 60 + 15)
+    if not sessions:
+        raise DefinedgeError(f"No previous-day data for {resolved['segment']}/{resolved['token']} (illiquid or newly-listed contract?).")
+    active = sessions[-1]
 
-    # equity_quote and intraday_chart are independent failures: a missing
-    # live quote (market closed -- Definedge returns no `ltp` field for an
-    # option/future outside trading hours, confirmed live) must not also
-    # discard the intraday chart or the levels ladder, which don't depend
-    # on it at all. gather(..., return_exceptions=True) keeps one from
-    # taking the other down; intraday_chart already fails open to []
-    # internally and never actually raises, so only equity_quote needs
-    # handling here.
+    # equity_quote and multi_session_chart are independent failures: a
+    # missing live quote (market closed -- Definedge returns no `ltp`
+    # field for an option/future outside trading hours, confirmed live)
+    # must not also discard the chart or the levels ladder, which don't
+    # depend on it at all. gather(..., return_exceptions=True) keeps one
+    # from taking the other down; multi_session_chart already fails open
+    # to [] internally and never actually raises, so only equity_quote
+    # needs handling here.
     ltp_or_exc, chart = await asyncio.gather(
         definedge.equity_quote(resolved["segment"], resolved["token"]),
-        intraday_chart(definedge, resolved["segment"], resolved["token"], interval_minutes, chart_date),
+        multi_session_chart(definedge, resolved["segment"], resolved["token"], sessions, interval_minutes),
         return_exceptions=True,
     )
     if isinstance(ltp_or_exc, DefinedgeError):
@@ -421,7 +463,7 @@ async def build_exitline_response(db, definedge, exitline_segment: str, symbol: 
         raise ltp_or_exc
     else:
         ltp = ltp_or_exc
-        zone = classify_and_suggest(levels_doc["levels"], ltp, levels_doc["close"])
+        zone = classify_and_suggest(active["levels"], ltp, active["close"])
 
     return {
         "segment": exitline_segment,
@@ -430,11 +472,13 @@ async def build_exitline_response(db, definedge, exitline_segment: str, symbol: 
         "expiry": expiry,
         "strike": strike,
         "option_type": option_type.strip().upper() if option_type else None,
-        "prev_date": levels_doc["prev_date"],
-        "high": levels_doc["high"],
-        "low": levels_doc["low"],
-        "close": levels_doc["close"],
-        "levels": levels_doc["levels"],
+        "prev_date": active["prev_date"],
+        "high": active["high"],
+        "low": active["low"],
+        "close": active["close"],
+        "levels": active["levels"],
+        "active_date": active["date"],
+        "sessions": sessions,
         "ltp": ltp,
         "chart": chart,
         **zone,

@@ -73,6 +73,9 @@ def _auth_headers() -> dict:
     return {"APCA-API-KEY-ID": ALPACA_API_KEY_ID, "APCA-API-SECRET-KEY": ALPACA_API_SECRET_KEY}
 
 
+MAX_PAGES = 20  # generous ceiling -- a real multi-page response is normally 2-5 pages even for a 45-day 5Min request; this only guards against an infinite loop if Alpaca ever returns a token that doesn't terminate
+
+
 async def _fetch_intraday_bars(ticker: str, interval: str, days: int) -> list:
     """Real intraday OHLC bars for any real Alpaca-covered security,
     already at the requested granularity — Alpaca aggregates server-side,
@@ -83,7 +86,17 @@ async def _fetch_intraday_bars(ticker: str, interval: str, days: int) -> list:
     session), the same convention NSE bars use IST — a UTC or IST label on
     a 9:30am ET open would read as meaningless to the person looking at
     it. `ts` is DDMMYYYYHHMM to match this platform's existing intraday
-    bar shape (see pnf_chart.py's aggregate_minutes / _bar_label)."""
+    bar shape (see pnf_chart.py's aggregate_minutes / _bar_label).
+
+    Alpaca paginates: `limit` is a PER-PAGE cap, not a total-response cap
+    (confirmed live, 2026-08-10 — a 45-day 5Min AAPL request came back
+    with 2,127 bars on page one and a real `next_page_token`, silently
+    short of the ~32 trading days actually in range). A caller that only
+    reads page one gets a truncated, chronologically-incomplete series
+    with no error to signal it — exactly what US Exitline's 30-session
+    history hit once it started requesting wide enough ranges to actually
+    need a second page. Follows every `next_page_token` until Alpaca stops
+    returning one."""
     timeframe = TIMEFRAME_MAP.get(interval)
     if not timeframe:
         raise AlpacaError(f"Unsupported intraday interval {interval!r}.")
@@ -91,22 +104,27 @@ async def _fetch_intraday_bars(ticker: str, interval: str, days: int) -> list:
     now_utc = datetime.now(ZoneInfo("UTC"))
     start = (now_utc - timedelta(days=days)).isoformat()
 
-    try:
-        async with httpx.AsyncClient(timeout=15) as c:
-            r = await c.get(
-                f"{BASE_URL}/stocks/{ticker}/bars",
-                params={"timeframe": timeframe, "start": start, "limit": 10000, "feed": FEED,
-                        "adjustment": "raw"},
-                headers=_auth_headers(),
-            )
-        r.raise_for_status()
-        data = r.json()
-    except httpx.HTTPStatusError as e:
-        raise AlpacaError(f"Alpaca request failed ({e.response.status_code}): {e.response.text[:200]}") from e
-    except httpx.HTTPError as e:
-        raise AlpacaError(f"Alpaca request failed: {e}") from e
+    raw_bars = []
+    page_token = None
+    for _ in range(MAX_PAGES):
+        params = {"timeframe": timeframe, "start": start, "limit": 10000, "feed": FEED, "adjustment": "raw"}
+        if page_token:
+            params["page_token"] = page_token
+        try:
+            async with httpx.AsyncClient(timeout=15) as c:
+                r = await c.get(f"{BASE_URL}/stocks/{ticker}/bars", params=params, headers=_auth_headers())
+            r.raise_for_status()
+            data = r.json()
+        except httpx.HTTPStatusError as e:
+            raise AlpacaError(f"Alpaca request failed ({e.response.status_code}): {e.response.text[:200]}") from e
+        except httpx.HTTPError as e:
+            raise AlpacaError(f"Alpaca request failed: {e}") from e
 
-    raw_bars = data.get("bars") or []
+        raw_bars.extend(data.get("bars") or [])
+        page_token = data.get("next_page_token")
+        if not page_token:
+            break
+
     if not raw_bars:
         raise AlpacaError(f"No intraday bars returned for {ticker}.")
 

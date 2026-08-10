@@ -12,10 +12,15 @@ const BOX_SIZES = [
   { key: "3", label: "Long-Term", short: "Long" },
 ];
 
-const fmtDate = (iso) => {
+// India stays DD/MM/YYYY (existing convention everywhere else on the
+// India side); US groups (groupPrefix "us-") use the US convention
+// MM/DD/YYYY instead -- this component is shared between both markets
+// (see the groupPrefix comment below), so the date format has to branch
+// on which market is actually showing, not just pick one.
+const fmtDate = (iso, isUs) => {
   if (!iso) return "—";
   const [y, m, d] = iso.split("-");
-  return `${d}/${m}/${y}`;
+  return isUs ? `${m}/${d}/${y}` : `${d}/${m}/${y}`;
 };
 
 const RankingTable = ({ ranking, groupSize }) => {
@@ -97,11 +102,14 @@ const MatrixGrid = ({ symbols, grid }) => (
 );
 
 // `groupPrefix` scopes the selector to one market's groups out of the
-// single shared GROUPS registry (relative_strength_groups.py) — e.g.
-// "us-" for the US Markets section, so its dropdown doesn't also list
-// Nifty Bank/IT/Auto alongside US Technology/Financials/etc. Omit it
-// (India's usage) to show every group, unfiltered, as before.
-const RelativeStrengthMatrix = ({ groupPrefix = null, defaultGroup = "nifty-bank" }) => {
+// single shared GROUPS registry (relative_strength_groups.py) -- India
+// passes "nifty-", US passes "us-", so neither market's dropdown lists
+// the other's groups. Confirmed live as a real bug (2026-08-10): the
+// India page used to omit groupPrefix entirely, so its selector showed
+// every group from BOTH markets side by side (Nifty Bank/IT/Auto mixed
+// in with US Technology/Financials/etc.) -- always pass a prefix now.
+const RelativeStrengthMatrix = ({ groupPrefix, defaultGroup = "nifty-bank" }) => {
+  const isUs = groupPrefix === "us-";
   const [groups, setGroups] = useState([]);
   const [group, setGroup] = useState(defaultGroup);
   const [boxTab, setBoxTab] = useState("1");
@@ -156,7 +164,7 @@ const RelativeStrengthMatrix = ({ groupPrefix = null, defaultGroup = "nifty-bank
             <div>
               <p className="text-xl font-bold text-white">{data.label}</p>
               <p className="font-mono-ui text-[10px] uppercase tracking-[0.18em] text-slate-500 mt-1">
-                {data.symbols.length} instruments · As of {fmtDate(data.as_of)}
+                {data.symbols.length} instruments · As of {fmtDate(data.as_of, isUs)}
               </p>
             </div>
           </div>

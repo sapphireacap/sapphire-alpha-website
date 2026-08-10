@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import axios from "axios";
 import { Loader2, Search } from "lucide-react";
-import { createChart, CandlestickSeries, ColorType, LineStyle } from "lightweight-charts";
+import { createChart, CandlestickSeries, LineSeries, LineType, ColorType, LineStyle } from "lightweight-charts";
 import { field, label as fieldLabel, EmptyState } from "./QuantLab";
 
 const POLL_MS = 30000; // keep the LTP/chart live while results are showing, same as NSE Exitline
@@ -45,15 +45,30 @@ const INTERVALS = [
   { key: 60, label: "1h" },
 ];
 
-// Same TradingView open-source charting engine as NSE Exitline, with real
-// price lines for the levels -- see Exitline.jsx's TVChart for the fuller
-// commentary on why price lines (not a paid widget overlay) and why the
-// autoscale range is extended to always include the levels + LTP.
-const TVChart = ({ chart, levels, ltp, interval, onIntervalChange, fetchGen }) => {
+// Each session has its OWN level ladder (computed from THAT session's own
+// previous-day H/L/C) -- see Exitline.jsx's TVChart for the fuller
+// commentary on why each level is its own stepped LineSeries (not a flat
+// createPriceLine spanning the whole 30-session window) and why the
+// autoscale range is extended across every session's levels, not just the
+// active one.
+const buildLevelSeriesData = (chart, sessionsByDate, key) => {
+  const out = [];
+  for (const b of chart) {
+    if (b.time == null) continue;
+    const session = sessionsByDate[b.date];
+    const value = session?.levels?.[key];
+    if (value == null) continue;
+    out.push({ time: b.time, value });
+  }
+  return out;
+};
+
+const TVChart = ({ chart, sessions, ltp, interval, onIntervalChange, fetchGen }) => {
   const containerRef = useRef(null);
   const chartRef = useRef(null);
   const seriesRef = useRef(null);
   const priceLinesRef = useRef([]);
+  const levelSeriesRef = useRef({});
   const fitKeyRef = useRef(null);
 
   useEffect(() => {
@@ -84,6 +99,8 @@ const TVChart = ({ chart, levels, ltp, interval, onIntervalChange, fetchGen }) =
     seriesRef.current = series;
 
     return () => {
+      Object.values(levelSeriesRef.current).forEach((s) => { try { tvChart.removeSeries(s); } catch { /* already gone with the chart */ } });
+      levelSeriesRef.current = {};
       tvChart.remove();
       chartRef.current = null;
       seriesRef.current = null;
@@ -98,14 +115,15 @@ const TVChart = ({ chart, levels, ltp, interval, onIntervalChange, fetchGen }) =
     priceLinesRef.current.forEach((pl) => series.removePriceLine(pl));
     priceLinesRef.current = [];
 
-    series.setData(chart.filter((b) => b.time != null).map((b) => ({
+    const cleanChart = chart.filter((b) => b.time != null);
+    series.setData(cleanChart.map((b) => ({
       time: b.time, open: b.open, high: b.high, low: b.low, close: b.close,
     })));
 
     series.applyOptions({
       autoscaleInfoProvider: (original) => {
         const res = original();
-        const values = VISIBLE_LEVELS.map((k) => levels[k]).filter((v) => v != null);
+        const values = (sessions || []).flatMap((s) => VISIBLE_LEVELS.map((k) => s.levels?.[k])).filter((v) => v != null);
         if (ltp != null) values.push(ltp);
         if (!values.length) return res;
         const min = Math.min(...values);
@@ -121,14 +139,20 @@ const TVChart = ({ chart, levels, ltp, interval, onIntervalChange, fetchGen }) =
       },
     });
 
+    const sessionsByDate = Object.fromEntries((sessions || []).map((s) => [s.date, s]));
     VISIBLE_LEVELS.forEach((k) => {
-      const v = levels[k];
-      if (v == null) return;
-      priceLinesRef.current.push(series.createPriceLine({
-        price: v, color: LEVEL_COLORS[k] || "#64748B", lineWidth: 2,
-        lineStyle: LineStyle.Solid, axisLabelVisible: true, title: DISPLAY_LABELS[k] || k,
-      }));
+      let lineSeries = levelSeriesRef.current[k];
+      if (!lineSeries) {
+        lineSeries = tvChart.addSeries(LineSeries, {
+          color: LEVEL_COLORS[k] || "#64748B", lineWidth: 1, lineType: LineType.WithSteps,
+          lastValueVisible: true, priceLineVisible: false, crosshairMarkerVisible: false,
+          title: DISPLAY_LABELS[k] || k,
+        });
+        levelSeriesRef.current[k] = lineSeries;
+      }
+      lineSeries.setData(buildLevelSeriesData(cleanChart, sessionsByDate, k));
     });
+
     if (ltp != null) {
       priceLinesRef.current.push(series.createPriceLine({
         price: ltp, color: "#437EEB", lineWidth: 2,
@@ -139,8 +163,13 @@ const TVChart = ({ chart, levels, ltp, interval, onIntervalChange, fetchGen }) =
     if (fetchGen != null && fitKeyRef.current !== fetchGen) {
       fitKeyRef.current = fetchGen;
       series.priceScale().applyOptions({ autoScale: true });
-      const sessionStart = chart[0]?.time;
-      const lastBar = chart[chart.length - 1]?.time;
+      // Default view is just the ACTIVE (most recent) session -- the other
+      // 29 are real data, scrolled out of view to the left (handleScroll
+      // is on) rather than absent, same as NSE Exitline.
+      const activeDate = sessions?.[sessions.length - 1]?.date;
+      const activeBars = activeDate ? cleanChart.filter((b) => b.date === activeDate) : cleanChart;
+      const sessionStart = activeBars[0]?.time;
+      const lastBar = activeBars[activeBars.length - 1]?.time;
       if (sessionStart != null && lastBar != null) {
         const nowTs = Math.floor(Date.now() / 1000);
         tvChart.timeScale().setVisibleRange({ from: sessionStart, to: Math.max(lastBar + interval * 60, nowTs) });
@@ -148,14 +177,16 @@ const TVChart = ({ chart, levels, ltp, interval, onIntervalChange, fetchGen }) =
         tvChart.timeScale().fitContent();
       }
     }
-  }, [chart, levels, ltp, interval, fetchGen]);
+  }, [chart, sessions, ltp, interval, fetchGen]);
 
   const isEmpty = !chart || chart.length === 0;
 
   return (
     <div className={`${SURFACE} p-4 md:p-6 mb-5`} data-testid="us-exitline-chart">
       <div className="flex flex-wrap items-center justify-between gap-3 mb-3">
-        <p className="font-mono-ui text-[10px] uppercase tracking-[0.18em] text-slate-500">Intraday</p>
+        <p className="font-mono-ui text-[10px] uppercase tracking-[0.18em] text-slate-500">
+          Last {sessions?.length || 30} Sessions <span className="text-slate-600 normal-case tracking-normal">· scroll to view history</span>
+        </p>
         <div className="flex items-center gap-1 rounded-md border border-white/10 p-0.5" data-testid="us-exitline-interval-selector">
           {INTERVALS.map((iv) => (
             <button
@@ -306,7 +337,7 @@ const USExitlineTool = () => {
             </div>
           </div>
 
-          <TVChart chart={result.chart} levels={result.levels || {}} ltp={result.ltp} interval={interval} onIntervalChange={changeInterval} fetchGen={result.__fetchGen} />
+          <TVChart chart={result.chart} sessions={result.sessions} ltp={result.ltp} interval={interval} onIntervalChange={changeInterval} fetchGen={result.__fetchGen} />
 
           <div className={`${SURFACE} overflow-hidden`} data-testid="us-exitline-ladder">
             <div className="px-5 py-3 border-b border-white/10"><p className="font-mono-ui text-[10px] uppercase tracking-[0.24em] text-slate-400">Level Ladder</p></div>
@@ -326,9 +357,6 @@ const USExitlineTool = () => {
             </div>
           </div>
 
-          <p className="text-xs font-light text-slate-500 leading-relaxed mt-6 max-w-2xl">
-            Real US market data via Yahoo Finance (previous close) and Alpaca (live price and chart, IEX feed). For informational purposes only — not investment advice.
-          </p>
         </>
       )}
     </div>

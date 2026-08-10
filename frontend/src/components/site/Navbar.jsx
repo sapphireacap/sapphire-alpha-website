@@ -28,7 +28,7 @@ const PRIMARY_LINKS = [
   { label: "Lattice", to: "/lattice" },
   { label: "Market", to: "/market" },
   { label: "Alpha Terminal", to: "/alpha-terminal" },
-  { label: "The Black Box", to: "/black-box" },
+  { label: "The Black Box", to: "/black-box", comingSoon: true },
   { label: "Pricing", to: "/pricing" },
 ];
 
@@ -92,6 +92,7 @@ export const Navbar = () => {
   };
 
   const handleLink = (l) => {
+    if (l.comingSoon) return;
     setOpen(false);
     setMoreOpen(false);
     setChartingOpen(false);
@@ -178,17 +179,31 @@ export const Navbar = () => {
             </AnimatePresence>
           </div>
 
-          {PRIMARY_LINKS.slice(2).map((l) => (
-            <button
-              key={l.id || l.to}
-              onClick={() => handleLink(l)}
-              className="relative text-sm text-slate-300 hover:text-white transition-colors duration-200 group"
-              data-testid={`nav-${testId(l)}-link`}
-            >
-              {l.label}
-              <span className="absolute -bottom-1.5 left-0 h-px w-0 bg-sapphire-light transition-all duration-200 ease-out group-hover:w-full" />
-            </button>
-          ))}
+          {PRIMARY_LINKS.slice(2).map((l) =>
+            l.comingSoon ? (
+              <span
+                key={l.id || l.to}
+                className="relative flex items-center gap-2 text-sm text-slate-500 cursor-not-allowed select-none"
+                data-testid={`nav-${testId(l)}-link`}
+                title="Coming Soon"
+              >
+                {l.label}
+                <span className="text-[10px] uppercase tracking-wider text-slate-500 border border-white/10 rounded-full px-2 py-0.5">
+                  Coming Soon
+                </span>
+              </span>
+            ) : (
+              <button
+                key={l.id || l.to}
+                onClick={() => handleLink(l)}
+                className="relative text-sm text-slate-300 hover:text-white transition-colors duration-200 group"
+                data-testid={`nav-${testId(l)}-link`}
+              >
+                {l.label}
+                <span className="absolute -bottom-1.5 left-0 h-px w-0 bg-sapphire-light transition-all duration-200 ease-out group-hover:w-full" />
+              </button>
+            )
+          )}
 
           <div className="relative" ref={moreRef}>
             <button

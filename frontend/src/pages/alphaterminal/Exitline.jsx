@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from "react";
 import axios from "axios";
 import { toast } from "sonner";
 import { Loader2, Crosshair } from "lucide-react";
-import { createChart, CandlestickSeries, ColorType, LineStyle } from "lightweight-charts";
+import { createChart, CandlestickSeries, LineSeries, LineType, ColorType, LineStyle } from "lightweight-charts";
 import { field, selectCls, label, LoadingParticles, EmptyState } from "./QuantLab";
 
 const POLL_MS = 30000; // keep the LTP marker live while results are showing
@@ -36,23 +36,25 @@ const formatIstHm = (time) => {
 };
 
 // Backend still computes all 11 levels (H1/H2/L1/L2 feed the mid-range
-// commentary text used elsewhere) but only these six are ever shown here —
-// H1/H2/L1/L2/L5 are dropped entirely from display, per request.
-const VISIBLE_LEVELS = ["H5", "H4", "H3", "Pivot", "L3", "L4"];
+// commentary text used elsewhere) but only these seven are ever shown
+// here — H1/H2/L1/L2 stay dropped from display, per original request; L5
+// was re-added (2026-08-10) to match the reference chart, which shows the
+// full H5-H4-H3-Pivot-L3-L4-L5 ladder.
+const VISIBLE_LEVELS = ["H5", "H4", "H3", "Pivot", "L3", "L4", "L5"];
 
 // Matches the reference: all H-levels red (resistance overhead), Pivot
 // cyan, all L-levels green (support below) — not a per-level gradient.
 const LEVEL_COLORS = {
   H5: "#F87171", H4: "#F87171", H3: "#F87171",
   Pivot: "#22D3EE",
-  L3: "#34D399", L4: "#34D399",
+  L3: "#34D399", L4: "#34D399", L5: "#34D399",
 };
 
-// "Sapphire Levels" branding — internal keys (H5/H4/H3/Pivot/L3/L4/LTP) stay
-// as-is everywhere else (backend field names, color/row-style lookups); only
-// the DISPLAYED label changes, so a generic H/L/Pivot naming convention
-// isn't shown to users.
-const DISPLAY_LABELS = { H5: "S5", H4: "S4", H3: "S3", Pivot: "PZ", L3: "V3", L4: "V4" };
+// "Sapphire Levels" branding — internal keys (H5/H4/H3/Pivot/L3/L4/L5/LTP)
+// stay as-is everywhere else (backend field names, color/row-style
+// lookups); only the DISPLAYED label changes, so a generic H/L/Pivot
+// naming convention isn't shown to users.
+const DISPLAY_LABELS = { H5: "S5", H4: "S4", H3: "S3", Pivot: "PZ", L3: "V3", L4: "V4", L5: "V5" };
 
 // Full names paired with each code in the ladder table, matching the
 // "Sapphire Levels" reference card (Sentinel/Vault/Pivot Zone/Price Nexus).
@@ -74,11 +76,34 @@ const INTERVALS = [
 // tradingview.com widget — that only supports custom price-line overlays
 // via the paid Charting Library). Renders our real Definedge candles with
 // native price lines for the levels, fully under our control.
-const TVChart = ({ chart, levels, ltp, interval, onIntervalChange, fetchGen }) => {
+//
+// Each session in `sessions` has its OWN level ladder (computed from THAT
+// session's own previous-day H/L/C — never the same day to day), so a
+// flat createPriceLine() spanning the whole 30-day chart would be wrong
+// the moment a level actually changes between sessions. Each level is
+// instead its own LineSeries with one point per candle (value = that
+// candle's OWN session's level) and lineType: WithSteps — consecutive
+// bars within a session share the same value (a flat segment); the jump
+// at a session boundary renders as a clean vertical step instead of a
+// diagonal interpolation, matching a real multi-session reference chart.
+const buildLevelSeriesData = (chart, sessionsByDate, key) => {
+  const out = [];
+  for (const b of chart) {
+    if (b.time == null) continue;
+    const session = sessionsByDate[b.date];
+    const value = session?.levels?.[key];
+    if (value == null) continue;
+    out.push({ time: b.time, value });
+  }
+  return out;
+};
+
+const TVChart = ({ chart, sessions, ltp, interval, onIntervalChange, fetchGen }) => {
   const containerRef = useRef(null);
   const chartRef = useRef(null);
   const seriesRef = useRef(null);
   const priceLinesRef = useRef([]);
+  const levelSeriesRef = useRef({});
   const fitKeyRef = useRef(null); // re-fit the view on symbol/interval change, but not on a live-poll refresh (so a manual zoom/scroll sticks)
 
   useEffect(() => {
@@ -112,6 +137,8 @@ const TVChart = ({ chart, levels, ltp, interval, onIntervalChange, fetchGen }) =
     seriesRef.current = series;
 
     return () => {
+      Object.values(levelSeriesRef.current).forEach((s) => { try { tvChart.removeSeries(s); } catch { /* already gone with the chart */ } });
+      levelSeriesRef.current = {};
       tvChart.remove();
       chartRef.current = null;
       seriesRef.current = null;
@@ -126,18 +153,22 @@ const TVChart = ({ chart, levels, ltp, interval, onIntervalChange, fetchGen }) =
     priceLinesRef.current.forEach((pl) => series.removePriceLine(pl));
     priceLinesRef.current = [];
 
-    series.setData(chart.filter((b) => b.time != null).map((b) => ({
+    const cleanChart = chart.filter((b) => b.time != null);
+    series.setData(cleanChart.map((b) => ({
       time: b.time, open: b.open, high: b.high, low: b.low, close: b.close,
     })));
 
     // Levels routinely sit outside the candles' own price range (e.g. Pivot/
-    // L3/L4 well below today's trading band) — the default autoscale only
-    // fits the visible candle data, which would clip those lines off-screen.
-    // Extend the price range to always include every visible level + LTP.
+    // L3/L4 well below the visible session's trading band) — the default
+    // autoscale only fits the visible candle data, which would clip those
+    // lines off-screen. Extend the price range to always include every
+    // visible level (across EVERY session in the window, not just the
+    // active one -- scrolling back to an older session must not clip that
+    // session's own, different-valued levels) + LTP.
     series.applyOptions({
       autoscaleInfoProvider: (original) => {
         const res = original();
-        const values = VISIBLE_LEVELS.map((k) => levels[k]).filter((v) => v != null);
+        const values = (sessions || []).flatMap((s) => VISIBLE_LEVELS.map((k) => s.levels?.[k])).filter((v) => v != null);
         if (ltp != null) values.push(ltp);
         if (!values.length) return res;
         const min = Math.min(...values);
@@ -153,14 +184,24 @@ const TVChart = ({ chart, levels, ltp, interval, onIntervalChange, fetchGen }) =
       },
     });
 
+    // Each level is its own stepped LineSeries spanning the whole window --
+    // its value changes at every session boundary (see buildLevelSeriesData)
+    // instead of one flat line that would only ever be correct for a single
+    // session.
+    const sessionsByDate = Object.fromEntries((sessions || []).map((s) => [s.date, s]));
     VISIBLE_LEVELS.forEach((k) => {
-      const v = levels[k];
-      if (v == null) return;
-      priceLinesRef.current.push(series.createPriceLine({
-        price: v, color: LEVEL_COLORS[k] || "#64748B", lineWidth: 2,
-        lineStyle: LineStyle.Solid, axisLabelVisible: true, title: DISPLAY_LABELS[k] || k,
-      }));
+      let lineSeries = levelSeriesRef.current[k];
+      if (!lineSeries) {
+        lineSeries = tvChart.addSeries(LineSeries, {
+          color: LEVEL_COLORS[k] || "#64748B", lineWidth: 1, lineType: LineType.WithSteps,
+          lastValueVisible: true, priceLineVisible: false, crosshairMarkerVisible: false,
+          title: DISPLAY_LABELS[k] || k,
+        });
+        levelSeriesRef.current[k] = lineSeries;
+      }
+      lineSeries.setData(buildLevelSeriesData(cleanChart, sessionsByDate, k));
     });
+
     if (ltp != null) {
       priceLinesRef.current.push(series.createPriceLine({
         price: ltp, color: "#437EEB", lineWidth: 2,
@@ -174,21 +215,21 @@ const TVChart = ({ chart, levels, ltp, interval, onIntervalChange, fetchGen }) =
     // scroll/zoom back to "fit all". fetchGen (tagged onto `result` by the
     // parent, only on a real fetch) is the only reliable signal for that:
     // chart[0]'s own timestamp can't be used, since every interval's first
-    // bucket aligns to the same 09:15 market open regardless of interval
+    // bucket aligns to the same session-open time regardless of interval
     // width, so it can't tell "new interval's data" apart from "old
     // interval's data" by timestamp alone.
     if (fetchGen != null && fitKeyRef.current !== fetchGen) {
       fitKeyRef.current = fetchGen;
       series.priceScale().applyOptions({ autoScale: true });
-      // fitContent() alone leaves very few bars (e.g. a wide interval early
-      // in the session) clumped in a corner at default bar width instead of
-      // spread across the chart. Explicitly show the whole session window
-      // (market open -> now) instead — consistent regardless of how many
-      // bars the current interval happens to have produced so far, and
-      // matches how a real intraday chart reads (blank space after "now"
-      // until close is normal, not a bug).
-      const sessionStart = chart[0]?.time;
-      const lastBar = chart[chart.length - 1]?.time;
+      // Default view is just the ACTIVE (most recent) session, same as
+      // before this was a 30-day series -- fitContent()/showing the whole
+      // window would squash every session into unreadably thin candles.
+      // The other 29 sessions are still real data, just scrolled out of
+      // view to the left (handleScroll is on) rather than absent.
+      const activeDate = sessions?.[sessions.length - 1]?.date;
+      const activeBars = activeDate ? cleanChart.filter((b) => b.date === activeDate) : cleanChart;
+      const sessionStart = activeBars[0]?.time;
+      const lastBar = activeBars[activeBars.length - 1]?.time;
       if (sessionStart != null && lastBar != null) {
         const nowTs = Math.floor(Date.now() / 1000);
         tvChart.timeScale().setVisibleRange({ from: sessionStart, to: Math.max(lastBar + interval * 60, nowTs) });
@@ -196,14 +237,16 @@ const TVChart = ({ chart, levels, ltp, interval, onIntervalChange, fetchGen }) =
         tvChart.timeScale().fitContent();
       }
     }
-  }, [chart, levels, ltp, interval, fetchGen]);
+  }, [chart, sessions, ltp, interval, fetchGen]);
 
   const isEmpty = !chart || chart.length === 0;
 
   return (
     <div className="glass rounded-2xl border border-white/10 p-4 md:p-6 mb-6" data-testid="exitline-chart">
       <div className="flex flex-wrap items-center justify-between gap-3 mb-3">
-        <p className="font-mono-ui text-[10px] uppercase tracking-[0.18em] text-slate-500">Today's Session</p>
+        <p className="font-mono-ui text-[10px] uppercase tracking-[0.18em] text-slate-500">
+          Last {sessions?.length || 30} Sessions <span className="text-slate-600 normal-case tracking-normal">· scroll to view history</span>
+        </p>
         <div className="flex items-center gap-1 rounded-md border border-white/10 p-0.5" data-testid="exitline-interval-selector">
           {INTERVALS.map((iv) => (
             <button
@@ -295,7 +338,7 @@ const ExitlineResults = ({ result, interval, onIntervalChange }) => (
       <p className="text-xl font-bold text-white">{result.tradingsymbol}</p>
     </div>
 
-    <TVChart chart={result.chart} levels={result.levels} ltp={result.ltp} interval={interval} onIntervalChange={onIntervalChange} fetchGen={result.__fetchGen} />
+    <TVChart chart={result.chart} sessions={result.sessions} ltp={result.ltp} interval={interval} onIntervalChange={onIntervalChange} fetchGen={result.__fetchGen} />
 
     <div className="mb-6">
       <Ladder levels={result.levels} ltp={result.ltp} />

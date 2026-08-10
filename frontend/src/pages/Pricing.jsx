@@ -17,27 +17,11 @@ const CYCLES = [
 
 // Pricing totals unchanged from the original structure -- each cycle's
 // figure is the amount actually billed for that cycle, not a monthly rate
-// multiplied out. Bundle = Black Box + P&F Studio at a lower combined rate
-// (79 + 49 = 128 vs 109 -> save $19/month).
+// multiplied out. The Black Box and the Bundle (which only existed to
+// combine Black Box + P&F Studio) are pulled from the pricing grid while
+// Black Box is Coming Soon (see Navbar.jsx's PRIMARY_LINKS) -- only a
+// paid, actually-available product should show a price.
 const PLANS = [
-  {
-    key: "blackbox",
-    name: "The Black Box",
-    tagline: "Automated Strategy Execution Platform",
-    description:
-      "Deploy quantitative trading strategies directly in your own broker account through automated execution.",
-    features: [
-      "Secure broker integration",
-      "One-time authentication",
-      "Automated trade execution",
-      "Multiple strategies",
-      "Automated entries, stop-loss and target execution",
-      "Pause or stop any strategy anytime",
-      "Real-time execution notifications",
-    ],
-    note: "Your broker account always remains under your control.",
-    prices: { monthly: 79, quarterly: 213, yearly: 708 },
-  },
   {
     key: "pnf",
     name: "P&F Studio",
@@ -53,41 +37,21 @@ const PLANS = [
     ],
     prices: { monthly: 49, quarterly: 129, yearly: 444 },
   },
-  {
-    key: "bundle",
-    name: "Bundle",
-    highlight: true,
-    description:
-      "The complete Sapphire Alpha Capital platform combining research, automation and professional charting.",
-    savingsLabel: "Save $19/month",
-    features: [
-      "Everything in The Black Box",
-      "Everything in P&F Studio",
-      "Priority support",
-      "Access to future Black Box strategies",
-    ],
-    prices: { monthly: 109, quarterly: 299, yearly: 999 },
-  },
 ];
 
 const FAQS = [
   {
-    q: "Which brokers are supported?",
-    a: "Broker integrations are being rolled out progressively ahead of launch. Join the waitlist for early access and updates as new brokers go live.",
+    q: "What markets does P&F Studio cover?",
+    a: "P&F Studio charts NSE stocks and indices, with the full Point & Figure pattern and indicator library available on every chart.",
   },
   {
-    q: "Can I stop a strategy anytime?",
-    a: "Yes. You can pause or stop any strategy at any time -- your broker account and your capital remain fully under your control throughout.",
-  },
-  {
-    q: "Do I need to keep my computer running?",
-    a: "No. Execution runs on Sapphire Alpha Capital's infrastructure, not your device -- once a strategy is active, it continues running independently.",
+    q: "Can I cancel anytime?",
+    a: "Yes. You can cancel your subscription at any time -- there's no lock-in period.",
   },
 ];
 
 const DISCLAIMER = [
-  "The Black Box is an automated strategy execution platform that allows users to deploy proprietary quantitative strategies through supported broker integrations.",
-  "Users retain complete control over their broker accounts and may pause or stop execution at any time.",
+  "P&F Studio is a charting and analysis platform -- it does not place trades or manage a broker account.",
   "Sapphire Alpha Capital does not provide personalized investment advice.",
 ];
 
@@ -264,7 +228,7 @@ export default function Pricing() {
               className="mt-6 text-base md:text-lg font-light text-slate-400 leading-relaxed max-w-2xl"
               data-testid="pricing-subtitle"
             >
-              Simple, transparent pricing for The Black Box and P&amp;F Studio. Cancel anytime.
+              Simple, transparent pricing for P&amp;F Studio. Cancel anytime.
             </motion.p>
           </div>
         </section>
@@ -288,7 +252,7 @@ export default function Pricing() {
               </div>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6 max-w-5xl mx-auto">
+            <div className="grid grid-cols-1 gap-6 max-w-md mx-auto">
               {PLANS.map((plan) => (
                 <PricingCard key={plan.key} plan={plan} cycle={cycle} onCta={goWaitlist} />
               ))}

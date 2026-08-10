@@ -111,7 +111,7 @@ const VerificationBadge = ({ verification }) => {
       </span>
       {verification.status === "CONFLICT" && (
         <span className="font-mono-ui text-xs text-slate-500">
-          Definedge {fmtINR(verification.definedge_price)} vs Screener {fmtINR(verification.screener_price)} ({fmtPct(verification.delta_pct)} apart)
+          Live {fmtINR(verification.definedge_price)} vs Screener {fmtINR(verification.screener_price)} ({fmtPct(verification.delta_pct)} apart)
         </span>
       )}
     </div>

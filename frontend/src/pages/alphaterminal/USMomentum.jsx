@@ -37,11 +37,7 @@ const MomentumRankingModule = ({ apiPath, scoreKey, scoreFmt, notReadyLabel }) =
   if (rows === null) return <div className="h-64 flex items-center justify-center text-slate-500 font-mono-ui text-sm gap-3"><Loader2 className="animate-spin" size={16} /> Loading…</div>;
   if (!rows.length) return <EmptyState reason={reason || notReadyLabel} />;
   return (
-    <MomentumTable
-      rows={rows}
-      onRowClick={openTradingViewUS}
-      disclaimer="Computed from real Yahoo Finance daily OHLC across the S&P 500 universe. Ranked mechanically, not a curated pick list. For informational purposes only — not investment advice."
-    />
+    <MomentumTable rows={rows} onRowClick={openTradingViewUS} />
   );
 };
 
