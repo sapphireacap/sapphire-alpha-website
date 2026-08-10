@@ -148,7 +148,7 @@ const ReportSection = ({ ipo }) => {
     <div className="glass rounded-2xl p-6 md:p-8" data-testid="ipo-report">
       <div className="flex items-center gap-3 mb-5">
         <FileText size={16} className="text-sapphire-light" />
-        <span className="font-mono-ui text-[10px] uppercase tracking-[0.22em] text-slate-500">Automated RHP Summary</span>
+        <span className="font-mono-ui text-[10px] uppercase tracking-[0.22em] text-slate-500">RHP Analysis</span>
       </div>
       <div className="space-y-4">
         {ipo.short_report.split(/\n\s*\n/).map((para, i) => (
