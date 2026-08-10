@@ -183,12 +183,11 @@ export const Navbar = () => {
             l.comingSoon ? (
               <span
                 key={l.id || l.to}
-                className="relative flex items-center gap-2 text-sm text-slate-500 cursor-not-allowed select-none"
+                className="group relative text-sm text-slate-500 cursor-not-allowed select-none"
                 data-testid={`nav-${testId(l)}-link`}
-                title="Coming Soon"
               >
                 {l.label}
-                <span className="text-[10px] uppercase tracking-wider text-slate-500 border border-white/10 rounded-full px-2 py-0.5">
+                <span className="pointer-events-none absolute left-1/2 top-full mt-2 -translate-x-1/2 whitespace-nowrap rounded-full border border-white/10 bg-void px-2.5 py-1 text-[10px] uppercase tracking-wider text-slate-400 opacity-0 transition-opacity duration-150 group-hover:opacity-100">
                   Coming Soon
                 </span>
               </span>
@@ -287,10 +286,17 @@ export const Navbar = () => {
                 <button
                   key={l.id || l.to}
                   onClick={() => handleLink(l)}
-                  className="text-left text-base py-1 text-slate-200"
+                  disabled={l.comingSoon}
+                  className={`flex items-center gap-2 text-left text-base py-1 ${l.comingSoon ? "text-slate-500 cursor-not-allowed" : "text-slate-200"}`}
                   data-testid={`nav-mobile-${testId(l)}-link`}
                 >
                   {l.label}
+                  {/* No hover on touch devices -- unlike the desktop tooltip, mobile needs the "Coming Soon" text always visible */}
+                  {l.comingSoon && (
+                    <span className="text-[10px] uppercase tracking-wider text-slate-500 border border-white/10 rounded-full px-2 py-0.5">
+                      Coming Soon
+                    </span>
+                  )}
                 </button>
               ))}
               <button
