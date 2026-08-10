@@ -1453,11 +1453,17 @@ async def definedge_auto_refresh(request: Request):
     """Called by the external (GitHub Actions) cron on a schedule during NSE
     hours. Authenticated with a static shared secret rather than an admin
     login, since this is a machine caller, not the interactive admin. Runs
-    all four Index Vector indices in one call, sequentially (not concurrently
-    — deliberately conservative about hammering Definedge's upstream with a
-    burst of simultaneous minute-bar history requests every single cron
-    tick). One index failing (e.g. a transient history-fetch error) doesn't
-    block the others — each result is reported individually."""
+    every Index Vector index CONCURRENTLY (not sequentially, despite the
+    original "conservative about hammering Definedge" reasoning) -- the
+    external cron pinging this route (cron-job.org's free tier) has a hard
+    30s execution cap, confirmed live 2026-08-10: 3 indices sequentially
+    took ~27-30s and intermittently timed out right at that ceiling.
+    Concurrent (gather) cuts total wall time to roughly the slowest single
+    index (~9-10s) instead of their sum, comfortably under any external
+    cron's timeout, and 3 simultaneous Definedge calls is not the kind of
+    burst that reasoning was actually guarding against. One index failing
+    (e.g. a transient history-fetch error) doesn't block the others —
+    each result is still reported individually."""
     if not CRON_SECRET or request.headers.get("X-Cron-Key") != CRON_SECRET:
         raise HTTPException(status_code=401, detail="Invalid cron key")
 
@@ -1470,14 +1476,15 @@ async def definedge_auto_refresh(request: Request):
     if not status.get("connected"):
         return {"skipped": "not connected"}
 
-    results = {}
-    for idx in VALID_INDICES:
+    async def _refresh_one(idx):
         try:
             signal = await definedge.compute_vector(idx)
-            results[idx] = {"bias": signal["bias"]}
+            return idx, {"bias": signal["bias"]}
         except DefinedgeError as e:
-            results[idx] = {"error": str(e)}
-    return results
+            return idx, {"error": str(e)}
+
+    pairs = await asyncio.gather(*(_refresh_one(idx) for idx in VALID_INDICES))
+    return dict(pairs)
 
 
 @api_router.post("/admin/definedge/otp-auto-login")
