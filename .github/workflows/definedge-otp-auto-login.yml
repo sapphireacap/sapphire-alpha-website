@@ -16,6 +16,13 @@ name: Definedge — daily OTP auto-login
 # logged in by hand), so a weekend/holiday run just triggers a harmless
 # extra login rather than anything actually running against a closed
 # market.
+#
+# --max-time is 240s, not 120s (fixed 2026-08-11): the route itself polls the
+# OTP mailbox for up to POLL_TIMEOUT_SECONDS=90s (definedge_otp_email.py),
+# on top of the trigger_otp()/verify_otp() calls, per-poll IMAP connect/login/
+# search overhead, and possible Render cold-start latency -- 120s left
+# essentially no margin. Confirmed live: curl exit 28 (timeout) at exactly
+# 2m01s while the backend was very likely about to succeed.
 on:
   schedule:
     - cron: "30 3 * * *"
@@ -28,7 +35,7 @@ jobs:
       - name: Call definedge/otp-auto-login
         run: |
           status=$(curl -s -o response.json -w "%{http_code}" -X POST \
-            --max-time 120 \
+            --max-time 240 \
             "https://sapphire-alpha-backend.onrender.com/api/admin/definedge/otp-auto-login" \
             -H "X-Cron-Key: ${{ secrets.CRON_SECRET }}")
           echo "HTTP status: $status"
