@@ -23,9 +23,11 @@ name: Definedge — daily OTP auto-login
 # search overhead, and possible Render cold-start latency -- 120s left
 # essentially no margin. Confirmed live: curl exit 28 (timeout) at exactly
 # 2m01s while the backend was very likely about to succeed.
+# Schedule trigger disabled 2026-08-11 -- migrated to a cron-job.org job
+# ("DE OTP login") for more reliable on-time firing than GH Actions' own
+# best-effort scheduler (confirmed live: this workflow's cron fired 2h42m
+# late that same day). workflow_dispatch stays as a manual fallback.
 on:
-  schedule:
-    - cron: "30 3 * * *"
   workflow_dispatch: {}
 
 jobs:

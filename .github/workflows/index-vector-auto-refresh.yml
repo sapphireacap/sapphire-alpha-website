@@ -31,11 +31,10 @@ name: Index Vector — auto refresh
 # has no per-index "error" key, so this workflow kept reporting green while doing nothing.
 # Confirmed live: signal data sat 1 full day stale (2026-08-10 -> 2026-08-11) while every tick
 # that day showed "success". Now also fails the job on a top-level "skipped" key.
+# Schedule trigger disabled 2026-08-11 -- migrated to a cron-job.org job
+# for more reliable on-time firing than GH Actions' own best-effort
+# scheduler. workflow_dispatch stays as a manual fallback.
 on:
-  schedule:
-    - cron: "45,50,55 3 * * 1-5"
-    - cron: "*/5 4-9 * * 1-5"
-    - cron: "0 10 * * 1-5"
   workflow_dispatch: {}
 
 jobs:
