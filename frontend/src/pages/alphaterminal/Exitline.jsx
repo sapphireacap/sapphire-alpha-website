@@ -202,6 +202,18 @@ const TVChart = ({ chart, sessions, ltp, interval, onIntervalChange, fetchGen })
           color: LEVEL_COLORS[k] || "#64748B", lineWidth: 1, lineType: LineType.WithSteps,
           lastValueVisible: true, priceLineVisible: false, crosshairMarkerVisible: false,
           title: DISPLAY_LABELS[k] || k,
+          // Levels are DRAWN but excluded from the price autoscale (that's
+          // what returning null does) -- the candles alone decide the price
+          // range, exactly like real tradingview.com, where a horizontal
+          // level drawing never stretches the scale. Letting them
+          // participate is what kept zoom feeling broken: the ladder spans
+          // ~100 points (S5 down to V5, wider still across sessions) while
+          // an intraday session's candles span ~25, so autoscale fitted the
+          // ladder and the candles stayed a flat squashed band no matter
+          // how far the time axis was zoomed. Trade-off, and the same one
+          // TradingView makes: levels far from price now sit off-screen
+          // until you zoom the price axis out (drag it) or scroll out.
+          autoscaleInfoProvider: () => null,
         });
         levelSeriesRef.current[k] = lineSeries;
       }
