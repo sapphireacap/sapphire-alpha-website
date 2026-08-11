@@ -26,6 +26,11 @@ name: Index Vector — auto refresh
 # index reported one, so a silent per-index failure shows up as a red run
 # instead of going unnoticed for days.
 # Re-saved 2026-08-10 to force GitHub to re-register this schedule -- every cron in this repo went silent after the 2026-08-06/07 GitHub Actions outage (confirmed: last scheduled run was 2026-08-07, workflow still showed state=active, GitHub never resumed firing it on its own).
+# Fixed 2026-08-11: the route also returns a plain 200 {"skipped": "not connected"} when
+# that morning's OTP login never happened (see definedge-otp-auto-login.yml) -- that response
+# has no per-index "error" key, so this workflow kept reporting green while doing nothing.
+# Confirmed live: signal data sat 1 full day stale (2026-08-10 -> 2026-08-11) while every tick
+# that day showed "success". Now also fails the job on a top-level "skipped" key.
 on:
   schedule:
     - cron: "45,50,55 3 * * 1-5"
@@ -49,9 +54,9 @@ jobs:
             echo "::error::definedge/auto-refresh failed with status $status"
             exit 1
           fi
-          if python3 -c "import json,sys; d=json.load(open('response.json')); sys.exit(1 if any(isinstance(v, dict) and 'error' in v for v in d.values()) else 0)"; then
+          if python3 -c "import json,sys; d=json.load(open('response.json')); sys.exit(1 if 'skipped' in d or any(isinstance(v, dict) and 'error' in v for v in d.values()) else 0)"; then
             :
           else
-            echo "::error::One or more indices reported an error in the auto-refresh response — see response.json above."
+            echo "::error::auto-refresh did not actually refresh (skipped, or one or more indices reported an error) — see response.json above."
             exit 1
           fi
