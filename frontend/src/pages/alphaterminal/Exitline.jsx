@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from "react";
 import axios from "axios";
 import { toast } from "sonner";
 import { Loader2, Crosshair } from "lucide-react";
-import { createChart, CandlestickSeries, LineSeries, LineType, ColorType, LineStyle } from "lightweight-charts";
+import { createChart, CandlestickSeries, LineSeries, LineType, ColorType } from "lightweight-charts";
 import { field, selectCls, label, LoadingParticles, EmptyState } from "./QuantLab";
 
 const POLL_MS = 30000; // keep the LTP marker live while results are showing
@@ -104,11 +104,13 @@ const buildLevelSeriesData = (chart, sessionsByDate, key) => {
   return out;
 };
 
-const TVChart = ({ chart, sessions, ltp, interval, onIntervalChange, fetchGen }) => {
+// No `ltp` prop: the chart no longer draws a live-price ("PX") line at
+// all (2026-08-12, by request), so it has nothing to do with the live
+// price. The Ladder below still takes `ltp` and still shows it.
+const TVChart = ({ chart, sessions, interval, onIntervalChange, fetchGen }) => {
   const containerRef = useRef(null);
   const chartRef = useRef(null);
   const seriesRef = useRef(null);
-  const priceLinesRef = useRef([]);
   const levelSeriesRef = useRef({});
   const fitKeyRef = useRef(null); // re-fit the view on symbol/interval change, but not on a live-poll refresh (so a manual zoom/scroll sticks)
 
@@ -138,11 +140,13 @@ const TVChart = ({ chart, sessions, ltp, interval, onIntervalChange, fetchGen })
     const series = tvChart.addSeries(CandlestickSeries, {
       upColor: "#34D399", downColor: "#F87171", borderVisible: false,
       wickUpColor: "#34D399", wickDownColor: "#F87171",
-      priceLineVisible: false, // the library's own default dashed last-value line --
-                                // redundant with the explicit solid "PX" price line below
-      lastValueVisible: false, // ...and its floating axis-label box, same reason --
-                                // was showing as a second, untitled price box sitting
-                                // right next to the explicit "PX" one
+      // Both off so the chart carries NO live-price marker at all: the
+      // explicit "PX" price line these originally deduplicated against was
+      // removed 2026-08-12 by request, and re-enabling either of these
+      // would just put an equivalent line/label straight back. The live
+      // price is still shown in the Sapphire Levels ladder below.
+      priceLineVisible: false,
+      lastValueVisible: false,
     });
     chartRef.current = tvChart;
     seriesRef.current = series;
@@ -176,25 +180,17 @@ const TVChart = ({ chart, sessions, ltp, interval, onIntervalChange, fetchGen })
     const tvChart = chartRef.current;
     if (!series || !tvChart || !chart || chart.length === 0) return;
 
-    priceLinesRef.current.forEach((pl) => series.removePriceLine(pl));
-    priceLinesRef.current = [];
-
     const cleanChart = chart.filter((b) => b.time != null);
     series.setData(cleanChart.map((b) => ({
       time: b.time, open: b.open, high: b.high, low: b.low, close: b.close,
     })));
 
-    // No custom autoscaleInfoProvider needed here (unlike the old single-
-    // session version, which had to manually extend the price range to
-    // include level values shown only as decorative createPriceLine
-    // overlays -- those never counted toward the library's own autoscale).
-    // Levels are now real LineSeries (see below), which DO natively
-    // participate in the chart's autoscale, so the price axis already
-    // squeezes to whatever's actually visible -- candles, levels, and LTP
-    // together -- without any manual override. A prior version kept the
-    // old override anyway, forcing the price range to always span EVERY
-    // session's levels regardless of zoom, which is exactly why the price
-    // axis never squeezed in no matter how far you zoomed the time axis.
+    // No autoscaleInfoProvider on the CANDLE series on purpose: the candles
+    // alone define the price range, so they always fill the pane the way
+    // tradingview.com's do. The level series opt OUT of autoscale instead
+    // (see their own comment below) -- an older version did the reverse,
+    // forcing the range to span every session's levels, which is why the
+    // price axis never squeezed no matter how far the time axis was zoomed.
 
     // Each level is its own stepped LineSeries spanning the whole window --
     // its value changes at every session boundary (see buildLevelSeriesData)
@@ -229,13 +225,6 @@ const TVChart = ({ chart, sessions, ltp, interval, onIntervalChange, fetchGen })
       lineSeries.setData(buildLevelSeriesData(cleanChart, sessionsByDate, k));
     });
 
-    if (ltp != null) {
-      priceLinesRef.current.push(series.createPriceLine({
-        price: ltp, color: "#437EEB", lineWidth: 2,
-        lineStyle: LineStyle.Solid, axisLabelVisible: true, title: "PX",
-      }));
-    }
-
     // Only reset the view (time+price scale) when this data actually
     // belongs to a real user-initiated fetch (submit / interval change) —
     // a background live-poll refresh must never yank a user's manual
@@ -264,7 +253,7 @@ const TVChart = ({ chart, sessions, ltp, interval, onIntervalChange, fetchGen })
         tvChart.timeScale().fitContent();
       }
     }
-  }, [chart, sessions, ltp, interval, fetchGen]);
+  }, [chart, sessions, interval, fetchGen]);
 
   const isEmpty = !chart || chart.length === 0;
 
@@ -365,7 +354,7 @@ const ExitlineResults = ({ result, interval, onIntervalChange }) => (
       <p className="text-xl font-bold text-white">{result.tradingsymbol}</p>
     </div>
 
-    <TVChart chart={result.chart} sessions={result.sessions} ltp={result.ltp} interval={interval} onIntervalChange={onIntervalChange} fetchGen={result.__fetchGen} />
+    <TVChart chart={result.chart} sessions={result.sessions} interval={interval} onIntervalChange={onIntervalChange} fetchGen={result.__fetchGen} />
 
     <div className="mb-6">
       <Ladder levels={result.levels} ltp={result.ltp} />
