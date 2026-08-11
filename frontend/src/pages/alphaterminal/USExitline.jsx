@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import axios from "axios";
 import { Loader2, Search } from "lucide-react";
-import { createChart, CandlestickSeries, LineSeries, LineType, ColorType, LineStyle } from "lightweight-charts";
+import { createChart, CandlestickSeries, LineSeries, LineType, ColorType } from "lightweight-charts";
 import { field, label as fieldLabel, EmptyState } from "./QuantLab";
 
 const POLL_MS = 30000; // keep the LTP/chart live while results are showing, same as NSE Exitline
@@ -30,6 +30,12 @@ const formatEtHm = (time) => {
 // visible subset as NSE Exitline, just keeping L5 (already shown in this
 // module's ladder before charts existed) instead of dropping it.
 const VISIBLE_LEVELS = ["H5", "H4", "H3", "Pivot", "L3", "L4", "L5"];
+
+// The CHART draws every level except Pivot/PZ (2026-08-12, by request --
+// same change as NSE Exitline, kept in step with it deliberately). Scoped
+// to the chart: VISIBLE_LEVELS still drives the ladder table below, which
+// continues to list PZ and its price.
+const CHART_LEVELS = VISIBLE_LEVELS.filter((k) => k !== "Pivot");
 const LEVEL_COLORS = {
   H5: "#F87171", H4: "#F87171", H3: "#F87171",
   Pivot: "#22D3EE",
@@ -63,11 +69,13 @@ const buildLevelSeriesData = (chart, sessionsByDate, key) => {
   return out;
 };
 
-const TVChart = ({ chart, sessions, ltp, interval, onIntervalChange, fetchGen }) => {
+// No `ltp` prop: the chart no longer draws a live-price ("PX") line at
+// all (2026-08-12, by request), so it has nothing to do with the live
+// price -- which is still shown in the header stat and the ladder below.
+const TVChart = ({ chart, sessions, interval, onIntervalChange, fetchGen }) => {
   const containerRef = useRef(null);
   const chartRef = useRef(null);
   const seriesRef = useRef(null);
-  const priceLinesRef = useRef([]);
   const levelSeriesRef = useRef({});
   const fitKeyRef = useRef(null);
 
@@ -86,19 +94,38 @@ const TVChart = ({ chart, sessions, ltp, interval, onIntervalChange, fetchGen })
         mouseWheel: true, pinch: true,
         axisPressedMouseMove: { time: true, price: true },
       },
-      handleScroll: { mouseWheel: true, pressedMouseMove: true, horzTouchDrag: true, vertTouchDrag: true },
+      // mouseWheel: false here (not true) -- handleScale.mouseWheel above
+      // already claims the wheel for zoom, same as real TradingView.com
+      // (scroll = zoom, drag = pan). Having both true fought over the same
+      // wheel event, panning AND zooming on every tick, which read as
+      // "zoom doesn't work" even though it was technically firing.
+      handleScroll: { mouseWheel: false, pressedMouseMove: true, horzTouchDrag: true, vertTouchDrag: true },
       autoSize: true,
     });
     const series = tvChart.addSeries(CandlestickSeries, {
       upColor: "#34D399", downColor: "#F87171", borderVisible: false,
       wickUpColor: "#34D399", wickDownColor: "#F87171",
+      // Both off so the chart carries NO live-price marker at all: the
+      // explicit "PX" price line was removed 2026-08-12 by request, and
+      // re-enabling either of these would just put an equivalent
+      // line/label straight back.
       priceLineVisible: false,
       lastValueVisible: false,
     });
     chartRef.current = tvChart;
     seriesRef.current = series;
 
+    // See Exitline.jsx's TVChart for why this is needed on top of
+    // data-lenis-prevent below (Lenis's wheel listener sits on
+    // window/document, an ancestor of this container -- stopping
+    // propagation here, after the chart library's own listener has
+    // already handled the zoom, guarantees Lenis never sees the event).
+    const container = containerRef.current;
+    const stopWheelPropagation = (e) => e.stopPropagation();
+    container.addEventListener("wheel", stopWheelPropagation, { passive: true });
+
     return () => {
+      container.removeEventListener("wheel", stopWheelPropagation);
       Object.values(levelSeriesRef.current).forEach((s) => { try { tvChart.removeSeries(s); } catch { /* already gone with the chart */ } });
       levelSeriesRef.current = {};
       tvChart.remove();
@@ -112,53 +139,36 @@ const TVChart = ({ chart, sessions, ltp, interval, onIntervalChange, fetchGen })
     const tvChart = chartRef.current;
     if (!series || !tvChart || !chart || chart.length === 0) return;
 
-    priceLinesRef.current.forEach((pl) => series.removePriceLine(pl));
-    priceLinesRef.current = [];
-
     const cleanChart = chart.filter((b) => b.time != null);
     series.setData(cleanChart.map((b) => ({
       time: b.time, open: b.open, high: b.high, low: b.low, close: b.close,
     })));
 
-    series.applyOptions({
-      autoscaleInfoProvider: (original) => {
-        const res = original();
-        const values = (sessions || []).flatMap((s) => VISIBLE_LEVELS.map((k) => s.levels?.[k])).filter((v) => v != null);
-        if (ltp != null) values.push(ltp);
-        if (!values.length) return res;
-        const min = Math.min(...values);
-        const max = Math.max(...values);
-        if (!res || !res.priceRange) return { priceRange: { minValue: min, maxValue: max } };
-        return {
-          priceRange: {
-            minValue: Math.min(res.priceRange.minValue, min),
-            maxValue: Math.max(res.priceRange.maxValue, max),
-          },
-          margins: res.margins,
-        };
-      },
-    });
+    // No autoscaleInfoProvider on the CANDLE series on purpose: the candles
+    // alone define the price range, so they always fill the pane the way
+    // tradingview.com's do. The level series opt OUT of autoscale instead
+    // (see below). See Exitline.jsx's TVChart for the full reasoning.
 
     const sessionsByDate = Object.fromEntries((sessions || []).map((s) => [s.date, s]));
-    VISIBLE_LEVELS.forEach((k) => {
+    CHART_LEVELS.forEach((k) => {
       let lineSeries = levelSeriesRef.current[k];
       if (!lineSeries) {
         lineSeries = tvChart.addSeries(LineSeries, {
           color: LEVEL_COLORS[k] || "#64748B", lineWidth: 1, lineType: LineType.WithSteps,
+          // No `title` (2026-08-12, by request) -- the price-axis tag shows
+          // only the value, not the S5/S4/V3/... name. The ladder table
+          // below still names every level, and the lines stay colour-coded
+          // (red above / green below), so nothing is lost.
           lastValueVisible: true, priceLineVisible: false, crosshairMarkerVisible: false,
-          title: DISPLAY_LABELS[k] || k,
+          // Levels are DRAWN but excluded from the price autoscale, so the
+          // ~100pt ladder can't squash the candles into a flat band the way
+          // it did before -- same fix and same trade-off as NSE Exitline.
+          autoscaleInfoProvider: () => null,
         });
         levelSeriesRef.current[k] = lineSeries;
       }
       lineSeries.setData(buildLevelSeriesData(cleanChart, sessionsByDate, k));
     });
-
-    if (ltp != null) {
-      priceLinesRef.current.push(series.createPriceLine({
-        price: ltp, color: "#437EEB", lineWidth: 2,
-        lineStyle: LineStyle.Solid, axisLabelVisible: true, title: "PX",
-      }));
-    }
 
     if (fetchGen != null && fitKeyRef.current !== fetchGen) {
       fitKeyRef.current = fetchGen;
@@ -177,7 +187,7 @@ const TVChart = ({ chart, sessions, ltp, interval, onIntervalChange, fetchGen })
         tvChart.timeScale().fitContent();
       }
     }
-  }, [chart, sessions, ltp, interval, fetchGen]);
+  }, [chart, sessions, interval, fetchGen]);
 
   const isEmpty = !chart || chart.length === 0;
 
@@ -209,7 +219,8 @@ const TVChart = ({ chart, sessions, ltp, interval, onIntervalChange, fetchGen })
             <p className="text-xs text-slate-500">No intraday bars available right now.</p>
           </div>
         )}
-        <div ref={containerRef} className="h-96" style={{ touchAction: "none" }} data-lenis-prevent-wheel="true" data-testid="us-exitline-tv-chart" />
+        {/* See Exitline.jsx's TVChart for why this is data-lenis-prevent, not data-lenis-prevent-wheel. */}
+        <div ref={containerRef} className="h-96" style={{ touchAction: "none" }} data-lenis-prevent="true" data-testid="us-exitline-tv-chart" />
       </div>
     </div>
   );
@@ -337,7 +348,7 @@ const USExitlineTool = () => {
             </div>
           </div>
 
-          <TVChart chart={result.chart} sessions={result.sessions} ltp={result.ltp} interval={interval} onIntervalChange={changeInterval} fetchGen={result.__fetchGen} />
+          <TVChart chart={result.chart} sessions={result.sessions} interval={interval} onIntervalChange={changeInterval} fetchGen={result.__fetchGen} />
 
           <div className={`${SURFACE} overflow-hidden`} data-testid="us-exitline-ladder">
             <div className="px-5 py-3 border-b border-white/10"><p className="font-mono-ui text-[10px] uppercase tracking-[0.24em] text-slate-400">Level Ladder</p></div>
