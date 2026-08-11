@@ -2,13 +2,12 @@
 Peter Tingle routes -- combined technical + fundamental caution scan for
 one stock, India and US.
 
-Every read route in this router is admin-only (Depends(get_current_admin))
--- Peter Tingle is an internal research tool, not a public-facing module
-(see modules.js's `adminOnly: true` on its directory entry and
-ModuleDetail.jsx's AdminOnlyNotice for the matching frontend gate). Same
-posture and same per-route Depends pattern as blackbox_routes.py. The two
-universe-sync routes keep their existing cron-secret / admin split --
-that gate predates and is independent of this one.
+Read routes made public 2026-08-12 at the user's explicit direction
+(modules.js's `adminOnly: true` removed from its directory entry at the
+same time) -- Peter Tingle was previously an internal-only research tool
+(Depends(get_current_admin) on every read route). The two universe-sync
+routes keep their existing cron-secret / admin split, unrelated to and
+predating this change.
 
 India (`/scan/{symbol}`) reuses Stock Research Terminal's already-ingested
 collections and its Fracture Scan fundamental ruleset directly, rather
@@ -26,7 +25,7 @@ searchable S&P 500 symbol list current (us_stock_universe.py), run
 nightly/weekly via the admin+cron routes below, same split every other
 ingestion job in this codebase uses.
 """
-from fastapi import APIRouter, HTTPException, Request, Depends
+from fastapi import APIRouter, HTTPException, Request, Depends  # Depends still used by the admin-gated sync-universe-now route
 
 from stock_terminal_scoring import scan_red_flags
 from peter_tingle import (
@@ -42,7 +41,7 @@ def create_peter_tingle_router(db, get_current_admin, cron_secret: str) -> APIRo
     router = APIRouter(prefix="/peter-tingle")
 
     @router.get("/scan/{symbol}")
-    async def scan(symbol: str, admin: dict = Depends(get_current_admin)):
+    async def scan(symbol: str):
         symbol = symbol.strip().upper()
         master = await db.stock_symbol_master.find_one({"symbol": symbol}, {"_id": 0})
         if not master:
@@ -66,7 +65,7 @@ def create_peter_tingle_router(db, get_current_admin, cron_secret: str) -> APIRo
         }
 
     @router.get("/us/symbols/search")
-    async def search_us_symbols(q: str = "", admin: dict = Depends(get_current_admin)):
+    async def search_us_symbols(q: str = ""):
         q = q.strip()
         if len(q) < 1:
             return []
@@ -78,7 +77,7 @@ def create_peter_tingle_router(db, get_current_admin, cron_secret: str) -> APIRo
         return rows
 
     @router.get("/us/scan/{symbol}")
-    async def scan_us(symbol: str, admin: dict = Depends(get_current_admin)):
+    async def scan_us(symbol: str):
         symbol = symbol.strip().upper()
         master = await db.us_stock_symbol_master.find_one({"symbol": symbol}, {"_id": 0})
         if not master:

@@ -9,9 +9,13 @@ name: Momentum track record — daily evaluation
 # Safe to run on a holiday/weekend — evaluate_pending() just finds nothing to
 # evaluate and returns cleanly (see backend/momentum_track_record.py).
 # Re-saved 2026-08-10 to force GitHub to re-register this schedule -- every cron in this repo went silent after the 2026-08-06/07 GitHub Actions outage (confirmed: last scheduled run was 2026-08-07, workflow still showed state=active, GitHub never resumed firing it on its own).
+#
+# Schedule trigger removed 2026-08-12 -- Intraday Momentum Leaders was
+# turned off (live: false in modules.js) at the user's explicit direction
+# ("delete everything from the background, only keep the tile"). No
+# schedule left calling this at all now; workflow_dispatch kept only so
+# it can still be re-run by hand if the module is ever turned back on.
 on:
-  schedule:
-    - cron: "15 10 * * 1-5"
   workflow_dispatch: {}
 
 jobs:

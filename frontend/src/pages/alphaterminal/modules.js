@@ -18,23 +18,20 @@ import {
 //   "us-breadth" / "us-relative-strength" / "us-market-assessment" ->
 //                  US_MODULES below, each its own standalone tool
 //                  component, same one-kind-per-module pattern
-// `live: false` modules are paused (2026-07-29) to cut backend memory/load
-// while the Render free-tier instance keeps crash-restarting on its memory
-// limit -- their pages show a "Coming Soon" placeholder and make no API
-// calls at all, instead of their normal dashboard. Nothing about the
-// module's own data or backend code is touched; flip the field back to
-// `true` to fully restore. Index Vector, Exitline, and Momentum Leaders
-// stay live throughout -- every other module is explicitly `live: false`
-// below (set on each one, not defaulted, so it's never ambiguous).
+// `live: false` modules are paused to cut backend memory/load while the
+// Render free-tier instance keeps crash-restarting on its memory limit --
+// their pages show a "Coming Soon" placeholder and make no API calls at
+// all, instead of their normal dashboard. Nothing about the module's own
+// data or backend code is touched; flip the field back to `true` to fully
+// restore. Index Vector and Exitline stay live throughout -- every other
+// paused module is explicitly `live: false` below (set on each one, not
+// defaulted, so it's never ambiguous). Intraday Momentum Leaders was
+// turned off 2026-08-12 (was live), swapped tile positions with Peter
+// Tingle (was adminOnly, now public), at the user's explicit direction.
 // Live modules are listed first (grouped together), paused ones after --
 // `no` is renumbered sequentially to match this visual order rather than
 // the historical build order, so the badge on each card always reads
 // top-to-bottom, left-to-right with no gaps/out-of-order jumps.
-// `adminOnly: true` (Peter Tingle) greys out the directory card and
-// blocks the module page for anyone whose /auth/me role isn't "admin" --
-// see AlphaTerminal.jsx's useIsAdmin() gate and ModuleDetail.jsx's
-// AdminOnlyNotice. The backend routes are independently admin-gated too
-// (peter_tingle_routes.py), so this is UI-layer, not the only enforcement.
 export const MODULES = [
   {
     slug: "index-vector",
@@ -66,7 +63,7 @@ export const MODULES = [
     kind: "exitline",
     live: true,
     icon: Crosshair,
-    title: "Intraday Exitline",
+    title: "Exitline",
     shortDescription: "Intraday levels with a suggested SL and TP.",
     overview: {
       purpose: "Turns yesterday's high/low/close into an intraday level ladder against the live price, with a rule-based stop-loss and take-profit.",
@@ -75,18 +72,17 @@ export const MODULES = [
     },
   },
   {
-    slug: "momentum-engine",
+    slug: "peter-tingle",
     no: "03",
-    kind: "scanner",
+    kind: "peter-tingle",
     live: true,
-    scannerKey: "momentum",
-    icon: Activity,
-    title: "Intraday Momentum Leaders",
-    shortDescription: "Ranks momentum across NSE.",
+    icon: ShieldAlert,
+    title: "Peter Tingle",
+    shortDescription: "Technical and fundamental analysis that assesses a stock's overall risk and caution signals.",
     overview: {
-      purpose: "Surfaces the NSE-listed names showing the strongest momentum right now.",
-      whatItMeasures: "Ranks stocks by a composite momentum score built from price action, volume, and conviction scoring.",
-      interpret: "A higher score reflects stronger, more confirmed momentum — treat the list as a daily research starting point, not a buy list.",
+      purpose: "A spider-sense check on a single stock — surfaces the technical and fundamental warning signs before you commit, in one place. Covers both the Nifty 500 (India) and the S&P 500 (US) via a market toggle.",
+      whatItMeasures: "Technical side (same rules both markets): trend structure, distance from its all-time high, short-term shocks, and multi-window momentum decay. Fundamental side is market-specific — India runs the same Fracture Scan rules used elsewhere on the terminal (promoter pledge, cash flow quality, receivables growth, leverage, interest coverage, promoter-holding erosion); US runs leverage, profitability, liquidity, short interest, and sell-side analyst outlook instead, since promoter-specific rules have no real US equivalent.",
+      interpret: "Clear means no rule tripped; Caution means one hard fail or a cluster of soft warnings; Danger means multiple hard fails across the two scans. Treat any FAIL as a specific, named reason to dig deeper — not a verdict to trade on by itself.",
     },
   },
   {
@@ -161,18 +157,18 @@ export const MODULES = [
     },
   },
   {
-    slug: "peter-tingle",
+    slug: "momentum-engine",
     no: "09",
-    kind: "peter-tingle",
-    live: true,
-    adminOnly: true,
-    icon: ShieldAlert,
-    title: "Peter Tingle",
-    shortDescription: "Technical and fundamental analysis that assesses a stock's overall risk and caution signals.",
+    kind: "scanner",
+    live: false,
+    scannerKey: "momentum",
+    icon: Activity,
+    title: "Intraday Momentum Leaders",
+    shortDescription: "Ranks momentum across NSE.",
     overview: {
-      purpose: "A spider-sense check on a single stock — surfaces the technical and fundamental warning signs before you commit, in one place. Covers both the Nifty 500 (India) and the S&P 500 (US) via a market toggle.",
-      whatItMeasures: "Technical side (same rules both markets): trend structure, distance from its all-time high, short-term shocks, and multi-window momentum decay. Fundamental side is market-specific — India runs the same Fracture Scan rules used elsewhere on the terminal (promoter pledge, cash flow quality, receivables growth, leverage, interest coverage, promoter-holding erosion); US runs leverage, profitability, liquidity, short interest, and sell-side analyst outlook instead, since promoter-specific rules have no real US equivalent.",
-      interpret: "Clear means no rule tripped; Caution means one hard fail or a cluster of soft warnings; Danger means multiple hard fails across the two scans. Treat any FAIL as a specific, named reason to dig deeper — not a verdict to trade on by itself.",
+      purpose: "Surfaces the NSE-listed names showing the strongest momentum right now.",
+      whatItMeasures: "Ranks stocks by a composite momentum score built from price action, volume, and conviction scoring.",
+      interpret: "A higher score reflects stronger, more confirmed momentum — treat the list as a daily research starting point, not a buy list.",
     },
   },
   {
@@ -240,10 +236,10 @@ export const US_MODULES = [
     kind: "us-exitline",
     live: true,
     icon: Crosshair,
-    title: "US Exitline",
+    title: "Exitline",
     shortDescription: "Intraday levels with a suggested SL and TP.",
     overview: {
-      purpose: "Same Camarilla level ladder and SL/TP logic as Intraday Exitline, for US equities.",
+      purpose: "Same Camarilla level ladder and SL/TP logic as Exitline, for US equities.",
       whatItMeasures: "Classifies the current price into a mean-reversion Trading Zone or a trend-day Breakout Zone against yesterday's close, and derives SL/TP from that read.",
       interpret: "Near the H3/L3 edge, treat it as a mean-reversion trigger; beyond H4/L4, treat it as a trend day — trail the stop, no fixed target.",
     },
