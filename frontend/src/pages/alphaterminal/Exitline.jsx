@@ -121,7 +121,12 @@ const TVChart = ({ chart, sessions, ltp, interval, onIntervalChange, fetchGen })
         mouseWheel: true, pinch: true,
         axisPressedMouseMove: { time: true, price: true },
       },
-      handleScroll: { mouseWheel: true, pressedMouseMove: true, horzTouchDrag: true, vertTouchDrag: true },
+      // mouseWheel: false here (not true) -- handleScale.mouseWheel above
+      // already claims the wheel for zoom, same as real TradingView.com
+      // (scroll = zoom, drag = pan). Having both true fought over the same
+      // wheel event, panning AND zooming on every tick, which read as
+      // "zoom doesn't work" even though it was technically firing.
+      handleScroll: { mouseWheel: false, pressedMouseMove: true, horzTouchDrag: true, vertTouchDrag: true },
       autoSize: true,
     });
     const series = tvChart.addSeries(CandlestickSeries, {
@@ -136,7 +141,22 @@ const TVChart = ({ chart, sessions, ltp, interval, onIntervalChange, fetchGen })
     chartRef.current = tvChart;
     seriesRef.current = series;
 
+    // Belt-and-suspenders on top of data-lenis-prevent below: Lenis's own
+    // wheel listener sits on window/document, an ancestor of this
+    // container -- stopping propagation here (bubble phase, so it runs
+    // AFTER the chart library's own listener on its inner canvas has
+    // already handled the zoom) guarantees Lenis never sees the event at
+    // all, regardless of whether its own data-attribute opt-out is being
+    // respected correctly in whatever Lenis version is actually loaded.
+    // passive:true is fine -- stopPropagation doesn't need preventDefault
+    // rights, and the chart library's own listener still calls
+    // preventDefault() itself, non-passively, on its own element.
+    const container = containerRef.current;
+    const stopWheelPropagation = (e) => e.stopPropagation();
+    container.addEventListener("wheel", stopWheelPropagation, { passive: true });
+
     return () => {
+      container.removeEventListener("wheel", stopWheelPropagation);
       Object.values(levelSeriesRef.current).forEach((s) => { try { tvChart.removeSeries(s); } catch { /* already gone with the chart */ } });
       levelSeriesRef.current = {};
       tvChart.remove();
@@ -158,31 +178,17 @@ const TVChart = ({ chart, sessions, ltp, interval, onIntervalChange, fetchGen })
       time: b.time, open: b.open, high: b.high, low: b.low, close: b.close,
     })));
 
-    // Levels routinely sit outside the candles' own price range (e.g. Pivot/
-    // L3/L4 well below the visible session's trading band) — the default
-    // autoscale only fits the visible candle data, which would clip those
-    // lines off-screen. Extend the price range to always include every
-    // visible level (across EVERY session in the window, not just the
-    // active one -- scrolling back to an older session must not clip that
-    // session's own, different-valued levels) + LTP.
-    series.applyOptions({
-      autoscaleInfoProvider: (original) => {
-        const res = original();
-        const values = (sessions || []).flatMap((s) => VISIBLE_LEVELS.map((k) => s.levels?.[k])).filter((v) => v != null);
-        if (ltp != null) values.push(ltp);
-        if (!values.length) return res;
-        const min = Math.min(...values);
-        const max = Math.max(...values);
-        if (!res || !res.priceRange) return { priceRange: { minValue: min, maxValue: max } };
-        return {
-          priceRange: {
-            minValue: Math.min(res.priceRange.minValue, min),
-            maxValue: Math.max(res.priceRange.maxValue, max),
-          },
-          margins: res.margins,
-        };
-      },
-    });
+    // No custom autoscaleInfoProvider needed here (unlike the old single-
+    // session version, which had to manually extend the price range to
+    // include level values shown only as decorative createPriceLine
+    // overlays -- those never counted toward the library's own autoscale).
+    // Levels are now real LineSeries (see below), which DO natively
+    // participate in the chart's autoscale, so the price axis already
+    // squeezes to whatever's actually visible -- candles, levels, and LTP
+    // together -- without any manual override. A prior version kept the
+    // old override anyway, forcing the price range to always span EVERY
+    // session's levels regardless of zoom, which is exactly why the price
+    // axis never squeezed in no matter how far you zoomed the time axis.
 
     // Each level is its own stepped LineSeries spanning the whole window --
     // its value changes at every session boundary (see buildLevelSeriesData)
@@ -269,8 +275,8 @@ const TVChart = ({ chart, sessions, ltp, interval, onIntervalChange, fetchGen })
             <p className="text-xs text-slate-500">No intraday bars yet for this session.</p>
           </div>
         )}
-        {/* App-wide Lenis smooth-scroll (SmoothScroll.jsx) reads wheel deltas on its own listener and animates the page regardless of preventDefault() elsewhere — data-lenis-prevent-wheel is Lenis's own opt-out, the actual fix; the chart library's built-in wheel handler already preventDefaults correctly on its own once Lenis is out of the way. */}
-        <div ref={containerRef} className="h-96" style={{ touchAction: "none" }} data-lenis-prevent-wheel="true" data-testid="exitline-tv-chart" />
+        {/* App-wide Lenis smooth-scroll (SmoothScroll.jsx) reads wheel deltas on its own listener and animates the page regardless of preventDefault() elsewhere — data-lenis-prevent-wheel/data-lenis-prevent are both real Lenis opt-out attributes (confirmed against Lenis's own source, 2026-08-10); using the general one here. */}
+        <div ref={containerRef} className="h-96" style={{ touchAction: "none" }} data-lenis-prevent="true" data-testid="exitline-tv-chart" />
       </div>
     </div>
   );
