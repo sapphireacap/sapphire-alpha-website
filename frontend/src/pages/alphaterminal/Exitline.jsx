@@ -42,6 +42,12 @@ const formatIstHm = (time) => {
 // full H5-H4-H3-Pivot-L3-L4-L5 ladder.
 const VISIBLE_LEVELS = ["H5", "H4", "H3", "Pivot", "L3", "L4", "L5"];
 
+// The CHART draws every level except Pivot/PZ (2026-08-12, by request:
+// "completely remove the pz name and line from the chart"). Scoped to the
+// chart deliberately -- VISIBLE_LEVELS still drives the Sapphire Levels
+// ladder table below it, which continues to list PZ and its price.
+const CHART_LEVELS = VISIBLE_LEVELS.filter((k) => k !== "Pivot");
+
 // Matches the reference: all H-levels red (resistance overhead), Pivot
 // cyan, all L-levels green (support below) — not a per-level gradient.
 const LEVEL_COLORS = {
@@ -195,13 +201,16 @@ const TVChart = ({ chart, sessions, ltp, interval, onIntervalChange, fetchGen })
     // instead of one flat line that would only ever be correct for a single
     // session.
     const sessionsByDate = Object.fromEntries((sessions || []).map((s) => [s.date, s]));
-    VISIBLE_LEVELS.forEach((k) => {
+    CHART_LEVELS.forEach((k) => {
       let lineSeries = levelSeriesRef.current[k];
       if (!lineSeries) {
         lineSeries = tvChart.addSeries(LineSeries, {
           color: LEVEL_COLORS[k] || "#64748B", lineWidth: 1, lineType: LineType.WithSteps,
+          // No `title` (2026-08-12, by request) -- the price-axis tag now
+          // shows only the value, not the S5/S4/V3/... name. The ladder
+          // table below still names every level, and the lines stay
+          // colour-coded (red above / green below), so nothing is lost.
           lastValueVisible: true, priceLineVisible: false, crosshairMarkerVisible: false,
-          title: DISPLAY_LABELS[k] || k,
           // Levels are DRAWN but excluded from the price autoscale (that's
           // what returning null does) -- the candles alone decide the price
           // range, exactly like real tradingview.com, where a horizontal
