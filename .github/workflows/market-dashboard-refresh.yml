@@ -7,6 +7,14 @@ name: Market Dashboard — auto refresh
 # with no "not connected" skip the way Index Vector's cron has.
 # 03:45-10:00 UTC = 09:15-15:30 IST, weekdays only, every 5 minutes.
 # Re-saved 2026-08-10 to force GitHub to re-register this schedule -- every cron in this repo went silent after the 2026-08-06/07 GitHub Actions outage (confirmed: last scheduled run was 2026-08-07, workflow still showed state=active, GitHub never resumed firing it on its own).
+#
+# Two new EOD-only ticks (3:50pm and 7:00pm IST) added on cron-job.org
+# 2026-08-11 -- separate jobs, not added here -- so FII/DII and 52-week
+# hi/lo (genuinely once-daily NSE data) get picked up same evening
+# instead of sitting until next morning's market-open cron. The 5-minute
+# intraday schedule below is UNCHANGED, still GitHub Actions -- not yet
+# migrated to cron-job.org, pending a decision on whether that's worth
+# doing for this specific cron too.
 on:
   schedule:
     - cron: "45,50,55 3 * * 1-5"
