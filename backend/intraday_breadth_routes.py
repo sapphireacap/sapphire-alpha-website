@@ -35,9 +35,19 @@ def create_intraday_breadth_router(db, definedge, get_current_admin, cron_secret
             return {"has_data": False, "reason": f"{GROUPS[group]['label']} isn't available yet — coming soon."}
         trading_date = datetime.now(IST).strftime("%Y-%m-%d")
         doc = await db[ib.SERIES_CACHE_COLLECTION].find_one({"group": group, "trading_date": trading_date}, {"_id": 0})
-        if not doc or not doc.get("series"):
-            return {"has_data": False, "reason": "Today's intraday breadth hasn't been computed yet — check back shortly after market open."}
-        return {"has_data": True, **doc}
+        if doc and doc.get("series"):
+            return {"has_data": True, "stale": False, **doc}
+
+        # Today's first refresh hasn't landed yet (before market open, or
+        # between sessions) -- fall back to the most recent prior session's
+        # series rather than showing nothing/"Loading..." until it does.
+        fallback = await db[ib.SERIES_CACHE_COLLECTION].find_one(
+            {"group": group, "series": {"$exists": True, "$ne": []}},
+            {"_id": 0}, sort=[("trading_date", -1)],
+        )
+        if fallback:
+            return {"has_data": True, "stale": True, **fallback}
+        return {"has_data": False, "reason": "Today's intraday breadth hasn't been computed yet — check back shortly after market open."}
 
     @router.get("/refresh-status")
     async def refresh_status(group: str = "nifty-50"):

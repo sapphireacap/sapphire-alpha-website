@@ -108,6 +108,7 @@ const IntradayBreadthPanel = () => {
     ? (
       <span className="term-grey">
         BREADTH <span style={{ color: "var(--term-text)" }}>{latest.value}%</span>, AVERAGE <span style={{ color: "var(--term-text)" }}>{latest.avg}%</span>
+        {data?.stale && <span style={{ color: "var(--term-red)" }}> · LAST SESSION ({data.trading_date})</span>}
       </span>
     )
     : <span className="term-grey">{data?.reason || "Loading…"}</span>;
