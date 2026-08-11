@@ -1013,7 +1013,7 @@ async def evaluate_prism_alpha(db, definedge) -> dict:
     endpoints only:
       - GET .../sds/history/{segment}/{token}/minute/{from}/{to}  (CE/PE option bars)
       - GET .../dart/v1/quotes/NSE/{token}                        (Nifty spot LTP — ATM selection only)
-      - GET .../public/nsefno.zip (via definedge._get_master())   (CE/PE token resolution)
+      - GET .../public/allmaster.zip (via definedge._get_all_master())  (CE/PE token resolution)
     No order-placement, modification, or cancellation endpoint is referenced
     anywhere in this module.
     """
@@ -1048,7 +1048,7 @@ async def evaluate_prism_alpha(db, definedge) -> dict:
 
     if pending:
         atm = await _resolve_atm(db, definedge, today_iso)
-        df = await definedge._get_master()
+        df = await definedge._get_all_master()
         # ATM itself, then one strike either side (see STRIKE_WINDOW_POINTS) —
         # ATM is still checked first/preferred, this only widens the net.
         candidate_strikes = [atm, atm - STRIKE_WINDOW_POINTS, atm + STRIKE_WINDOW_POINTS]

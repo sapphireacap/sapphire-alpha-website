@@ -72,7 +72,6 @@ logger = logging.getLogger(__name__)
 AUTH_BASE = "https://signin.definedgesecurities.com/auth/realms/debroking/dsbpkc"
 DATA_BASE = "https://data.definedgesecurities.com/sds"
 QUOTES_BASE = "https://integrate.definedgesecurities.com/dart/v1"
-MASTER_URL = "https://app.definedgesecurities.com/public/nsefno.zip"
 ALL_MASTER_URL = "https://app.definedgesecurities.com/public/allmaster.zip"  # unified NSE/BSE/NFO/BFO/MCX/CDS master, used by Quant Lab's generic symbol lookup
 NIFTY_SPOT_TOKEN = "26000"   # NIFTY 50 index token (NSE segment) — kept as its own
                               # constant since vix_quote() and a few legacy call
@@ -234,8 +233,7 @@ class DefinedgeService:
         self.api_token = api_token
         self.api_secret = api_secret
         self._otp_token = None
-        self._master_cache = None       # (date_str, DataFrame)
-        self._all_master_cache = None   # (date_str, DataFrame) — allmaster.zip, kept separate from _master_cache
+        self._all_master_cache = None   # (date_str, DataFrame) — allmaster.zip, the one and only master cache
         self._spot_cache = {}           # index_key -> (monotonic_time, {"spot": "..."})
         self._prev_close_cache = {}     # index_key -> (date_str, float)
         self._vix_cache = None          # (monotonic_time, float)
@@ -315,33 +313,23 @@ class DefinedgeService:
         }
 
     # ---- symbol master -------------------------------------------------
-    async def _get_master(self) -> pd.DataFrame:
-        today = datetime.now(IST).strftime("%Y-%m-%d")
-        if self._master_cache and self._master_cache[0] == today:
-            return self._master_cache[1]
-        try:
-            async with httpx.AsyncClient(timeout=60) as c:
-                r = await c.get(MASTER_URL)
-        except httpx.HTTPError as e:
-            raise DefinedgeError(f"Network error reaching Definedge: {e}") from e
-        if r.status_code != 200:
-            raise DefinedgeError(f"Master download failed ({r.status_code}).")
-        with zipfile.ZipFile(io.BytesIO(r.content)) as z:
-            name = z.namelist()[0]
-            with z.open(name) as f:
-                df = pd.read_csv(f, header=None, dtype=str, low_memory=False)
-        self._master_cache = (today, df)
-        return df
-
     async def master_sample(self):
         """Diagnostic: first rows so the exact column layout can be confirmed live."""
-        df = await self._get_master()
+        df = await self._get_all_master()
         return {"shape": list(df.shape), "head": df.head(4).fillna("").values.tolist()}
 
     async def _get_all_master(self) -> pd.DataFrame:
-        """Unified NSE/BSE/NFO/BFO/MCX/CDS master (allmaster.zip). Same per-day
-        caching pattern as _get_master(), kept as a separate cache so the Nifty
-        Vector's existing option-token resolution stays untouched."""
+        """Unified NSE/BSE/NFO/BFO/MCX/CDS master (allmaster.zip) — the ONLY
+        master cached now (2026-08-11: removed the separate nsefno.zip-only
+        _get_master()/_master_cache, which was a fully redundant subset of
+        this same data kept in memory a second time all day; every one of
+        its only 2 real callers only ever touched NIFTY OPTIDX rows, which
+        exist solely on NFO and are present here too — confirmed on Render's
+        512MB free tier, caching two overlapping full-day option-chain
+        DataFrames simultaneously was a real, plausible contributor to an
+        OOM crash). Same column layout as the old nsefno.zip
+        (0=SEG 1=TOKEN 2=SYMBOL 3=TRADINGSYM 4=INSTRUMENT 5=EXPIRY), just a
+        superset of segments — see resolve_symbol()'s docstring."""
         today = datetime.now(IST).strftime("%Y-%m-%d")
         if self._all_master_cache and self._all_master_cache[0] == today:
             return self._all_master_cache[1]

@@ -175,7 +175,7 @@ async def run_backtest(db, definedge) -> dict:
     if len(spot_bars) < 100:
         raise DefinedgeError("Not enough real Nifty spot 1-minute history to run a backtest.")
 
-    df = await definedge._get_master()
+    df = await definedge._get_all_master()
     expiry_iso = await _nearest_expiry_iso(df)
 
     # Real historical strike range from the spot bars themselves (+1 step
