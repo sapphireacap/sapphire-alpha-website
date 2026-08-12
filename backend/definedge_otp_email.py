@@ -29,8 +29,15 @@ from email.utils import parsedate_to_datetime
 logger = logging.getLogger(__name__)
 
 IMAP_HOST = os.environ.get("DEFINEDGE_OTP_EMAIL_IMAP_HOST", "imap.gmail.com")
-EMAIL_ADDRESS = os.environ.get("DEFINEDGE_OTP_EMAIL_ADDRESS")
-EMAIL_APP_PASSWORD = os.environ.get("DEFINEDGE_OTP_EMAIL_APP_PASSWORD")
+EMAIL_ADDRESS = (os.environ.get("DEFINEDGE_OTP_EMAIL_ADDRESS") or "").strip() or None
+# Google DISPLAYS an app password as four space-separated groups
+# ("abcd efgh ijkl mnop") but the actual secret is the 16 characters with
+# no spaces -- pasting it exactly as shown is an easy and completely
+# invisible way to get [AUTHENTICATIONFAILED] back from IMAP. Spaces are
+# stripped here so both forms work. (Safe for this specific credential:
+# Google app passwords are 16 lowercase letters and never contain a real
+# space; this is not a general-purpose password transform.)
+EMAIL_APP_PASSWORD = (os.environ.get("DEFINEDGE_OTP_EMAIL_APP_PASSWORD") or "").replace(" ", "").strip() or None
 
 # Email delivery isn't instant -- poll for a bit rather than checking once
 # right after trigger_otp() and giving up.
@@ -50,6 +57,15 @@ OTP_FALLBACK_PATTERN = re.compile(r"\b(\d{4,8})\b")
 
 class DefinedgeOtpEmailError(Exception):
     """Mailbox/config problems -- safe to show a caller."""
+
+
+class DefinedgeOtpMailboxAuthError(DefinedgeOtpEmailError):
+    """The mailbox rejected our credentials. Unlike every other failure in
+    here this one is PERMANENT -- no amount of polling fixes a revoked or
+    mistyped app password -- so fetch_otp() gives up on it immediately
+    instead of burning the full POLL_TIMEOUT_SECONDS. Confirmed live
+    2026-08-12: a dead app password spent 91s retrying
+    [AUTHENTICATIONFAILED] before reporting anything."""
 
 
 def configured() -> bool:
@@ -109,7 +125,23 @@ def _fetch_latest_otp_sync(after: datetime) -> str:
         )
     try:
         conn = imaplib.IMAP4_SSL(IMAP_HOST)
+    except Exception as e:  # noqa: BLE001
+        raise DefinedgeOtpEmailError(f"Could not reach the OTP mailbox host: {e}") from e
+
+    try:
         conn.login(EMAIL_ADDRESS, EMAIL_APP_PASSWORD)
+    except imaplib.IMAP4.error as e:
+        # Wrong/revoked app password, 2FA turned off, IMAP disabled on the
+        # account -- all permanent, all reported here as IMAP4.error.
+        try:
+            conn.logout()
+        except Exception:  # noqa: BLE001
+            pass
+        raise DefinedgeOtpMailboxAuthError(
+            f"The OTP mailbox rejected our credentials ({e}). The Gmail App Password for "
+            f"{EMAIL_ADDRESS} is most likely revoked or wrong -- generate a new one and update "
+            f"DEFINEDGE_OTP_EMAIL_APP_PASSWORD."
+        ) from e
     except Exception as e:  # noqa: BLE001
         raise DefinedgeOtpEmailError(f"Could not connect to the OTP mailbox: {e}") from e
 
@@ -151,7 +183,11 @@ def _fetch_latest_otp_sync(after: datetime) -> str:
 async def fetch_otp(after: datetime) -> str:
     """Polls the mailbox every POLL_INTERVAL_SECONDS for an OTP email
     that arrived at/after `after`, up to POLL_TIMEOUT_SECONDS. IMAP is
-    blocking I/O -- runs in a thread so it doesn't stall the event loop."""
+    blocking I/O -- runs in a thread so it doesn't stall the event loop.
+
+    Retries are for the ONE thing that legitimately needs waiting out: the
+    mail not having landed yet. A credential rejection is raised straight
+    through instead (see DefinedgeOtpMailboxAuthError)."""
     if not configured():
         raise DefinedgeOtpEmailError(
             "Definedge OTP mailbox is not configured (DEFINEDGE_OTP_EMAIL_ADDRESS / DEFINEDGE_OTP_EMAIL_APP_PASSWORD)."
@@ -161,6 +197,8 @@ async def fetch_otp(after: datetime) -> str:
     while asyncio.get_event_loop().time() < deadline:
         try:
             return await asyncio.to_thread(_fetch_latest_otp_sync, after)
+        except DefinedgeOtpMailboxAuthError:
+            raise
         except DefinedgeOtpEmailError as e:
             last_error = e
             await asyncio.sleep(POLL_INTERVAL_SECONDS)
