@@ -324,6 +324,36 @@ const DirectionalObservations = ({ directionalObservations: data }) => {
   );
 };
 
+const RS_PERIOD_LABEL = { daily: "Daily", weekly: "Weekly", monthly: "Monthly", quarterly: "Quarterly" };
+const RS_PERIODS = ["daily", "weekly", "monthly", "quarterly"];
+
+const RelativeStrength = ({ relativeStrength }) => {
+  const entries = RS_PERIODS.filter((p) => relativeStrength?.[p]);
+  if (!entries.length) return null;
+  return (
+    <div className={`${SURFACE} overflow-hidden`} data-testid="peter-tingle-relative-strength">
+      <div className="px-6 pt-6 pb-4">
+        <h3 className="text-base font-bold text-white">Relative Strength vs NIFTY 50</h3>
+      </div>
+      <div className="px-6 pb-6 grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
+        {entries.map((period) => {
+          const r = relativeStrength[period];
+          return (
+            <div key={period} data-testid={`peter-tingle-rs-${period}`}>
+              <p className="font-mono-ui text-[10px] uppercase tracking-[0.18em] text-slate-500 mb-1">{RS_PERIOD_LABEL[period]}</p>
+              <p className={`text-xs font-bold mb-1 ${ZONE_TONE[r.bias] || "text-slate-300"}`}>{r.label}</p>
+              <p className="text-xs text-slate-400">{r.text}</p>
+              <p className="text-[11px] text-slate-600 mt-1 font-mono-ui">
+                Stock {r.stock_return >= 0 ? "+" : ""}{r.stock_return}% vs NIFTY {r.nifty_return >= 0 ? "+" : ""}{r.nifty_return}%
+              </p>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+};
+
 const fmtRatio = (v) => (v == null ? "—" : v.toFixed(2));
 
 // Key ratios shown as plain facts, not bucketed Perk/Pitfall -- see
@@ -536,6 +566,7 @@ const PeterTingleTool = () => {
           )}
           <TechnicalObservations technicalObservations={result.technical_observations} />
           <DirectionalObservations directionalObservations={result.directional_observations} />
+          <RelativeStrength relativeStrength={result.relative_strength} />
         </div>
       )}
     </div>
