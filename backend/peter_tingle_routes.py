@@ -32,9 +32,26 @@ from peter_tingle import (
     scan_technical_red_flags, scan_us_fundamental_red_flags,
     compute_metrics_from_bars, combine_verdict,
 )
+from peter_tingle_pivots import pivot_levels_for_bars
 from us_stock_universe import sync_universe
 from us_stock_fundamentals import fetch_fundamentals
 import yahoo_finance_client as yf
+
+# Both markets' `metrics` dicts (stock_computed_metrics for India,
+# compute_metrics_from_bars()'s output for US) already carry these exact
+# keys -- see stock_terminal_ingestion.py's RETURN_WINDOWS and
+# peter_tingle.py's identical RETURN_WINDOWS -- so Price Performance is
+# just a relabel, not new computation. "Quarterly" maps to the existing
+# 3-month window, matching the report's own bucket names.
+_PRICE_PERFORMANCE_KEYS = {
+    "daily": "return_1d", "weekly": "return_1w", "monthly": "return_1m",
+    "quarterly": "return_3m", "yearly": "return_1y",
+}
+
+
+def _price_performance(metrics: dict) -> dict:
+    m = metrics or {}
+    return {label: m.get(key) for label, key in _PRICE_PERFORMANCE_KEYS.items()}
 
 
 def create_peter_tingle_router(db, get_current_admin, cron_secret: str) -> APIRouter:
@@ -50,6 +67,12 @@ def create_peter_tingle_router(db, get_current_admin, cron_secret: str) -> APIRo
         metrics = await db.stock_computed_metrics.find_one({"symbol": symbol}, {"_id": 0})
         fundamentals = await db.stock_fundamentals.find_one({"symbol": symbol}, {"_id": 0})
         shareholding = await db.stock_shareholding.find({"symbol": symbol}, {"_id": 0}).sort("quarter", 1).to_list(12)
+        # Pivot levels need real OHLC, which stock_computed_metrics doesn't
+        # carry (it's derived closes-only) -- stock_prices_daily is the
+        # same nightly-ingested 5-year daily series compute_derived_metrics
+        # itself reads from (stock_terminal_ingestion.py), so this is a
+        # second read of already-fetched data, not a new upstream call.
+        bars = await db.stock_prices_daily.find({"symbol": symbol}, {"_id": 0}).sort("date", 1).to_list(2000)
 
         technical_flags = scan_technical_red_flags(metrics)
         fundamental_flags = scan_red_flags(fundamentals, master, shareholding)
@@ -62,6 +85,8 @@ def create_peter_tingle_router(db, get_current_admin, cron_secret: str) -> APIRo
             "verdict": verdict,
             "technical_flags": technical_flags,
             "fundamental_flags": fundamental_flags,
+            "price_performance": _price_performance(metrics),
+            "pivot_levels": pivot_levels_for_bars(bars) if bars else {"daily": None, "weekly": None, "monthly": None},
         }
 
     @router.get("/us/symbols/search")
@@ -101,6 +126,8 @@ def create_peter_tingle_router(db, get_current_admin, cron_secret: str) -> APIRo
             "verdict": verdict,
             "technical_flags": technical_flags,
             "fundamental_flags": fundamental_flags,
+            "price_performance": _price_performance(metrics),
+            "pivot_levels": pivot_levels_for_bars(bars) if bars else {"daily": None, "weekly": None, "monthly": None},
         }
 
     async def _run_universe_sync() -> dict:
