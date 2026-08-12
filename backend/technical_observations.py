@@ -140,24 +140,27 @@ def donchian_observation(daily_bars: list) -> dict | None:
     }
 
 
-def moving_average_observation(metrics: dict) -> dict | None:
-    """Free -- dma_50/dma_200 are already computed for both markets
-    (stock_computed_metrics for India, compute_metrics_from_bars() for
-    US, see peter_tingle.py's DMA_WINDOWS). No new computation, just a
-    narrative read of numbers Peter Tingle's Technical Scan already
-    uses for its own Trend Structure rule."""
+def moving_average_observation(daily_bars: list, metrics: dict) -> dict | None:
+    """dma_50/dma_200 are already computed for both markets (stock_
+    computed_metrics for India, compute_metrics_from_bars() for US, see
+    peter_tingle.py's DMA_WINDOWS) -- reused as-is, not recomputed here.
+    `daily_bars` supplies only the one thing `metrics` doesn't carry:
+    today's actual close, needed for the reference report's real
+    wording ("Price remains below 200-day Moving average"), not just
+    the DMA-vs-DMA golden/death-cross relationship."""
     m = metrics or {}
-    dma200 = m.get("dma_200")
-    if dma200 is None:
+    dma50, dma200 = m.get("dma_50"), m.get("dma_200")
+    if dma50 is None or dma200 is None or not daily_bars:
         return None
-    # Neither `metrics` shape carries the raw latest close, only the
-    # DMAs themselves -- but the DMA-50-vs-DMA-200 relationship (a live
-    # golden/death cross read) is itself a real, useful observation
-    # even without comparing against today's close directly.
-    dma50 = m.get("dma_50")
-    if dma50 is None:
+    price = daily_bars[-1].get("close")
+    if price is None:
         return None
-    return {"dma_50": round(dma50, 2), "dma_200": round(dma200, 2), "golden_cross": dma50 >= dma200}
+    return {
+        "dma_50": round(dma50, 2), "dma_200": round(dma200, 2),
+        "golden_cross": dma50 >= dma200,
+        "price_vs_dma200": "above" if price >= dma200 else "below",
+        "price_vs_dma50": "above" if price >= dma50 else "below",
+    }
 
 
 def technical_observations(daily_bars: list, metrics: dict) -> dict:
@@ -170,5 +173,5 @@ def technical_observations(daily_bars: list, metrics: dict) -> dict:
         "rsi": rsi_observations(daily_bars or []),
         "bollinger": bollinger_observation(daily_bars or []),
         "donchian": donchian_observation(daily_bars or []),
-        "moving_average": moving_average_observation(metrics),
+        "moving_average": moving_average_observation(daily_bars, metrics),
     }
