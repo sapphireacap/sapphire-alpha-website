@@ -35,6 +35,7 @@ from peter_tingle import (
 from peter_tingle_pivots import pivot_levels_for_bars
 from pnf_observations import pnf_observations
 from peter_tingle_fundamentals import fundamental_observations
+from technical_observations import technical_observations
 from us_stock_universe import sync_universe
 from us_stock_fundamentals import fetch_fundamentals
 import yahoo_finance_client as yf
@@ -91,6 +92,7 @@ def create_peter_tingle_router(db, get_current_admin, cron_secret: str) -> APIRo
             "pivot_levels": pivot_levels_for_bars(bars) if bars else {"daily": None, "weekly": None, "monthly": None},
             "pnf_observations": pnf_observations(bars),
             "fundamental_observations": fundamental_observations(fundamentals, shareholding),
+            "technical_observations": technical_observations(bars, metrics),
         }
 
     @router.get("/us/symbols/search")
@@ -133,6 +135,7 @@ def create_peter_tingle_router(db, get_current_admin, cron_secret: str) -> APIRo
             "price_performance": _price_performance(metrics),
             "pivot_levels": pivot_levels_for_bars(bars) if bars else {"daily": None, "weekly": None, "monthly": None},
             "pnf_observations": pnf_observations(bars),
+            "technical_observations": technical_observations(bars, metrics),
         }
 
     async def _run_universe_sync() -> dict:
