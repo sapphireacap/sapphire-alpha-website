@@ -37,6 +37,7 @@ from pnf_observations import pnf_observations
 from peter_tingle_fundamentals import fundamental_observations
 from technical_observations import technical_observations
 from directional_observations import directional_observations
+from relative_strength_nifty import relative_strength_for_symbol
 from us_stock_universe import sync_universe
 from us_stock_fundamentals import fetch_fundamentals
 import yahoo_finance_client as yf
@@ -58,7 +59,7 @@ def _price_performance(metrics: dict) -> dict:
     return {label: m.get(key) for label, key in _PRICE_PERFORMANCE_KEYS.items()}
 
 
-def create_peter_tingle_router(db, get_current_admin, cron_secret: str) -> APIRouter:
+def create_peter_tingle_router(db, definedge, get_current_admin, cron_secret: str) -> APIRouter:
     router = APIRouter(prefix="/peter-tingle")
 
     @router.get("/scan/{symbol}")
@@ -95,6 +96,7 @@ def create_peter_tingle_router(db, get_current_admin, cron_secret: str) -> APIRo
             "fundamental_observations": fundamental_observations(fundamentals, shareholding),
             "technical_observations": technical_observations(bars, metrics),
             "directional_observations": directional_observations(bars),
+            "relative_strength": await relative_strength_for_symbol(definedge, bars),
         }
 
     @router.get("/us/symbols/search")

@@ -1789,7 +1789,7 @@ if "stock_terminal" not in DISABLED_FEATURES:
     app.include_router(stock_terminal_router, prefix="/api")
     lattice_router = create_lattice_router(db, definedge, get_current_admin, CRON_SECRET)
     app.include_router(lattice_router, prefix="/api")
-    peter_tingle_router = create_peter_tingle_router(db, get_current_admin, CRON_SECRET)
+    peter_tingle_router = create_peter_tingle_router(db, definedge, get_current_admin, CRON_SECRET)
     app.include_router(peter_tingle_router, prefix="/api")
 us_markets_router = create_us_markets_router(db, get_current_admin, CRON_SECRET)
 app.include_router(us_markets_router, prefix="/api")
