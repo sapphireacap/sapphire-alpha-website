@@ -65,12 +65,25 @@ def _observations_for_box(closes: list, box_pct: float) -> dict | None:
     }
 
 
+def _bias_prefixed_label(p: dict) -> str:
+    """Some pattern labels already start with a bias word baked in
+    ("Bearish 100% Pole", "Bull Trap" reads as bearish but doesn't say
+    so) while others are bias-neutral names ("Anchor Column", "High
+    Pole") that need the prefix to read as a sentence. Confirmed live
+    2026-08-12: RELIANCE's real 0.25% chart produced "Bearish Bearish
+    100% Pole" before this check -- the label ALREADY says "Bearish"."""
+    label = p["label"]
+    if label.lower().startswith(("bullish ", "bearish ")):
+        return label
+    return f"{p['bias'].capitalize()} {label}"
+
+
 def _bullets_for_box(key: str, obs: dict) -> list:
     out = [f"Price is in column of {obs['column_direction']} on the {key} chart."]
     if obs["basic_signal"]:
         out.append(f"{obs['basic_signal']} was formed in the current session on the {key} chart.")
     for p in obs["patterns"]:
-        out.append(f"{p['bias'].capitalize()} {p['label']} qualified on the {key} chart.")
+        out.append(f"{_bias_prefixed_label(p)} qualified on the {key} chart.")
     for ft in obs["follow_throughs"]:
         out.append(f"{ft['label']} on the {key} chart.")
     return out
