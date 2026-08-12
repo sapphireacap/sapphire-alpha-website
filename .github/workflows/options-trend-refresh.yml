@@ -12,9 +12,16 @@ name: Options Trend Scanner — daily refresh
 # Breadth's own 15:45 IST refresh, so the two heavy jobs don't overlap),
 # weekdays only.
 # Re-saved 2026-08-10 to force GitHub to re-register this schedule -- every cron in this repo went silent after the 2026-08-06/07 GitHub Actions outage (confirmed: last scheduled run was 2026-08-07, workflow still showed state=active, GitHub never resumed firing it on its own).
+#
+# Schedule trigger disabled 2026-08-12 -- migrated to cron-job.org, same
+# reliability reasoning as every other cron in this repo. Confirmed live:
+# this workflow was scheduled for 16:00 IST but actually landing at
+# 19:49-20:05 IST, ~4 hours late, every single day -- the 16:00 timing
+# itself (30 min after close, 15 min after breadth-refresh.yml's own
+# heavy scan starts, so the two don't overlap) was always correct and is
+# UNCHANGED; only the trigger mechanism moved. workflow_dispatch stays
+# as a manual fallback.
 on:
-  schedule:
-    - cron: "30 10 * * 1-5"
   workflow_dispatch: {}
 
 jobs:
