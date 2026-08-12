@@ -1,4 +1,4 @@
-from fastapi import FastAPI, APIRouter, HTTPException, Depends, Request, Response
+from fastapi import FastAPI, APIRouter, BackgroundTasks, HTTPException, Depends, Request, Response
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
@@ -1416,7 +1416,13 @@ class OtpVerify(BaseModel):
 
 @api_router.get("/admin/definedge/status")
 async def definedge_status(admin: dict = Depends(get_current_admin)):
-    return await definedge.status()
+    """`connected` is the real health signal. `last_auto_login` carries the
+    outcome of the most recent scheduled OTP login, which the cron itself
+    can't report -- that route returns as soon as the work is queued (see
+    _run_otp_auto_login) so it can outlive any external cron's timeout."""
+    status = await definedge.status()
+    status["last_auto_login"] = await db[OTP_AUTO_LOGIN_COLLECTION].find_one({"id": "last"}, {"_id": 0})
+    return status
 
 
 @api_router.post("/admin/definedge/otp-init")
@@ -1454,7 +1460,7 @@ async def definedge_refresh(index: str = "NIFTY", admin: dict = Depends(get_curr
 
 @api_router.post("/admin/definedge/auto-refresh")
 async def definedge_auto_refresh(request: Request):
-    """Called by the external (GitHub Actions) cron on a schedule during NSE
+    """Called by the external (cron-job.org) cron on a schedule during NSE
     hours. Authenticated with a static shared secret rather than an admin
     login, since this is a machine caller, not the interactive admin. Runs
     every Index Vector index CONCURRENTLY (not sequentially, despite the
@@ -1472,13 +1478,24 @@ async def definedge_auto_refresh(request: Request):
         raise HTTPException(status_code=401, detail="Invalid cron key")
 
     now = datetime.now(IST)
+    # Outside market hours there is genuinely nothing to do -- a plain 200,
+    # so a weekend/evening tick isn't noise.
     if not _is_market_open(now):
         return {"skipped": "outside market hours"}
+
+    # These two are NOT "nothing to do", they're "this should be working
+    # and isn't" -- during market hours a missing session means the whole
+    # module is serving stale data. Answered 503 so the external cron marks
+    # the run failed and it's actually visible. This used to be a 200 whose
+    # body the GitHub Actions workflow grepped for "skipped"; that check
+    # went inert when the schedule moved to cron-job.org, which only looks
+    # at the HTTP status (2026-08-11 -- a full day of stale Index Vector
+    # data hid behind exactly this).
     if not definedge.configured():
-        return {"skipped": "not configured"}
+        raise HTTPException(status_code=503, detail="Definedge not configured")
     status = await definedge.status()
     if not status.get("connected"):
-        return {"skipped": "not connected"}
+        raise HTTPException(status_code=503, detail="No Definedge session -- the daily OTP login has not succeeded today")
 
     async def _refresh_one(idx):
         try:
@@ -1491,23 +1508,41 @@ async def definedge_auto_refresh(request: Request):
     return dict(pairs)
 
 
-@api_router.post("/admin/definedge/otp-auto-login")
-async def definedge_otp_auto_login(request: Request):
-    """External-cron entry point -- runs the full daily OTP login
-    end-to-end (trigger -> read the OTP off the dedicated Gmail inbox
-    via definedge_otp_email.py -> verify) so nobody has to open the
-    admin panel and paste in a code by hand each morning. Same
-    X-Cron-Key gate as every other scheduled job; the manual
-    otp-init/otp-verify routes above still work unchanged as a fallback
-    if this ever misfires (wrong/no email, IMAP hiccup, etc.)."""
-    if not CRON_SECRET or request.headers.get("X-Cron-Key") != CRON_SECRET:
-        raise HTTPException(status_code=401, detail="Invalid cron key")
-    if not definedge.configured():
-        return {"skipped": "Definedge not configured"}
-    status = await definedge.status()
-    if status.get("connected"):
-        return {"skipped": "already connected today"}
+OTP_AUTO_LOGIN_COLLECTION = "definedge_otp_auto_login"
 
+
+async def _record_otp_auto_login(outcome: str, detail: str = None, started_at: datetime = None):
+    """One doc (id="last") holding the most recent attempt's result. The
+    route below returns before the work finishes, so this doc -- surfaced
+    by GET /admin/definedge/status -- is the ONLY place a failure shows
+    up. Without it a broken login would look identical to a working one
+    from outside (the cron just sees its instant 200), which is the exact
+    "silently green" trap that let a whole day of stale Index Vector data
+    go unnoticed on 2026-08-11."""
+    await db[OTP_AUTO_LOGIN_COLLECTION].update_one(
+        {"id": "last"},
+        {"$set": {
+            "id": "last", "outcome": outcome, "detail": detail,
+            "started_at": (started_at or datetime.now(timezone.utc)).isoformat(),
+            "finished_at": datetime.now(timezone.utc).isoformat(),
+        }},
+        upsert=True,
+    )
+
+
+async def _run_otp_auto_login():
+    """trigger -> read the OTP off the dedicated Gmail inbox
+    (definedge_otp_email.py) -> verify. Runs as a BackgroundTask, NOT
+    inline in the request, because it can legitimately take ~90s+: the
+    mailbox is polled up to POLL_TIMEOUT_SECONDS waiting for Definedge's
+    mail to actually land, on top of the trigger/verify round-trips and
+    per-poll IMAP overhead. No external cron will hold a connection open
+    that long -- cron-job.org's free tier caps execution at 30s and
+    killed this every morning while it still blocked (confirmed live
+    2026-08-12: status=TIMEOUT at exactly 30000ms, having fired
+    perfectly on time at 09:00:12 IST). Returning immediately and doing
+    the work here decouples "did the cron fire" from "how long the login
+    takes", so the cap stops mattering at all."""
     # Captured BEFORE the trigger call, not after -- Definedge stamps the
     # email's own Date header at send time, which can land a few seconds
     # earlier than when our client finishes the round-trip and would
@@ -1518,21 +1553,57 @@ async def definedge_otp_auto_login(request: Request):
     # buffer picked up a stale OTP from an earlier trigger still sitting
     # in the inbox, whose otp_token no longer matched THIS trigger's,
     # and Definedge correctly rejected the mismatched verify).
-    triggered_at = datetime.now(timezone.utc) - timedelta(seconds=15)
+    started_at = datetime.now(timezone.utc)
+    triggered_at = started_at - timedelta(seconds=15)
+
     try:
         trigger = await definedge.trigger_otp()
     except DefinedgeError as e:
-        raise HTTPException(status_code=400, detail=f"OTP trigger failed: {e}")
+        logger.error("OTP auto-login: trigger failed: %s", e)
+        await _record_otp_auto_login("error", f"OTP trigger failed: {e}", started_at)
+        return
 
     try:
         otp = await definedge_otp_email.fetch_otp(after=triggered_at)
     except definedge_otp_email.DefinedgeOtpEmailError as e:
-        raise HTTPException(status_code=502, detail=f"Could not read the OTP email: {e}")
+        logger.error("OTP auto-login: could not read the OTP email: %s", e)
+        await _record_otp_auto_login("error", f"Could not read the OTP email: {e}", started_at)
+        return
 
     try:
-        return await definedge.verify_otp(otp, trigger.get("otp_token"))
+        await definedge.verify_otp(otp, trigger.get("otp_token"))
     except DefinedgeError as e:
-        raise HTTPException(status_code=400, detail=f"OTP verify failed: {e}")
+        logger.error("OTP auto-login: verify failed: %s", e)
+        await _record_otp_auto_login("error", f"OTP verify failed: {e}", started_at)
+        return
+
+    logger.info("OTP auto-login: connected.")
+    await _record_otp_auto_login("ok", None, started_at)
+
+
+@api_router.post("/admin/definedge/otp-auto-login")
+async def definedge_otp_auto_login(request: Request, background_tasks: BackgroundTasks):
+    """External-cron entry point for the daily OTP login, so nobody has to
+    open the admin panel and paste a code in by hand each morning. Returns
+    as soon as the work is QUEUED (same fire-and-forget shape as
+    market_dashboard_routes.py's /admin/refresh) -- see
+    _run_otp_auto_login() for why it must not block the request. Same
+    X-Cron-Key gate as every other scheduled job; the manual
+    otp-init/otp-verify routes above still work unchanged as a fallback.
+
+    A 200 here means "queued", NOT "logged in" -- the outcome lands in
+    GET /admin/definedge/status's `last_auto_login`, and `connected` is
+    still the real signal."""
+    if not CRON_SECRET or request.headers.get("X-Cron-Key") != CRON_SECRET:
+        raise HTTPException(status_code=401, detail="Invalid cron key")
+    if not definedge.configured():
+        return {"skipped": "Definedge not configured"}
+    status = await definedge.status()
+    if status.get("connected"):
+        return {"skipped": "already connected today"}
+
+    background_tasks.add_task(_run_otp_auto_login)
+    return {"status": "started"}
 
 
 # ---------------------------------------------------------------------------
