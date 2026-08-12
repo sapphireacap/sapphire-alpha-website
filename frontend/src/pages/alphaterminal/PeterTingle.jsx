@@ -3,19 +3,14 @@ import axios from "axios";
 import { ShieldAlert } from "lucide-react";
 import { field, label, LoadingParticles, EmptyState } from "./QuantLab";
 import BiasBadge from "../../components/site/BiasBadge";
-import { ADMIN_TOKEN_KEY } from "../../lib/auth";
-import { TRADER_TOKEN_KEY } from "../Auth";
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
-// Peter Tingle's own routes (backend/peter_tingle_routes.py) are
-// admin-gated -- only an admin ever reaches this component at all (see
-// ModuleDetail.jsx's AdminOnlyNotice), but the calls themselves still
-// need the JWT attached. Checks both token keys since an admin may be
-// signed in via /admin33 or as a trader account with role "admin" (same
-// precedent as lib/auth.js's useIsAdmin).
-const authHeaders = () => ({
-  headers: { Authorization: `Bearer ${localStorage.getItem(ADMIN_TOKEN_KEY) || localStorage.getItem(TRADER_TOKEN_KEY)}` },
-});
+// No auth header -- Peter Tingle's read routes were made public
+// 2026-08-12 (backend/peter_tingle_routes.py, modules.js's `adminOnly`
+// removed at the same time). This component used to attach an admin/
+// trader JWT here, back when every route required Depends(get_current_
+// admin); a logged-out visitor now reaching this page would have sent
+// "Authorization: Bearer null", harmless but misleading dead weight.
 
 const FLAG_STYLE = {
   PASS: { color: "text-emerald-400", bg: "bg-emerald-400/10 border-emerald-400/25" },
@@ -27,8 +22,8 @@ const FLAG_STYLE = {
 const SURFACE = "rounded-2xl border border-white/10 bg-[#0A0D18]";
 
 const MARKETS = [
-  { key: "IN", label: "India", searchPath: "/stock-terminal/symbols/search", scanPath: "/peter-tingle/scan", placeholder: "Search symbol… e.g. RELIANCE" },
-  { key: "US", label: "US", searchPath: "/peter-tingle/us/symbols/search", scanPath: "/peter-tingle/us/scan", placeholder: "Search symbol… e.g. AAPL" },
+  { key: "IN", label: "India", searchPath: "/stock-terminal/symbols/search", scanPath: "/peter-tingle/scan", placeholder: "Search symbol… e.g. RELIANCE", currency: "₹" },
+  { key: "US", label: "US", searchPath: "/peter-tingle/us/symbols/search", scanPath: "/peter-tingle/us/scan", placeholder: "Search symbol… e.g. AAPL", currency: "$" },
 ];
 
 const MarketToggle = ({ market, onChange }) => (
@@ -62,7 +57,7 @@ const SymbolPicker = ({ market, onSelect }) => {
     if (v.trim().length < 1) { setOptions([]); setOpen(false); return; }
     debounceRef.current = setTimeout(async () => {
       try {
-        const { data } = await axios.get(`${API}${market.searchPath}`, { params: { q: v.trim() }, ...authHeaders() });
+        const { data } = await axios.get(`${API}${market.searchPath}`, { params: { q: v.trim() } });
         setOptions(data || []);
         setOpen(true);
       } catch {
@@ -105,6 +100,104 @@ const SymbolPicker = ({ market, onSelect }) => {
           ))}
         </div>
       )}
+    </div>
+  );
+};
+
+const fmtPrice = (v) => (v == null ? "—" : v.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
+const fmtPct = (v) => (v == null ? "—" : `${v >= 0 ? "+" : ""}${v.toFixed(2)}%`);
+
+const PRICE_PERFORMANCE_ROWS = [
+  { key: "daily", label: "Daily" },
+  { key: "weekly", label: "Weekly" },
+  { key: "monthly", label: "Monthly" },
+  { key: "quarterly", label: "Quarterly" },
+  { key: "yearly", label: "Yearly" },
+];
+
+// Bar width scaled to the largest |value| across all five windows (not a
+// fixed scale) -- a stock having a wild yearly move shouldn't make its
+// daily move invisible, and vice versa on a quiet year with a sharp week.
+const PricePerformance = ({ performance }) => {
+  const values = PRICE_PERFORMANCE_ROWS.map((r) => performance?.[r.key]).filter((v) => v != null);
+  const maxAbs = values.length ? Math.max(...values.map(Math.abs), 0.01) : 0.01;
+
+  return (
+    <div className={`${SURFACE} overflow-hidden`} data-testid="peter-tingle-price-performance">
+      <div className="px-6 pt-6 pb-4">
+        <h3 className="text-base font-bold text-white">Price Performance</h3>
+      </div>
+      <div className="px-6 pb-6 space-y-3">
+        {PRICE_PERFORMANCE_ROWS.map(({ key, label: rowLabel }) => {
+          const v = performance?.[key];
+          const pct = v == null ? 0 : Math.min(Math.abs(v) / maxAbs, 1) * 100;
+          const positive = v != null && v >= 0;
+          return (
+            <div key={key} className="flex items-center gap-4" data-testid={`peter-tingle-perf-${key}`}>
+              <span className="w-20 shrink-0 font-mono-ui text-[11px] uppercase tracking-wider text-slate-500">{rowLabel}</span>
+              <div className="flex-1 h-5 rounded bg-white/5 overflow-hidden">
+                {v != null && (
+                  <div
+                    className={`h-full rounded ${positive ? "bg-emerald-500/70" : "bg-red-500/70"}`}
+                    style={{ width: `${pct}%` }}
+                  />
+                )}
+              </div>
+              <span className={`w-20 shrink-0 text-right font-mono-ui text-xs ${v == null ? "text-slate-600" : positive ? "text-emerald-400" : "text-red-400"}`}>
+                {fmtPct(v)}
+              </span>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+};
+
+const PIVOT_ROWS = [
+  { key: "daily", label: "Daily" },
+  { key: "weekly", label: "Weekly" },
+  { key: "monthly", label: "Monthly" },
+];
+const PIVOT_COLS = ["S3", "S2", "S1", "R1", "R2", "R3"];
+
+const PivotLevels = ({ pivotLevels, currency }) => {
+  const anyData = PIVOT_ROWS.some((r) => pivotLevels?.[r.key]);
+  if (!anyData) return null;
+  return (
+    <div className={`${SURFACE} overflow-hidden`} data-testid="peter-tingle-pivot-levels">
+      <div className="px-6 pt-6 pb-2">
+        <h3 className="text-base font-bold text-white">Pivot Levels</h3>
+      </div>
+      <div className="overflow-x-auto">
+        <table className="w-full text-left min-w-[520px]" style={{ fontVariantNumeric: "tabular-nums" }}>
+          <thead>
+            <tr className="border-t border-white/[0.05]">
+              <th className="px-6 py-3 font-mono-ui text-[10px] uppercase tracking-[0.18em] text-slate-500 font-semibold whitespace-nowrap" />
+              {PIVOT_COLS.map((c) => (
+                <th key={c} className={`px-3 py-3 text-right font-mono-ui text-[10px] uppercase tracking-[0.18em] font-semibold whitespace-nowrap ${c[0] === "S" ? "text-emerald-500/70" : "text-red-500/70"}`}>
+                  {c}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {PIVOT_ROWS.map(({ key, label: rowLabel }) => {
+              const row = pivotLevels?.[key];
+              return (
+                <tr key={key} className="border-t border-white/[0.05]" data-testid={`peter-tingle-pivot-row-${key}`}>
+                  <td className="px-6 py-3 text-sm text-white whitespace-nowrap">{rowLabel}</td>
+                  {PIVOT_COLS.map((c) => (
+                    <td key={c} className="px-3 py-3 text-right font-mono-ui text-xs text-slate-300 whitespace-nowrap">
+                      {row ? `${currency}${fmtPrice(row[c])}` : "—"}
+                    </td>
+                  ))}
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 };
@@ -153,7 +246,7 @@ const PeterTingleTool = () => {
     setLoading(true);
     setResult(null);
     try {
-      const { data } = await axios.get(`${API}${market.scanPath}/${sym}`, authHeaders());
+      const { data } = await axios.get(`${API}${market.scanPath}/${sym}`);
       setResult(data);
     } catch {
       setResult({ has_data: false });
@@ -196,6 +289,8 @@ const PeterTingleTool = () => {
 
           <FlagTable title="Technical Scan" flags={result.technical_flags} testId="peter-tingle-technical-table" />
           <FlagTable title="Fundamental Scan" flags={result.fundamental_flags} testId="peter-tingle-fundamental-table" />
+          <PricePerformance performance={result.price_performance} />
+          <PivotLevels pivotLevels={result.pivot_levels} currency={market.currency} />
         </div>
       )}
     </div>
