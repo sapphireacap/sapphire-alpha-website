@@ -68,6 +68,34 @@ const OptionsTrendTool = () => {
     return c;
   }, [data]);
 
+  // The scan writes each stock's own computed_at as soon as that stock
+  // finishes (see options_trend_routes.py's worker) rather than one
+  // shared timestamp for the whole run, so the freshest value across all
+  // 208 rows is the real "last updated" -- not data.as_of, which is just
+  // today's calendar date and says nothing about whether today's run has
+  // actually happened yet. Intl.DateTimeFormat with an explicit
+  // timeZone, not manual UTC+5:30 offset math -- this codebase has been
+  // bitten by that exact arithmetic bug before (see MarketDashboard.jsx's
+  // isSessionLive).
+  const lastUpdated = useMemo(() => {
+    const stamps = (data?.results || []).map((r) => r.computed_at).filter(Boolean);
+    if (!stamps.length) return null;
+    return new Date(stamps.reduce((a, b) => (a > b ? a : b)));
+  }, [data]);
+  const lastUpdatedLabel = useMemo(() => {
+    if (!lastUpdated) return null;
+    // formatToParts, not .format()+string-replace -- AM/PM casing and
+    // separator punctuation both vary by locale/ICU version, which makes
+    // string-replacing a specific literal (" am" -> " AM") a fragile bet.
+    // Parts give named, locale-independent pieces to assemble ourselves.
+    const parts = new Intl.DateTimeFormat("en-US", {
+      timeZone: "Asia/Kolkata", day: "2-digit", month: "short", year: "numeric",
+      hour: "2-digit", minute: "2-digit", hour12: true,
+    }).formatToParts(lastUpdated);
+    const get = (type) => parts.find((p) => p.type === type)?.value || "";
+    return `${get("day")} ${get("month")} ${get("year")}, ${get("hour")}:${get("minute")} ${get("dayPeriod").toUpperCase()} IST`;
+  }, [lastUpdated]);
+
   return (
     <div data-testid="options-trend-tool">
       {loading ? (
@@ -78,6 +106,11 @@ const OptionsTrendTool = () => {
         <EmptyState reason="Gamma Pulse hasn't been computed yet — check back shortly." />
       ) : (
         <>
+          {lastUpdatedLabel && (
+            <p className="font-mono-ui text-[10px] uppercase tracking-[0.16em] text-slate-500 mb-4" data-testid="options-trend-last-updated">
+              Last Updated <span className="text-slate-300">{lastUpdatedLabel}</span>
+            </p>
+          )}
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
             <StatChip label="Bullish" value={counts.Bullish} />
             <StatChip label="Bearish" value={counts.Bearish} />
