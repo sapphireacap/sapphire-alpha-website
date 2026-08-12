@@ -202,6 +202,61 @@ const PivotLevels = ({ pivotLevels, currency }) => {
   );
 };
 
+const BIAS_TONE = { bullish: "text-emerald-400", bearish: "text-red-400", neutral: "text-slate-400" };
+const OBSERVATION_BOXES = ["0.25%", "1%", "3%"];
+
+// Same bullet-building rules as backend/pnf_observations.py's
+// _bullets_for_box() -- kept in sync deliberately rather than just
+// rendering the flat `bullets` string list the API also returns, so
+// each line can carry its own bias color instead of being one plain
+// block of text like the reference report's is.
+const observationLines = (obs) => {
+  const lines = [{ text: `Price is in column of ${obs.column_direction}`, tone: obs.column_direction === "X" ? "bullish" : "bearish" }];
+  if (obs.basic_signal) {
+    lines.push({ text: `${obs.basic_signal} was formed in the current session`, tone: obs.basic_signal_bias });
+  }
+  (obs.patterns || []).forEach((p) => {
+    const label = /^(bullish|bearish)\s/i.test(p.label) ? p.label : `${p.bias.charAt(0).toUpperCase()}${p.bias.slice(1)} ${p.label}`;
+    lines.push({ text: `${label} qualified`, tone: p.bias });
+  });
+  (obs.follow_throughs || []).forEach((ft) => {
+    lines.push({ text: ft.label, tone: ft.bias });
+  });
+  return lines;
+};
+
+const PnfObservations = ({ pnfObservations: data }) => {
+  const byBox = data?.by_box || {};
+  const anyData = OBSERVATION_BOXES.some((k) => byBox[k]);
+  if (!anyData) return null;
+
+  return (
+    <div className={`${SURFACE} overflow-hidden`} data-testid="peter-tingle-pnf-observations">
+      <div className="px-6 pt-6 pb-4">
+        <h3 className="text-base font-bold text-white">Point &amp; Figure Chart Observations</h3>
+      </div>
+      <div className="px-6 pb-6 grid gap-6 md:grid-cols-3">
+        {OBSERVATION_BOXES.map((key) => {
+          const obs = byBox[key];
+          if (!obs) return null;
+          return (
+            <div key={key} data-testid={`peter-tingle-pnf-box-${key}`}>
+              <p className="font-mono-ui text-[10px] uppercase tracking-[0.18em] text-slate-500 mb-2">{key} chart</p>
+              <ul className="space-y-1.5">
+                {observationLines(obs).map((line, i) => (
+                  <li key={i} className={`text-xs ${BIAS_TONE[line.tone] || "text-slate-400"}`}>
+                    {line.text}.
+                  </li>
+                ))}
+              </ul>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+};
+
 const FlagTable = ({ title, flags, testId }) => (
   <div className={`${SURFACE} overflow-hidden`} data-testid={testId}>
     <div className="px-6 pt-6 pb-2">
@@ -291,6 +346,7 @@ const PeterTingleTool = () => {
           <FlagTable title="Fundamental Scan" flags={result.fundamental_flags} testId="peter-tingle-fundamental-table" />
           <PricePerformance performance={result.price_performance} />
           <PivotLevels pivotLevels={result.pivot_levels} currency={market.currency} />
+          <PnfObservations pnfObservations={result.pnf_observations} />
         </div>
       )}
     </div>
