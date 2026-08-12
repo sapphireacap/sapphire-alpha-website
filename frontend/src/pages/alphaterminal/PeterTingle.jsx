@@ -202,6 +202,65 @@ const PivotLevels = ({ pivotLevels, currency }) => {
   );
 };
 
+const fmtRatio = (v) => (v == null ? "—" : v.toFixed(2));
+
+// Key ratios shown as plain facts, not bucketed Perk/Pitfall -- see
+// backend/peter_tingle_fundamentals.py's module docstring for why: a
+// bare "P/E is 17.68" has no sign without a 5yr-average/industry
+// baseline this codebase doesn't have real data for.
+const KeyRatios = ({ keyRatios }) => {
+  const entries = Object.entries(keyRatios || {}).filter(([, v]) => v != null);
+  if (!entries.length) return null;
+  return (
+    <div className={`${SURFACE} overflow-hidden`} data-testid="peter-tingle-key-ratios">
+      <div className="px-6 pt-6 pb-4">
+        <h3 className="text-base font-bold text-white">Key Ratios</h3>
+      </div>
+      <div className="px-6 pb-6 grid grid-cols-2 sm:grid-cols-3 gap-x-4 gap-y-4">
+        {entries.map(([label, v]) => (
+          <div key={label} data-testid={`peter-tingle-ratio-${label}`}>
+            <p className="font-mono-ui text-[10px] uppercase tracking-[0.16em] text-slate-500">{label}</p>
+            <p className="text-sm font-bold text-white">{fmtRatio(v)}</p>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+};
+
+// Only facts whose sign is meaningful without external comparison data
+// end up here (see the backend module) -- CAGR direction, FII/DII stake
+// actually rising or falling quarter over quarter, near-zero debt.
+const PerksPitfalls = ({ perks, pitfalls }) => {
+  if (!perks?.length && !pitfalls?.length) return null;
+  return (
+    <div className={`${SURFACE} overflow-hidden`} data-testid="peter-tingle-perks-pitfalls">
+      <div className="grid sm:grid-cols-2 divide-y sm:divide-y-0 sm:divide-x divide-white/10">
+        <div className="p-6">
+          <h3 className="text-sm font-bold text-emerald-400 mb-3">Perks</h3>
+          {perks?.length ? (
+            <ul className="space-y-1.5">
+              {perks.map((p, i) => <li key={i} className="text-xs text-slate-300">{p}</li>)}
+            </ul>
+          ) : (
+            <p className="text-xs text-slate-600">None flagged.</p>
+          )}
+        </div>
+        <div className="p-6">
+          <h3 className="text-sm font-bold text-red-400 mb-3">Pitfalls</h3>
+          {pitfalls?.length ? (
+            <ul className="space-y-1.5">
+              {pitfalls.map((p, i) => <li key={i} className="text-xs text-slate-300">{p}</li>)}
+            </ul>
+          ) : (
+            <p className="text-xs text-slate-600">None flagged.</p>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+};
+
 const BIAS_TONE = { bullish: "text-emerald-400", bearish: "text-red-400", neutral: "text-slate-400" };
 const OBSERVATION_BOXES = ["0.25%", "1%", "3%"];
 
@@ -347,6 +406,12 @@ const PeterTingleTool = () => {
           <PricePerformance performance={result.price_performance} />
           <PivotLevels pivotLevels={result.pivot_levels} currency={market.currency} />
           <PnfObservations pnfObservations={result.pnf_observations} />
+          {result.fundamental_observations && (
+            <>
+              <KeyRatios keyRatios={result.fundamental_observations.key_ratios} />
+              <PerksPitfalls perks={result.fundamental_observations.perks} pitfalls={result.fundamental_observations.pitfalls} />
+            </>
+          )}
         </div>
       )}
     </div>
