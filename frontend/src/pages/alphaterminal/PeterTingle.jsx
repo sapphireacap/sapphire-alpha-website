@@ -202,6 +202,77 @@ const PivotLevels = ({ pivotLevels, currency }) => {
   );
 };
 
+const ZONE_TONE = { bullish: "text-emerald-400", bearish: "text-red-400" };
+const PERIOD_LABEL = { daily: "Daily", weekly: "Weekly", monthly: "Monthly" };
+
+// Mirrors backend/technical_observations.py's field shapes directly --
+// this module has no `bullets` array to render (unlike pnf_observations),
+// so the narrative sentences are built here from the structured fields.
+const rsiLines = (rsi) =>
+  Object.entries(rsi || {}).map(([period, r]) => ({
+    text: `The ${PERIOD_LABEL[period] || period} RSI indicator has remained ${r.zone === "bullish" ? "above" : "below"} 50. This is a ${r.zone} zone. Current ${PERIOD_LABEL[period] || period} RSI reading is ${r.value}.`,
+    tone: r.zone,
+  }));
+
+const bollingerLines = (b) => {
+  if (!b) return [];
+  const lines = [{ text: `Price is ${b.price_vs_mid} middle Bollinger band (${b.zone.charAt(0).toUpperCase()}${b.zone.slice(1)}).`, tone: b.zone }];
+  if (b.converging != null) lines.push({ text: `Bands are ${b.converging ? "converging" : "diverging"}.`, tone: null });
+  if (b.width_pct != null) lines.push({ text: `Difference between bands is ${b.width_pct}%.`, tone: null });
+  return lines;
+};
+
+const donchianLines = (d) => {
+  if (!d) return [];
+  const lines = [{ text: `Price is ${d.price_vs_mid} middle Donchian channel (${d.zone.charAt(0).toUpperCase()}${d.zone.slice(1)}).`, tone: d.zone }];
+  if (d.lower_rising != null) lines.push({ text: `Lower band is ${d.lower_rising ? "rising" : "falling"}.`, tone: null });
+  if (d.upper_rising != null) lines.push({ text: `Upper band is ${d.upper_rising ? "rising" : "falling"}.`, tone: null });
+  if (d.width_pct != null) lines.push({ text: `Difference between bands is ${d.width_pct}%.`, tone: null });
+  return lines;
+};
+
+const movingAverageLines = (ma) => {
+  if (!ma) return [];
+  return [
+    { text: `Price remains ${ma.price_vs_dma50} 50-day Moving average.`, tone: ma.price_vs_dma50 === "above" ? "bullish" : "bearish" },
+    { text: `Price remains ${ma.price_vs_dma200} 200-day Moving average.`, tone: ma.price_vs_dma200 === "above" ? "bullish" : "bearish" },
+    { text: `50-day is ${ma.golden_cross ? "above" : "below"} 200-day (${ma.golden_cross ? "golden" : "death"} cross structure).`, tone: ma.golden_cross ? "bullish" : "bearish" },
+  ];
+};
+
+const OBS_SECTIONS = [
+  { key: "rsi", title: "RSI Observations", build: (t) => rsiLines(t.rsi) },
+  { key: "bollinger", title: "Bollinger Band Observations", build: (t) => bollingerLines(t.bollinger) },
+  { key: "donchian", title: "Donchian Channel Observations", build: (t) => donchianLines(t.donchian) },
+  { key: "moving_average", title: "Moving Average Observations", build: (t) => movingAverageLines(t.moving_average) },
+];
+
+const TechnicalObservations = ({ technicalObservations: data }) => {
+  if (!data) return null;
+  const sections = OBS_SECTIONS.map((s) => ({ ...s, lines: s.build(data) })).filter((s) => s.lines.length);
+  if (!sections.length) return null;
+
+  return (
+    <div className={`${SURFACE} overflow-hidden`} data-testid="peter-tingle-technical-observations">
+      <div className="px-6 pt-6 pb-4">
+        <h3 className="text-base font-bold text-white">Technical Observations</h3>
+      </div>
+      <div className="px-6 pb-6 grid gap-6 sm:grid-cols-2">
+        {sections.map((s) => (
+          <div key={s.key} data-testid={`peter-tingle-obs-${s.key}`}>
+            <p className="font-mono-ui text-[10px] uppercase tracking-[0.18em] text-slate-500 mb-2">{s.title}</p>
+            <ul className="space-y-1.5">
+              {s.lines.map((line, i) => (
+                <li key={i} className={`text-xs ${ZONE_TONE[line.tone] || "text-slate-300"}`}>{line.text}</li>
+              ))}
+            </ul>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+};
+
 const fmtRatio = (v) => (v == null ? "—" : v.toFixed(2));
 
 // Key ratios shown as plain facts, not bucketed Perk/Pitfall -- see
@@ -412,6 +483,7 @@ const PeterTingleTool = () => {
               <PerksPitfalls perks={result.fundamental_observations.perks} pitfalls={result.fundamental_observations.pitfalls} />
             </>
           )}
+          <TechnicalObservations technicalObservations={result.technical_observations} />
         </div>
       )}
     </div>
