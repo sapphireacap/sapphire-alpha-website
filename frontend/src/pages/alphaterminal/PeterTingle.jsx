@@ -273,6 +273,57 @@ const TechnicalObservations = ({ technicalObservations: data }) => {
   );
 };
 
+const adxLines = (adx) => {
+  if (!adx) return [];
+  const trendLabel = adx.trend.charAt(0).toUpperCase() + adx.trend.slice(1);
+  const lines = [{ text: `The Daily DMI position is ${trendLabel.toLowerCase()}. Current ADX reading is ${adx.adx}.`, tone: adx.trend }];
+  lines.push({ text: `The Daily ADX is ${adx.strong_trend ? "above" : "below"} 20 -- ${adx.strong_trend ? "a genuine trend" : "not yet a strong trend"}.`, tone: null });
+  if (adx.rising != null) lines.push({ text: `ADX is ${adx.rising ? "rising" : "falling"}.`, tone: null });
+  lines.push({ text: `+DI is ${adx.plus_di}, -DI is ${adx.minus_di}.`, tone: null });
+  return lines;
+};
+
+const ichimokuLines = (ich) => {
+  if (!ich) return [];
+  const biasLabel = ich.cloud_bias.charAt(0).toUpperCase() + ich.cloud_bias.slice(1);
+  return [
+    { text: `Price is ${ich.price_vs_cloud} the Ichimoku cloud.`, tone: ich.price_vs_cloud === "inside" ? null : ich.price_vs_cloud === "above" ? "bullish" : "bearish" },
+    { text: `The cloud is ${biasLabel.toLowerCase()}.`, tone: ich.cloud_bias },
+    { text: `Current cloud range is ${ich.current_cloud_range_pct}% and future cloud range is ${ich.future_cloud_range_pct}%.`, tone: null },
+  ];
+};
+
+const DIRECTIONAL_SECTIONS = [
+  { key: "adx", title: "ADX / DMI Observations", build: (d) => adxLines(d.adx) },
+  { key: "ichimoku", title: "Ichimoku Observations", build: (d) => ichimokuLines(d.ichimoku) },
+];
+
+const DirectionalObservations = ({ directionalObservations: data }) => {
+  if (!data) return null;
+  const sections = DIRECTIONAL_SECTIONS.map((s) => ({ ...s, lines: s.build(data) })).filter((s) => s.lines.length);
+  if (!sections.length) return null;
+
+  return (
+    <div className={`${SURFACE} overflow-hidden`} data-testid="peter-tingle-directional-observations">
+      <div className="px-6 pt-6 pb-4">
+        <h3 className="text-base font-bold text-white">ADX &amp; Ichimoku Observations</h3>
+      </div>
+      <div className="px-6 pb-6 grid gap-6 sm:grid-cols-2">
+        {sections.map((s) => (
+          <div key={s.key} data-testid={`peter-tingle-dir-${s.key}`}>
+            <p className="font-mono-ui text-[10px] uppercase tracking-[0.18em] text-slate-500 mb-2">{s.title}</p>
+            <ul className="space-y-1.5">
+              {s.lines.map((line, i) => (
+                <li key={i} className={`text-xs ${ZONE_TONE[line.tone] || "text-slate-300"}`}>{line.text}</li>
+              ))}
+            </ul>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+};
+
 const fmtRatio = (v) => (v == null ? "—" : v.toFixed(2));
 
 // Key ratios shown as plain facts, not bucketed Perk/Pitfall -- see
@@ -484,6 +535,7 @@ const PeterTingleTool = () => {
             </>
           )}
           <TechnicalObservations technicalObservations={result.technical_observations} />
+          <DirectionalObservations directionalObservations={result.directional_observations} />
         </div>
       )}
     </div>
