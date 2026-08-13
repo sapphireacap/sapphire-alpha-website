@@ -9,8 +9,9 @@ ingestion routes are the only ones gated, split cron/admin like everywhere
 else in this codebase.
 """
 import logging
+from datetime import datetime, timezone
 
-from fastapi import APIRouter, HTTPException, Request, Depends
+from fastapi import APIRouter, BackgroundTasks, HTTPException, Request, Depends
 
 from stock_terminal_ingestion import run_nightly_ingestion
 from stock_terminal_fundamentals import ingest_fundamentals
@@ -21,31 +22,75 @@ from stock_terminal_verification import verify_price
 logger = logging.getLogger(__name__)
 
 MOVERS_LIMIT = 10
+INGESTION_STATUS_COLLECTION = "stock_terminal_ingestion_status"
+# Confirmed live 2026-08-13: the nightly ~500-symbol pipeline had gone
+# completely un-scheduled (no cron anywhere in this repo ever called
+# either admin/ingest-* route) AND both routes blocked the request for
+# the whole run -- a 500-symbol sequential Definedge pull is minutes
+# long, far past any external cron's timeout, the same failure mode
+# server.py's OTP auto-login route had before its 2026-08-12 fix. Real
+# damage: last successful run was 2026-07-28 (breadth only counted
+# 344/500, meaning even that run was itself cut short), and TCS/SBIN/
+# TATASTEEL had ZERO price bars ingested at all. Both routes below now
+# queue and return immediately; the real outcome is recorded here and
+# surfaced via GET .../admin/ingestion-status, same "a 200 means
+# queued, not done" discipline as the OTP fix.
 
 
 def create_stock_terminal_router(db, definedge, get_current_admin, cron_secret: str) -> APIRouter:
     router = APIRouter(prefix="/stock-terminal")
 
-    async def _run_ingestion(limit: int = None) -> dict:
+    async def _record_ingestion_status(job_id: str, outcome: str, detail=None, started_at: datetime = None):
+        await db[INGESTION_STATUS_COLLECTION].update_one(
+            {"id": job_id},
+            {"$set": {
+                "id": job_id, "outcome": outcome, "detail": detail,
+                "started_at": (started_at or datetime.now(timezone.utc)).isoformat(),
+                "finished_at": datetime.now(timezone.utc).isoformat(),
+            }},
+            upsert=True,
+        )
+
+    async def _run_ingestion_background(limit: int = None):
+        started_at = datetime.now(timezone.utc)
         try:
-            return await run_nightly_ingestion(db, definedge, limit=limit)
-        except Exception as e:  # noqa: BLE001
-            raise HTTPException(status_code=502, detail=f"Stock Terminal ingestion failed: {e}")
+            result = await run_nightly_ingestion(db, definedge, limit=limit)
+        except Exception as e:  # noqa: BLE001 -- background task, must not raise into the event loop
+            logger.exception("Stock Terminal nightly ingestion failed")
+            await _record_ingestion_status("nightly", "error", str(e), started_at)
+            return
+        logger.info("Stock Terminal nightly ingestion done: %s", result)
+        await _record_ingestion_status("nightly", "ok", result, started_at)
 
     @router.post("/admin/ingest-nightly")
-    async def ingest_nightly_cron(request: Request):
+    async def ingest_nightly_cron(request: Request, background_tasks: BackgroundTasks):
         """External-cron entry point -- recommend once/day after market
-        close, same as every other nightly-refresh job in this codebase."""
+        close, same as every other nightly-refresh job in this codebase.
+        Queues and returns immediately -- a real ~500-symbol run is
+        minutes long, far past any external cron's timeout if it blocked
+        the request (confirmed live: this is exactly why the pipeline
+        had silently stopped completing, see the module-level note)."""
         if not cron_secret or request.headers.get("X-Cron-Key") != cron_secret:
             raise HTTPException(status_code=401, detail="Invalid cron key")
-        return await _run_ingestion()
+        background_tasks.add_task(_run_ingestion_background)
+        return {"status": "started"}
 
     @router.post("/admin/ingest-nightly-now")
-    async def ingest_nightly_admin(limit: int = None, admin: dict = Depends(get_current_admin)):
+    async def ingest_nightly_admin(background_tasks: BackgroundTasks, limit: int = None, admin: dict = Depends(get_current_admin)):
         """Same pipeline, for manual/admin-triggered runs -- `limit` lets a
         verification run stay small (e.g. ?limit=50) instead of pulling the
-        full ~500-symbol universe every time."""
-        return await _run_ingestion(limit=limit)
+        full ~500-symbol universe every time. Also queued, for the same
+        reason as the cron entry point above."""
+        background_tasks.add_task(_run_ingestion_background, limit)
+        return {"status": "started"}
+
+    @router.get("/admin/ingestion-status")
+    async def ingestion_status(admin: dict = Depends(get_current_admin)):
+        """Both queued routes return before the work finishes, so this is
+        the only place a failure (or even just "still running") shows up."""
+        nightly = await db[INGESTION_STATUS_COLLECTION].find_one({"id": "nightly"}, {"_id": 0})
+        fundamentals = await db[INGESTION_STATUS_COLLECTION].find_one({"id": "fundamentals"}, {"_id": 0})
+        return {"nightly": nightly, "fundamentals": fundamentals}
 
     @router.get("/market-pulse")
     async def alpha_pulse():
@@ -95,24 +140,31 @@ def create_stock_terminal_router(db, definedge, get_current_admin, cron_secret: 
         return rows
 
     # ---- Phase 2: fundamentals ingestion + Facet View + Lumen Agent -------
-    async def _run_fundamentals_ingestion(limit: int = None) -> dict:
+    async def _run_fundamentals_ingestion_background(limit: int = None):
+        started_at = datetime.now(timezone.utc)
         try:
-            return await ingest_fundamentals(db, limit=limit)
-        except Exception as e:  # noqa: BLE001
-            raise HTTPException(status_code=502, detail=f"Stock Terminal fundamentals ingestion failed: {e}")
+            result = await ingest_fundamentals(db, limit=limit)
+        except Exception as e:  # noqa: BLE001 -- background task, must not raise into the event loop
+            logger.exception("Stock Terminal fundamentals ingestion failed")
+            await _record_ingestion_status("fundamentals", "error", str(e), started_at)
+            return
+        logger.info("Stock Terminal fundamentals ingestion done: %s", result)
+        await _record_ingestion_status("fundamentals", "ok", result, started_at)
 
     @router.post("/admin/ingest-fundamentals")
-    async def ingest_fundamentals_cron(request: Request):
+    async def ingest_fundamentals_cron(request: Request, background_tasks: BackgroundTasks):
         """External-cron entry point -- fundamentals change far less often
         than price, a weekly cadence is plenty (unlike the daily price/
-        breadth pipeline above)."""
+        breadth pipeline above). Queued, same reason as ingest-nightly."""
         if not cron_secret or request.headers.get("X-Cron-Key") != cron_secret:
             raise HTTPException(status_code=401, detail="Invalid cron key")
-        return await _run_fundamentals_ingestion()
+        background_tasks.add_task(_run_fundamentals_ingestion_background)
+        return {"status": "started"}
 
     @router.post("/admin/ingest-fundamentals-now")
-    async def ingest_fundamentals_admin(limit: int = None, admin: dict = Depends(get_current_admin)):
-        return await _run_fundamentals_ingestion(limit=limit)
+    async def ingest_fundamentals_admin(background_tasks: BackgroundTasks, limit: int = None, admin: dict = Depends(get_current_admin)):
+        background_tasks.add_task(_run_fundamentals_ingestion_background, limit)
+        return {"status": "started"}
 
     @router.get("/stock/{symbol}")
     async def stock_bundle(symbol: str):
