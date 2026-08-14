@@ -58,6 +58,7 @@ DISABLED_FEATURES = set(
 
 from definedge_service import DefinedgeService, DefinedgeError, derive_bias, derive_bias_4, INDEX_CONFIG
 import definedge_otp_email
+import mt5_client as mt5c
 if "journal" not in DISABLED_FEATURES:
     from journal_routes import create_journal_router
     from journal_analytics import create_analytics_router
@@ -1298,6 +1299,35 @@ async def post_xauusd_tick(request: Request):
     return {"ok": True}
 
 
+@api_router.post("/terminal/xauusd-bars")
+async def post_xauusd_bars(request: Request):
+    """Batch ingest of 1-minute XAUUSD bars from the same local MT5
+    publisher script that feeds /terminal/xauusd-tick above — this is what
+    backs the intraday P&F and Renko charts (see mt5_client.py for why bars
+    are pushed rather than fetched). X-Cron-Key gated, machine caller."""
+    if not CRON_SECRET or request.headers.get("X-Cron-Key") != CRON_SECRET:
+        raise HTTPException(status_code=401, detail="Invalid cron key")
+    body = await request.json()
+    bars = body.get("bars")
+    if not isinstance(bars, list) or not bars:
+        raise HTTPException(status_code=400, detail="bars must be a non-empty list")
+    if len(bars) > mt5c.MAX_INGEST_BARS:
+        raise HTTPException(status_code=400, detail=f"Too many bars (max {mt5c.MAX_INGEST_BARS}).")
+    required = ("ts", "open", "high", "low", "close")
+    for b in bars:
+        if not isinstance(b, dict) or any(k not in b for k in required):
+            raise HTTPException(status_code=400, detail=f"each bar needs {', '.join(required)}")
+    return await mt5c.store_bars(db, bars)
+
+
+@api_router.get("/terminal/xauusd-feed-status")
+async def xauusd_feed_status(admin: dict = Depends(get_current_admin)):
+    """Is the local MT5 publisher actually alive and how stale is the data —
+    admin-only diagnostics, so a silently-dead feed is visible rather than
+    showing up as a mysteriously frozen chart."""
+    return await mt5c.feed_status(db)
+
+
 @api_router.get("/terminal/external-spot")
 async def get_external_spot(symbol: str):
     """SPX / XAUUSD spot via a server-side Yahoo Finance proxy (see module
@@ -1737,6 +1767,7 @@ async def on_startup():
         )
         await db.quant_lab_sharpe_cache.create_index("symbol", unique=True)
         await db.quant_lab_momentum_cache.create_index("symbol", unique=True)
+        await mt5c.ensure_indexes(db)
         await db.ipos.create_index("id", unique=True)
         # partialFilterExpression, not sparse=True: every IPO doc stores
         # nse_symbol explicitly (None for manual entries), and a sparse index

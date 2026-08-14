@@ -44,10 +44,11 @@ const LIVE_REFRESH_MS = {
   daily: 60000, weekly: 60000, monthly: 60000,
 };
 
-// See PnfChart.jsx's identical constant for the full reasoning. US Indices
-// now has intraday too (real bars from Alpaca, via each index's tracking
-// ETF); COMMODITY (Gold) still doesn't and stays on this list alone.
-const COMMODITY_INTERVALS = ["daily", "weekly", "monthly"];
+// See PnfChart.jsx's identical constant for the full reasoning — no longer
+// a restriction on any segment, just a marker for which intervals still
+// come from Yahoo (and therefore a different underlying instrument than
+// the same selector's intraday chart).
+const DAILY_PLUS_INTERVALS = ["daily", "weekly", "monthly"];
 
 // See PnfChart.jsx's identical constant for the full reasoning.
 const US_INDEX_KEYS = ["NDX", "SPX"];
@@ -600,8 +601,8 @@ const RenkoChart = () => {
   const gridRef = useRef(null);
 
   // See PnfChart.jsx's identical logic for the reasoning.
-  const canGoLive = segment === "COMMODITY" ? false
-    : segment === "US" ? !COMMODITY_INTERVALS.includes(interval)
+  const canGoLive = (segment === "US" || segment === "COMMODITY")
+    ? !DAILY_PLUS_INTERVALS.includes(interval)
     : true;
 
   useEffect(() => {
@@ -629,11 +630,8 @@ const RenkoChart = () => {
       .catch(() => setStrikes([]));
   }, [symbol, expiry, segment]);
 
-  // COMMODITY only has daily+ history; US no longer needs this reset —
-  // every interval is available there now.
-  useEffect(() => {
-    if (segment === "COMMODITY" && !COMMODITY_INTERVALS.includes(interval)) setIntervalKey("daily");
-  }, [segment, interval]);
+  // Every segment now offers every interval, so nothing needs resetting
+  // when the segment changes.
 
   const fetchChart = useCallback(async ({ silent = false } = {}) => {
     if (!symbol) return;
@@ -768,8 +766,7 @@ const RenkoChart = () => {
           )}
 
           <select className={compactField} value={interval} onChange={(e) => setIntervalKey(e.target.value)}>
-            {(segment === "COMMODITY" ? INTERVALS.filter((i) => COMMODITY_INTERVALS.includes(i.key)) : INTERVALS)
-              .map((i) => <option key={i.key} value={i.key}>{i.label}</option>)}
+            {INTERVALS.map((i) => <option key={i.key} value={i.key}>{i.label}</option>)}
           </select>
           <select className={compactField} value={boxPct} onChange={(e) => setBoxPct(Number(e.target.value))}>
             {BOX_SIZES.map((b) => <option key={b} value={b}>{b}% brick</option>)}
@@ -809,14 +806,16 @@ const RenkoChart = () => {
 
         {segment === "US" && US_INDEX_KEYS.includes(symbol) && (
           <p className="text-[11px] text-slate-500 mt-2 max-w-3xl">
-            {COMMODITY_INTERVALS.includes(interval)
+            {DAILY_PLUS_INTERVALS.includes(interval)
               ? "Nasdaq 100 and S&P 500 are plotted from the real index (daily/weekly/monthly)."
               : "Intraday plots from each index's most liquid tracking ETF (QQQ / SPY), live — a different underlying from the daily/weekly/monthly index chart above."}
           </p>
         )}
         {segment === "COMMODITY" && (
           <p className="text-[11px] text-slate-500 mt-2 max-w-3xl">
-            Gold is plotted from COMEX futures (the free proxy for spot XAUUSD — no free spot forex feed exists) — daily/weekly/monthly only, no intraday.
+            {DAILY_PLUS_INTERVALS.includes(interval)
+              ? "Gold is plotted from COMEX futures at daily/weekly/monthly — a close proxy for spot XAUUSD, not spot itself."
+              : "Intraday plots spot XAUUSD, live — the actual spot market, not the COMEX futures proxy used on the daily/weekly/monthly chart."}
           </p>
         )}
         {segment === "CRYPTO" && (

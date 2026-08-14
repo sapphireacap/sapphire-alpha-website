@@ -51,19 +51,15 @@ const LIVE_REFRESH_MS = {
   daily: 60000, weekly: 60000, monthly: 60000,
 };
 
-// COMMODITY (Gold) still comes from Yahoo Finance's free chart endpoint,
-// daily history only — see backend/yahoo_finance_client.py.
-//
-// US Indices used to share this exact ceiling; it no longer does. US
-// Indices now has intraday too — real bars from Alpaca (backend/
-// alpaca_client.py), via each index's tracking ETF rather than the index
-// itself (Alpaca has no index-level product; QQQ/SPY stand in for NDX/
-// SPX, same proxy relationship Gold already has to COMEX futures). Every
-// interval this platform supports is available for US; daily/weekly/
-// monthly still route through Yahoo's real index history, unchanged —
-// there is no separate US_INTERVALS list any more because there is
-// nothing left for it to restrict.
-const COMMODITY_INTERVALS = ["daily", "weekly", "monthly"];
+// The intervals served by Yahoo Finance's free chart endpoint, which has no
+// real intraday data (see backend/yahoo_finance_client.py). No longer a
+// restriction on any segment — both segments that used to be capped here
+// have their own intraday source now (US Indices via Alpaca, Gold via a
+// local MetaTrader 5 terminal, see backend/mt5_client.py) — this just
+// marks which intervals still route through Yahoo, since for both of those
+// segments the daily+ chart and the intraday chart are different
+// underlying instruments and the UI has to say so.
+const DAILY_PLUS_INTERVALS = ["daily", "weekly", "monthly"];
 
 // The only two selectors under "US" that are index proxies rather than
 // real, tradable instruments — see alpaca_client.py's module docstring.
@@ -889,10 +885,11 @@ const PnfChart = () => {
 
   // Every interval can go live now (see LIVE_REFRESH_MS) -- except a
   // Yahoo-backed chart, which never can (cached daily history, no live
-  // quote). That's COMMODITY always, and US only at daily/weekly/monthly
-  // -- US intraday runs through Alpaca now, which genuinely does refresh.
-  const canGoLive = segment === "COMMODITY" ? false
-    : segment === "US" ? !COMMODITY_INTERVALS.includes(interval)
+  // quote). That's US and COMMODITY at daily/weekly/monthly only; both
+  // segments' intraday runs through a genuinely refreshing source now
+  // (Alpaca / a local MT5 terminal respectively).
+  const canGoLive = (segment === "US" || segment === "COMMODITY")
+    ? !DAILY_PLUS_INTERVALS.includes(interval)
     : true;
 
   // Symbol search
@@ -923,12 +920,8 @@ const PnfChart = () => {
       .catch(() => setStrikes([]));
   }, [symbol, expiry, segment]);
 
-  // COMMODITY only has daily+ history — drop back to daily if an intraday
-  // interval was left selected from a different segment. US no longer
-  // needs this: every interval is available there now.
-  useEffect(() => {
-    if (segment === "COMMODITY" && !COMMODITY_INTERVALS.includes(interval)) setIntervalKey("daily");
-  }, [segment, interval]);
+  // Every segment now offers every interval, so nothing needs resetting
+  // when the segment changes.
 
   // `silent` skips the loading spinner/camera reset — used by the live
   // auto-refresh poll below so a background update doesn't yank focus
@@ -1067,8 +1060,7 @@ const PnfChart = () => {
           )}
 
           <select className={compactField} value={interval} onChange={(e) => setIntervalKey(e.target.value)}>
-            {(segment === "COMMODITY" ? INTERVALS.filter((i) => COMMODITY_INTERVALS.includes(i.key)) : INTERVALS)
-              .map((i) => <option key={i.key} value={i.key}>{i.label}</option>)}
+            {INTERVALS.map((i) => <option key={i.key} value={i.key}>{i.label}</option>)}
           </select>
           <select className={compactField} value={boxPct} onChange={(e) => setBoxPct(Number(e.target.value))}>
             {BOX_SIZES.map((b) => <option key={b} value={b}>{b}% box</option>)}
@@ -1108,14 +1100,16 @@ const PnfChart = () => {
 
         {segment === "US" && US_INDEX_KEYS.includes(symbol) && (
           <p className="text-[11px] text-slate-500 mt-2 max-w-3xl">
-            {COMMODITY_INTERVALS.includes(interval)
+            {DAILY_PLUS_INTERVALS.includes(interval)
               ? "Nasdaq 100 and S&P 500 are plotted from the real index (daily/weekly/monthly)."
               : "Intraday plots from each index's most liquid tracking ETF (QQQ / SPY), live — a different underlying from the daily/weekly/monthly index chart above."}
           </p>
         )}
         {segment === "COMMODITY" && (
           <p className="text-[11px] text-slate-500 mt-2 max-w-3xl">
-            Gold is plotted from COMEX futures (the free proxy for spot XAUUSD — no free spot forex feed exists) — daily/weekly/monthly only, no intraday.
+            {DAILY_PLUS_INTERVALS.includes(interval)
+              ? "Gold is plotted from COMEX futures at daily/weekly/monthly — a close proxy for spot XAUUSD, not spot itself."
+              : "Intraday plots spot XAUUSD, live — the actual spot market, not the COMEX futures proxy used on the daily/weekly/monthly chart."}
           </p>
         )}
         {segment === "CRYPTO" && (

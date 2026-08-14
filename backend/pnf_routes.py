@@ -21,6 +21,7 @@ from pydantic import BaseModel
 
 import alpaca_client as ac
 import binance_client as bn
+import mt5_client as mt5c
 import pnf_chart
 import yahoo_finance_client as yf
 from definedge_service import DefinedgeError
@@ -34,8 +35,9 @@ VALID_SEGMENTS = ("NSE", "FUT", "OPT", "US", "COMMODITY", "CRYPTO")
 # weekly/monthly is the ceiling for anything routed through _chart_yahoo.
 # US Indices now has a second, intraday-only path via alpaca_client — see
 # _chart_us_intraday below — so this no longer bounds the "US" segment as
-# a whole, only what Yahoo itself can serve. COMMODITY (Gold) has no
-# equivalent live path and stays on this list alone.
+# a whole, only what Yahoo itself can serve. COMMODITY (Gold) likewise got
+# its own intraday path (mt5_client, _chart_commodity_intraday below), so
+# this now bounds only the Yahoo-served daily/weekly/monthly charts.
 US_INTERVALS = ("daily", "weekly", "monthly")
 MAX_SCAN_SYMBOLS = 40
 
@@ -184,6 +186,41 @@ def create_pnf_router(db, definedge, get_current_subscriber) -> APIRouter:
         }
         return payload
 
+    async def _chart_commodity_intraday(symbol: str, interval: str, box_pct: Optional[float],
+                                        box_value: Optional[float], cfg, xo_lookback: int,
+                                        ma_period: int, days: int) -> dict:
+        """Gold, intraday only — real spot XAUUSD bars pushed from a local
+        MetaTrader 5 terminal (see mt5_client.py's module docstring). Note
+        the instrument differs from this selector's own daily/weekly/monthly
+        chart, which is still the COMEX futures proxy — surfaced in
+        `tradingsymbol` so the UI can't present them as one series."""
+        sym = symbol.strip().upper()
+        if sym != mt5c.SYMBOL:
+            raise HTTPException(status_code=404, detail=f"No instrument found for {symbol}.")
+        if interval not in mt5c.TIMEFRAME_MAP:
+            raise HTTPException(status_code=400,
+                                detail=f"interval must be one of {', '.join(US_INTERVALS)} (daily+) "
+                                       f"or {', '.join(mt5c.TIMEFRAME_MAP)} (intraday minutes) for Gold.")
+        try:
+            bars = await mt5c.intraday_bars(db, interval, days=days)
+            payload = pnf_chart.build_chart(
+                bars, box_pct=box_pct, box_value=box_value,
+                reversal=pnf_chart.DEFAULT_REVERSAL, cfg=cfg,
+                xo_lookback=xo_lookback, ma_period=ma_period,
+            )
+        except pnf_chart.PnfError as e:
+            raise HTTPException(status_code=400, detail=str(e))
+        except mt5c.Mt5DataError as e:
+            logger.warning("MT5 intraday fetch failed for %s: %s", sym, e)
+            raise HTTPException(status_code=502, detail=str(e))
+        payload["params"]["interval"] = interval
+        payload["instrument"] = {
+            "symbol": sym,
+            "selector_segment": "COMMODITY",
+            "tradingsymbol": "Gold (Spot XAUUSD)",
+        }
+        return payload
+
     async def _chart_yahoo_equity(symbol: str, interval: str, box_pct: Optional[float],
                                   box_value: Optional[float], cfg, xo_lookback: int,
                                   ma_period: int) -> dict:
@@ -300,8 +337,11 @@ def create_pnf_router(db, definedge, get_current_subscriber) -> APIRouter:
                 return await _chart_us_intraday(symbol, interval, box_pct, box_value, cfg, xo_lookback, ma_period, days)
             return await _chart_us_stock_intraday(symbol, interval, box_pct, box_value, cfg, xo_lookback, ma_period, days)
         if segment == "COMMODITY":
-            return await _chart_yahoo(symbol, interval, box_pct, box_value, cfg, xo_lookback, ma_period,
-                                      yf.COMMODITY_SYMBOLS, "COMMODITY")
+            if interval in US_INTERVALS:
+                return await _chart_yahoo(symbol, interval, box_pct, box_value, cfg, xo_lookback, ma_period,
+                                          yf.COMMODITY_SYMBOLS, "COMMODITY")
+            return await _chart_commodity_intraday(symbol, interval, box_pct, box_value, cfg,
+                                                   xo_lookback, ma_period, days)
         if segment == "CRYPTO":
             raise HTTPException(status_code=400,
                                 detail="Crypto charts are built from client-fetched bars — use POST /pnf/chart/crypto.")
