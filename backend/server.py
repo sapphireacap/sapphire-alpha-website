@@ -1246,20 +1246,76 @@ EXTERNAL_QUOTE_SYMBOLS = {"SPX": "%5EGSPC", "GOLD": "GC=F"}  # GOLD is COMEX gol
 _external_quote_cache = {}  # symbol -> {"data": {...}, "fetched_at": float}
 EXTERNAL_QUOTE_CACHE_TTL = 20  # seconds
 
+# ---------------------------------------------------------------------------
+# MT5 live tick ingest — GOLD only. A local script on a Windows box running
+# the MetaTrader5 terminal (mt5.symbol_info_tick("XAUUSD") -- that Python API
+# only talks to a terminal on the same machine, no network mode) pushes ticks
+# here every 1-2s. Real spot forex-style XAUUSD, not the GC=F futures proxy
+# below. Same fail-open philosophy as everything else in this block: if the
+# publisher script or the PC it runs on goes offline, _mt5_tick_cache just
+# goes stale and GOLD quietly falls back to the Yahoo GC=F proxy -- the site
+# never shows an error over this.
+# ---------------------------------------------------------------------------
+_mt5_tick_cache = None  # {"bid": float, "ask": float, "received_at": float} | None
+MT5_TICK_STALE_AFTER = 30  # seconds -- older than this, treat as offline
+
+
+def _apply_mt5_override(symbol: str, data: dict, now: float) -> dict:
+    """Strips the internal `prev_close` field data carries for this purpose
+    and, for GOLD with a fresh MT5 tick on hand, recomputes spot/change off
+    the tick's mid price instead of Yahoo's GC=F price."""
+    public = {k: v for k, v in data.items() if k != "prev_close"}
+    if symbol != "GOLD" or not _mt5_tick_cache:
+        return public
+    if (now - _mt5_tick_cache["received_at"]) > MT5_TICK_STALE_AFTER:
+        return public
+    prev_close = data.get("prev_close")
+    if not prev_close:
+        return public
+    mid = (_mt5_tick_cache["bid"] + _mt5_tick_cache["ask"]) / 2
+    change = mid - prev_close
+    change_pct = (change / prev_close) * 100
+    return {
+        "spot": f"{mid:,.2f}",
+        "change": f"{'+' if change >= 0 else ''}{change:.2f}",
+        "change_pct": f"{'+' if change_pct >= 0 else ''}{change_pct:.2f}",
+    }
+
+
+@api_router.post("/terminal/xauusd-tick")
+async def post_xauusd_tick(request: Request):
+    """Ingest endpoint for the local MT5 publisher script. X-Cron-Key gated
+    like every other machine caller here, not admin login."""
+    if not CRON_SECRET or request.headers.get("X-Cron-Key") != CRON_SECRET:
+        raise HTTPException(status_code=401, detail="Invalid cron key")
+    body = await request.json()
+    bid = body.get("bid")
+    ask = body.get("ask")
+    if not isinstance(bid, (int, float)) or not isinstance(ask, (int, float)):
+        raise HTTPException(status_code=400, detail="bid and ask must be numbers")
+    global _mt5_tick_cache
+    _mt5_tick_cache = {"bid": float(bid), "ask": float(ask), "received_at": time.monotonic()}
+    return {"ok": True}
+
 
 @api_router.get("/terminal/external-spot")
 async def get_external_spot(symbol: str):
     """SPX / XAUUSD spot via a server-side Yahoo Finance proxy (see module
     note above). Fails open (null spot), same convention as /terminal/spot
     — never surfaces an error to site visitors, and falls back to the last
-    real cached value (rather than null) if a refresh attempt fails."""
+    real cached value (rather than null) if a refresh attempt fails.
+
+    GOLD only: if a fresh MT5 tick is on hand (see _mt5_tick_cache above),
+    its mid price overrides Yahoo's GC=F spot -- real spot XAUUSD beats a
+    futures proxy. change/change_pct still come off Yahoo's previous close
+    since MT5 here is tick-only, no historical bars."""
     if symbol not in EXTERNAL_QUOTE_SYMBOLS:
         raise HTTPException(status_code=400, detail=f"Unknown symbol. Must be one of {list(EXTERNAL_QUOTE_SYMBOLS)}.")
 
     cached = _external_quote_cache.get(symbol)
     now = time.monotonic()
     if cached and (now - cached["fetched_at"]) < EXTERNAL_QUOTE_CACHE_TTL:
-        return cached["data"]
+        return _apply_mt5_override(symbol, cached["data"], now)
 
     yahoo_symbol = EXTERNAL_QUOTE_SYMBOLS[symbol]
     url = f"https://query1.finance.yahoo.com/v8/finance/chart/{yahoo_symbol}"
@@ -1277,7 +1333,7 @@ async def get_external_spot(symbol: str):
         meta = result["meta"]
         price = meta.get("regularMarketPrice")
         prev_close = meta.get("previousClose") or meta.get("chartPreviousClose")
-        data = {"spot": None, "change": None, "change_pct": None}
+        data = {"spot": None, "change": None, "change_pct": None, "prev_close": prev_close}
         if price is not None and prev_close:
             change = price - prev_close
             change_pct = (change / prev_close) * 100
@@ -1285,13 +1341,14 @@ async def get_external_spot(symbol: str):
                 "spot": f"{price:,.2f}",
                 "change": f"{'+' if change >= 0 else ''}{change:.2f}",
                 "change_pct": f"{'+' if change_pct >= 0 else ''}{change_pct:.2f}",
+                "prev_close": prev_close,
             }
         _external_quote_cache[symbol] = {"data": data, "fetched_at": now}
-        return data
+        return _apply_mt5_override(symbol, data, now)
     except Exception as e:  # noqa: BLE001 — best-effort external proxy, never break the homepage
         logger.warning("External quote proxy failed for %s: %s", symbol, e)
         if cached:
-            return cached["data"]  # stale-but-real beats nothing
+            return _apply_mt5_override(symbol, cached["data"], now)  # stale-but-real beats nothing
         return {"spot": None, "change": None, "change_pct": None}
 
 
