@@ -124,13 +124,15 @@ const AccountMenu = ({ user, onUserChange }) => {
                   <p className="text-sm text-white font-medium truncate">{user.username ? `@${user.username}` : "No username yet"}</p>
                   <p className="text-xs text-slate-500 truncate mt-0.5">{user.email}</p>
                 </div>
-                <button
-                  onClick={startEdit}
-                  className="w-full flex items-center gap-3 text-left px-3.5 py-2.5 rounded-lg text-sm text-slate-300 hover:text-white hover:bg-white/5 transition-colors duration-200"
-                  data-testid="nav-account-change-username"
-                >
-                  <Pencil size={15} className="text-slate-500" /> {user.username ? "Change username" : "Set username"}
-                </button>
+                {!user.username && (
+                  <button
+                    onClick={startEdit}
+                    className="w-full flex items-center gap-3 text-left px-3.5 py-2.5 rounded-lg text-sm text-slate-300 hover:text-white hover:bg-white/5 transition-colors duration-200"
+                    data-testid="nav-account-change-username"
+                  >
+                    <Pencil size={15} className="text-slate-500" /> Set username
+                  </button>
+                )}
                 <button
                   onClick={logout}
                   className="w-full flex items-center gap-3 text-left px-3.5 py-2.5 rounded-lg text-sm text-slate-300 hover:text-white hover:bg-white/5 transition-colors duration-200"

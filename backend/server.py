@@ -637,6 +637,11 @@ class UsernameUpdate(BaseModel):
 
 @api_router.patch("/auth/username")
 async def update_username(payload: UsernameUpdate, user: dict = Depends(get_current_user)):
+    # One-time choice, not editable after -- this endpoint only exists for
+    # the pre-migration accounts that don't have one yet. Enforced here,
+    # not just hidden in the UI, since the UI can't be trusted alone.
+    if user.get("username"):
+        raise HTTPException(status_code=409, detail="Username is already set and can't be changed.")
     username = await _check_username(payload.username, current_email=user["email"])
     await db.users.update_one({"email": user["email"]}, {"$set": {"username": username}})
     return {"username": username}
