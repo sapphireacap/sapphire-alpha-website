@@ -724,10 +724,12 @@ async def _send_username_migration_emails():
             html=_wrap_email(
                 "Pick a username",
                 f"Hi {u.get('name') or 'there'},<br/><br/>"
-                "Accounts on Sapphire Alpha Capital now have usernames — yours will show in place of your email "
-                "wherever you're signed in. Sign in and use the account menu in the top-right to set yours "
-                "(it takes a few seconds, and nothing else about your account changes).<br/><br/>"
-                f'<a href="{FRONTEND_BASE_URL}/login" style="color:#437EEB;">Sign In</a>'
+                "You can now choose a username for your Sapphire Alpha Capital account.<br/><br/>"
+                "Your username will appear instead of your email address wherever you're signed in. Just sign in, "
+                "open the account menu in the top-right corner, and choose your username. It only takes a few "
+                "seconds.<br/><br/>"
+                "Nothing else about your account will change.<br/><br/>"
+                f'<a href="{FRONTEND_BASE_URL}/login" style="color:#437EEB;font-weight:bold;">Sign In &rarr;</a>'
             ),
         ))
         await db.users.update_one(
