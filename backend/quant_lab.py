@@ -172,13 +172,22 @@ async def _fetch_nifty500_list() -> list:
     return rows
 
 
-def _compute_risk_stats(bars: list) -> Optional[dict]:
+def _compute_risk_stats(bars: list, risk_free_rate: float = None) -> Optional[dict]:
     """Pure function, no I/O — mirrors _compute_backtest's contract: None
     when there isn't enough history for a meaningful read. Annualized Sharpe
     and Sortino use pricing.py's existing RISK_FREE_RATE (not reinvented),
     max drawdown from the peak-to-trough of the cumulative-return curve. A
     zero-volatility edge case (division by zero) isn't special-cased — it
-    naturally produces inf/NaN, which _clean() already collapses to None."""
+    naturally produces inf/NaN, which _clean() already collapses to None.
+
+    `risk_free_rate` defaults to pricing.RISK_FREE_RATE, which is an
+    approximate INDIAN short-term rate — correct for the Nifty 500 universe
+    this function was written for, and wrong for a USD-denominated one. The
+    Sharpe/Sortino FORMULA is identical either way; the risk-free rate is a
+    market input, like the instrument universe. Non-India callers pass their
+    own (see market_adapters.MarketAdapter.risk_free_rate). Every existing
+    India caller omits the argument and is therefore byte-identical to
+    before this parameter existed."""
     df = pd.DataFrame(bars)
     if len(df) < MIN_BARS_FOR_STATS:
         return None
@@ -189,7 +198,8 @@ def _compute_risk_stats(bars: list) -> Optional[dict]:
     if daily_return.empty:
         return None
 
-    rf_daily = RISK_FREE_RATE / TRADING_DAYS_PER_YEAR
+    rf = RISK_FREE_RATE if risk_free_rate is None else risk_free_rate
+    rf_daily = rf / TRADING_DAYS_PER_YEAR
     excess_mean = (daily_return - rf_daily).mean()
     sharpe = (excess_mean / daily_return.std()) * math.sqrt(TRADING_DAYS_PER_YEAR)
 

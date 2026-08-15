@@ -21,6 +21,11 @@ import { useIsAdmin } from "../../lib/auth";
 import USExitlineTool from "./USExitline";
 import { USMomentumLeadersTool, USMomentumInvestingTool } from "./USMomentum";
 import USMarketAssessmentTool from "./USMarketAssessment";
+import CryptoDashboard from "./CryptoDashboard";
+import {
+  MMExitline, MMBreadth, MMRelativeStrength, MMMomentumInvesting, MMMomentumLeaders,
+  MMSharpe, MMEwma, MMGammaPulse, MMIndexVector, MMPeterTingle, MMUnavailable,
+} from "./MultiMarketTools";
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 const EASE = [0.16, 1, 0.3, 1];
@@ -204,6 +209,21 @@ const LiveDashboard = ({ module, signals }) => (
     {module.kind === "us-breadth" && <BreadthTool seriesPath="/us-markets/breadth" fixedGroup="sp500" />}
     {module.kind === "us-relative-strength" && <RelativeStrengthMatrix groupPrefix="us-" defaultGroup="us-technology" />}
     {module.kind === "us-market-assessment" && <USMarketAssessmentTool />}
+    {/* Adapter-backed modules — one component per module, `market` picks
+        the data source. See MultiMarketTools.jsx for why these are generic
+        rather than one component per (module x market). */}
+    {module.kind === "mm-exitline" && <MMExitline market={module.market} />}
+    {module.kind === "mm-breadth" && <MMBreadth market={module.market} />}
+    {module.kind === "mm-relative-strength" && <MMRelativeStrength market={module.market} />}
+    {module.kind === "mm-momentum-investing" && <MMMomentumInvesting market={module.market} />}
+    {module.kind === "mm-momentum-leaders" && <MMMomentumLeaders market={module.market} />}
+    {module.kind === "mm-sharpe" && <MMSharpe market={module.market} />}
+    {module.kind === "mm-ewma" && <MMEwma market={module.market} />}
+    {module.kind === "mm-gamma-pulse" && <MMGammaPulse market={module.market} />}
+    {module.kind === "mm-index-vector" && <MMIndexVector market={module.market} />}
+    {module.kind === "mm-peter-tingle" && <MMPeterTingle market={module.market} />}
+    {module.kind === "mm-unavailable" && <MMUnavailable module={module} />}
+    {module.kind === "crypto-dashboard" && <CryptoDashboard />}
   </Section>
 );
 
@@ -377,7 +397,7 @@ export default function ModuleDetail() {
         <Header module={module} />
         <div className="container-x">
           {!module.live ? (
-            <PausedModuleNotice />
+            <PausedModuleNotice module={module} />
           ) : module.adminOnly && isAdmin !== true ? (
             <AdminOnlyNotice loading={isAdmin === null} />
           ) : (
@@ -385,6 +405,12 @@ export default function ModuleDetail() {
               <LiveDashboard module={module} signals={signals} />
               {!["exitline", "matrix", "breadth", "options-trend",
                  "us-exitline", "us-momentum-leaders", "us-momentum-investing", "us-breadth", "us-relative-strength", "us-market-assessment",
+                 // Adapter-backed modules have no track record of their own --
+                 // they compute live off market data rather than persisting a
+                 // call history the way the Vector does.
+                 "mm-exitline", "mm-breadth", "mm-relative-strength", "mm-momentum-investing",
+                 "mm-momentum-leaders", "mm-sharpe", "mm-ewma", "mm-gamma-pulse",
+                 "mm-index-vector", "mm-peter-tingle", "mm-unavailable", "crypto-dashboard",
                 ].includes(module.kind) && (
                 <HistoricalPerformance module={module} />
               )}
@@ -399,11 +425,17 @@ export default function ModuleDetail() {
 
 // Shown instead of the live dashboard for a paused module (module.live ===
 // false, see modules.js) -- makes no API calls.
-const PausedModuleNotice = () => (
+// `module.reason` is set when a module can't run in THIS market for a real
+// instrument/data reason (see modules.js MARKET_BLOCKERS) -- show that
+// instead of the generic paused copy, which would be misleading: nothing is
+// coming back online, the instrument doesn't exist here.
+const PausedModuleNotice = ({ module }) => (
   <Section no="01" testId="section-live-dashboard">
     <div className={`${SURFACE} border-dashed px-6 py-14 text-center`} data-testid="module-coming-soon">
       <p className="font-mono-ui text-[11px] uppercase tracking-[0.28em] text-slate-600 mb-3">Coming Soon</p>
-      <p className="text-sm font-light text-slate-500 max-w-sm mx-auto">This module is temporarily paused. Research access will resume once it's back online.</p>
+      <p className="text-sm font-light text-slate-500 max-w-xl mx-auto leading-relaxed">
+        {module?.reason || "This module is temporarily paused. Research access will resume once it's back online."}
+      </p>
     </div>
   </Section>
 );

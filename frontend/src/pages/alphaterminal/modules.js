@@ -1,5 +1,5 @@
 import {
-  Compass, Crosshair, Activity, Radar, BarChart3, Sliders, TrendingUp, Target, Gauge, GitBranch, LayoutDashboard, Flame, ShieldAlert,
+  Compass, Crosshair, Activity, Radar, BarChart3, Sliders, TrendingUp, Target, Gauge, GitBranch, LayoutDashboard, Flame, ShieldAlert, LineChart,
 } from "lucide-react";
 
 // Every research module shown on the Alpha Terminal directory and served at
@@ -92,7 +92,11 @@ export const MODULES = [
     live: true,
     icon: Radar,
     title: "Relative Strength Engine",
-    shortDescription: "Pairwise strength matrix across sector groups.",
+    // Card copy across every module is deliberately instrument-neutral so
+    // the identical string is true on all four market tabs -- naming NSE or
+    // the Nifty 500 here would read as a plain falsehood on Forex/Crypto.
+    // The market-specific detail lives in each module's own page instead.
+    shortDescription: "Pairwise strength matrix across peer groups.",
     overview: {
       purpose: "Ranks every stock in a sector against every other stock in that sector, not just against a single benchmark.",
       whatItMeasures: "For each pair, builds a Point & Figure chart of their price ratio — a rising ratio favors the first stock, a falling ratio favors the second. Each stock's score is how many of its pairwise comparisons currently favor it.",
@@ -149,7 +153,7 @@ export const MODULES = [
     live: true,
     icon: Flame,
     title: "Momentum Investing",
-    shortDescription: "Risk-adjusted momentum ranking across the Nifty 500.",
+    shortDescription: "Risk-adjusted momentum ranking across the market's universe.",
     overview: {
       purpose: "Ranks positional investment candidates by momentum, not raw price performance alone.",
       whatItMeasures: "Trailing 12-month return (excluding the most recent month) divided by realized volatility over the same window — a steadier uptrend outranks a choppier one with the same headline return.",
@@ -164,7 +168,7 @@ export const MODULES = [
     scannerKey: "momentum",
     icon: Activity,
     title: "Intraday Momentum Leaders",
-    shortDescription: "Ranks momentum across NSE.",
+    shortDescription: "Ranks short-term momentum across the market's liquid universe.",
     overview: {
       purpose: "Surfaces the NSE-listed names showing the strongest momentum right now.",
       whatItMeasures: "Ranks stocks by a composite momentum score built from price action, volume, and conviction scoring.",
@@ -178,7 +182,7 @@ export const MODULES = [
     live: false,
     icon: BarChart3,
     title: "Sharpe Dashboard",
-    shortDescription: "Risk-adjusted stock ranking engine.",
+    shortDescription: "Risk-adjusted ranking engine.",
     overview: {
       purpose: "Ranks opportunities by risk-adjusted return rather than raw performance.",
       whatItMeasures: "Computes Sharpe, Sortino, and maximum drawdown across the Nifty 500 for any basket you choose, or the full ranked universe.",
@@ -316,4 +320,199 @@ export const US_MODULES = [
   },
 ];
 
-export const getModule = (slug) => MODULES.find((m) => m.slug === slug) || US_MODULES.find((m) => m.slug === slug) || null;
+/* ==========================================================================
+   Multi-market parity — Forex, Crypto, and the rest of the US set
+   ==========================================================================
+
+   Every market tab shows the SAME twelve modules, with the same titles and
+   the same description copy, because all four are generated from MODULES
+   above rather than retyped per market. That is deliberate and load-bearing:
+   the acceptance criterion is that a module reads identically on every tab,
+   and copy that is written once cannot drift.
+
+   What legitimately varies per market is only:
+     - `slug`   the market's own page URL
+     - `live`   whether that market has the instrument the module needs
+     - `reason` why not, when it doesn't (shown on the locked card)
+     - `market` which backend adapter the page queries
+
+   The backend mirrors this exactly: one pure implementation of each
+   calculation, handed a different data adapter per market (see
+   backend/multi_market_engine.py). Nothing is reimplemented on either side.
+
+   US keeps its six ORIGINAL slugs (us-exitline, us-breadth, ...) because
+   those pages are live and already wired to their own components; the six
+   modules US was missing are added alongside them rather than renaming
+   anything. US also keeps Market Assessment, which has no India
+   counterpart — it is a genuine extra for that market, not a replacement
+   for one of the twelve.
+*/
+
+// Why a module cannot run in a given market. These are real instrument/data
+// limits, not "not built yet" — the backend returns the same reasons from
+// /api/markets/{market}/modules, and the locked card shows them verbatim.
+const NO_FORMULA_REASON = {
+  "swing-picks": "Swing Picks is a curated pick list synced from a CSV export, not a computed scan — there is no formula to run against another market's instruments.",
+  "breakout-candidates": "Breakout Candidates is served from curated ingested rows, not a computed scan — there is no formula to port.",
+};
+
+const MARKET_BLOCKERS = {
+  us: {},
+  forex: {
+    "index-vector": "Index Vector reads options-market structure. No free, standardized listed FX options chain exists — retail FX options trade OTC, with no public chain to read.",
+    "options-trend-scanner": "Gamma Pulse needs a future, an ATM call and an ATM put on the same instrument. FX options are OTC with no public listed chain, so two of the three legs cannot be read at all.",
+    "peter-tingle": "The technical half runs on any price series, but the fundamental half (leverage, cash flow, interest cover) has no meaning for a currency pair — there is no balance sheet behind EURUSD.",
+  },
+  crypto: {
+    "peter-tingle": "The technical half runs on any price series, but the fundamental half (promoter pledge, cash flow quality, interest cover) has no equivalent for a token — there is no balance sheet to scan.",
+  },
+};
+
+// Per-market slug for each canonical module. US reuses its existing live
+// slugs wherever one already exists so no working page changes URL.
+const SLUG_MAP = {
+  us: {
+    "exitline": "us-exitline",
+    "momentum-engine": "us-momentum-leaders",
+    "momentum-investing": "us-momentum-investing",
+    "breadth-indicator": "us-breadth",
+    "relative-strength": "us-relative-strength",
+    "index-vector": "us-index-vector",
+    "peter-tingle": "us-peter-tingle",
+    "options-trend-scanner": "us-gamma-pulse",
+    "swing-picks": "us-swing-picks",
+    "sharpe-dashboard": "us-sharpe-dashboard",
+    "ewma-scanner": "us-ewma-scanner",
+    "breakout-candidates": "us-breakout-candidates",
+  },
+};
+
+// The `kind` ModuleDetail renders for each canonical module on a
+// generic (adapter-backed) market tab. US's six original modules keep
+// their own bespoke kinds via US_MODULES and are not affected.
+const GENERIC_KIND = {
+  "index-vector": "mm-index-vector",
+  "exitline": "mm-exitline",
+  "peter-tingle": "mm-peter-tingle",
+  "relative-strength": "mm-relative-strength",
+  "breadth-indicator": "mm-breadth",
+  "options-trend-scanner": "mm-gamma-pulse",
+  "swing-picks": "mm-unavailable",
+  "momentum-investing": "mm-momentum-investing",
+  "momentum-engine": "mm-momentum-leaders",
+  "sharpe-dashboard": "mm-sharpe",
+  "ewma-scanner": "mm-ewma",
+  "breakout-candidates": "mm-unavailable",
+};
+
+// Card copy (title + shortDescription) is instrument-neutral and therefore
+// identical on every tab. The longer "About Module" overview is not always
+// neutral: a few India entries name the actual contracts they read, which is
+// genuinely useful on the India tab and simply false anywhere else. Those
+// few get a market-neutral overview off-India rather than either degrading
+// India's copy or shipping a wrong statement.
+const OVERVIEW_OVERRIDES = {
+  "index-vector": {
+    purpose: "Confirms the near-term directional regime for this market's index instruments before you commit to a trade.",
+    whatItMeasures: "Aggregates signals across the index's options market structure into a single Bullish, Bearish, or Neutral read — two straddles either side of the money plus the at-the-money call and put, all four of which must agree.",
+    interpret: "Use it as confirmation, not a standalone entry signal — an aligned bias supports a trade idea already in place; an opposing bias is a caution flag.",
+  },
+  "peter-tingle": {
+    purpose: "A spider-sense check on a single instrument — surfaces the technical and fundamental warning signs before you commit, in one place.",
+    whatItMeasures: "Technical side (identical rules in every market): trend structure, distance from the all-time high, short-term shocks, and multi-window momentum decay. The fundamental side is market-specific and only runs where a balance sheet exists.",
+    interpret: "Clear means no rule tripped; Caution means one hard fail or a cluster of soft warnings; Danger means multiple hard fails. Treat any FAIL as a specific, named reason to dig deeper — not a verdict to trade on by itself.",
+  },
+  "sharpe-dashboard": {
+    purpose: "Ranks opportunities by risk-adjusted return rather than raw performance.",
+    whatItMeasures: "Computes Sharpe, Sortino, and maximum drawdown across this market's universe, over at least one year of daily bars. The formula is identical in every market; the risk-free rate used is the one appropriate to the market's own currency.",
+    interpret: "A higher Sharpe reflects steadier, more risk-efficient returns — useful for comparing very different instruments on equal footing.",
+  },
+  "momentum-engine": {
+    purpose: "Surfaces the names in this market's liquid universe showing the strongest short-term momentum right now.",
+    whatItMeasures: "Ranks instruments by a blend of 1-week and 1-month return, computed from real daily bars.",
+    interpret: "A higher score reflects stronger short-term momentum — treat the list as a daily research starting point, not a buy list.",
+  },
+};
+
+const buildMarketModules = (market) => {
+  const blockers = MARKET_BLOCKERS[market] || {};
+  const slugs = SLUG_MAP[market] || {};
+  return MODULES.map((m) => {
+    const reason = NO_FORMULA_REASON[m.slug] || blockers[m.slug] || null;
+    return {
+      // Title, shortDescription and icon are carried over untouched — the
+      // whole point of generating rather than retyping.
+      ...m,
+      overview: OVERVIEW_OVERRIDES[m.slug] || m.overview,
+      slug: slugs[m.slug] || `${market}-${m.slug}`,
+      canonicalSlug: m.slug,
+      market,
+      kind: GENERIC_KIND[m.slug],
+      live: !reason,
+      reason,
+    };
+  });
+};
+
+export const FOREX_MODULES = buildMarketModules("forex");
+
+// Crypto keeps the live multi-pair candlestick dashboard that used to BE
+// the whole crypto tab. It isn't one of the twelve (India has no
+// counterpart), but it is real, working, free-data functionality — folded
+// in as a crypto-only extra rather than dropped to make the tabs
+// symmetrical, exactly as US keeps Market Assessment.
+export const CRYPTO_MODULES = buildMarketModules("crypto").concat([{
+  slug: "crypto-live-chart",
+  no: "13",
+  kind: "crypto-dashboard",
+  live: true,
+  market: "crypto",
+  canonicalSlug: "crypto-live-chart",
+  icon: LineChart,
+  title: "Live Chart",
+  shortDescription: "Live candlestick charts across major USDT pairs.",
+  overview: {
+    purpose: "A live candlestick view of the major USDT pairs, for context before opening any other crypto module.",
+    whatItMeasures: "Real-time price, 24h change and volume across the top pairs, with selectable intervals from 1 minute to 1 day.",
+    interpret: "Market context only — this is raw price data with no model applied, unlike every other module on this tab.",
+  },
+}]).map((m, i) => ({ ...m, no: String(i + 1).padStart(2, "0") }));
+
+// The six US modules that already had bespoke implementations keep them;
+// the other six come from the generic adapter-backed layer. Merged by
+// canonical order so the US grid reads top-to-bottom in the same sequence
+// as every other tab, and renumbered to match that visual order.
+const US_BESPOKE_BY_CANONICAL = {
+  "exitline": "us-exitline",
+  "momentum-engine": "us-momentum-leaders",
+  "momentum-investing": "us-momentum-investing",
+  "breadth-indicator": "us-breadth",
+  "relative-strength": "us-relative-strength",
+};
+
+export const US_FULL_MODULES = buildMarketModules("us").map((m) => {
+  const bespokeSlug = US_BESPOKE_BY_CANONICAL[m.canonicalSlug];
+  if (!bespokeSlug) return m;
+  const bespoke = US_MODULES.find((u) => u.slug === bespokeSlug);
+  // Keep the bespoke page's own `kind` (its dedicated component) but take
+  // the canonical title/description, so the US tab reads identically to
+  // every other tab while still opening the component already built for it.
+  return bespoke ? { ...m, kind: bespoke.kind } : m;
+}).concat(
+  // Market Assessment has no India counterpart — a genuine US-only extra,
+  // kept rather than dropped just to make the tabs symmetrical.
+  US_MODULES.filter((m) => m.slug === "us-market-assessment"),
+).map((m, i) => ({ ...m, no: String(i + 1).padStart(2, "0") }));
+
+export const MARKET_MODULES = {
+  india: MODULES,
+  us: US_FULL_MODULES,
+  forex: FOREX_MODULES,
+  crypto: CRYPTO_MODULES,
+};
+
+export const getModulesForMarket = (market) => MARKET_MODULES[market] || MODULES;
+
+const ALL_MODULES = [...MODULES, ...US_MODULES, ...US_FULL_MODULES, ...FOREX_MODULES, ...CRYPTO_MODULES];
+
+export const getModule = (slug) => ALL_MODULES.find((m) => m.slug === slug) || null;

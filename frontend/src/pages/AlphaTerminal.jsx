@@ -6,8 +6,7 @@ import { ArrowUpRight, ChevronRight, TrendingUp, TrendingDown, Minus, ExternalLi
 import Navbar from "../components/site/Navbar";
 import Footer from "../components/site/Footer";
 import BiasBadge from "../components/site/BiasBadge";
-import { MODULES, US_MODULES } from "./alphaterminal/modules";
-import CryptoDashboard from "./alphaterminal/CryptoDashboard";
+import { getModulesForMarket } from "./alphaterminal/modules";
 import { useIsAdmin } from "../lib/auth";
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
@@ -386,7 +385,18 @@ const LockedDirectoryCard = ({ module, index, label }) => {
           </span>
         </div>
         <h3 className="text-xl font-bold text-white tracking-tight mb-1.5">{module.title}</h3>
-        <p className="text-sm font-light text-slate-500 mb-6 leading-relaxed">{module.shortDescription}</p>
+        <p className="text-sm font-light text-slate-500 mb-4 leading-relaxed">{module.shortDescription}</p>
+        {/* Why this module can't run in THIS market -- a real instrument/data
+            limit, not a roadmap note. Kept on the card itself so a locked
+            tile is self-explanatory without opening anything. */}
+        {module.reason && (
+          <p
+            className="text-xs font-light text-slate-600 mb-4 leading-relaxed border-l-2 border-white/10 pl-3"
+            data-testid={`module-reason-${module.slug}`}
+          >
+            {module.reason}
+          </p>
+        )}
         <div className="flex items-center justify-end gap-3 pt-4 border-t border-white/[0.06]">
           <span className="inline-flex items-center gap-1.5 font-mono-ui text-[11px] uppercase tracking-wider text-slate-500">
             <Lock size={10} /> {label}
@@ -451,7 +461,7 @@ const DirectoryCard = ({ module, index, onAbout, isAdmin }) => {
 const MARKETS = [
   { id: "india", flag: "🇮🇳", name: "Indian Markets", available: true },
   { id: "us", flag: "🇺🇸", name: "US Markets", available: true },
-  { id: "forex", flag: "💱", name: "Forex", available: false },
+  { id: "forex", flag: "💱", name: "Forex", available: true },
   { id: "crypto", flag: "₿", name: "Crypto", available: true },
 ];
 
@@ -718,16 +728,6 @@ export default function AlphaTerminal() {
             <AnimatePresence mode="wait">
               {!market.available ? (
                 <UnavailableMarket market={market} />
-              ) : market.id === "crypto" ? (
-                <motion.div
-                  key={market.id}
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: 1 }}
-                  exit={{ opacity: 0 }}
-                  transition={{ duration: 0.25, ease: EASE }}
-                >
-                  <CryptoDashboard />
-                </motion.div>
               ) : (
                 <motion.div
                   key={market.id}
@@ -738,13 +738,13 @@ export default function AlphaTerminal() {
                   className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5"
                   data-testid="module-directory"
                 >
-                  {(market.id === "us" ? US_MODULES : MODULES).map((m, i) => (
+                  {getModulesForMarket(market.id).map((m, i) => (
                     <DirectoryCard key={m.slug} module={m} index={i} onAbout={setAboutModule} isAdmin={isAdmin} />
                   ))}
                 </motion.div>
               )}
             </AnimatePresence>
-            {market.available && market.id !== "crypto" && <FeatureStrip />}
+            {market.available && <FeatureStrip />}
           </div>
         </section>
       </main>
