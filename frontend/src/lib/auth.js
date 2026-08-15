@@ -108,6 +108,31 @@ export const useIsAdmin = () => {
 };
 
 /**
+ * Non-redirecting, non-blocking session check for chrome that should just
+ * reflect whoever's signed in (the navbar's account menu) rather than gate
+ * a page. `null` covers both "still loading" and "signed out" -- callers
+ * that need to tell those apart don't exist yet; the navbar just falls
+ * back to Log In / Sign Up either way. Returns [user, refresh] so a caller
+ * can re-pull /auth/me after an action that changes it (logout, a
+ * username update) without a full remount.
+ */
+export const useCurrentUser = () => {
+  const [user, setUser] = useState(null);
+
+  const refresh = () => {
+    const token = localStorage.getItem(TRADER_TOKEN_KEY);
+    if (!token) { setUser(null); return; }
+    axios.get(`${API}/auth/me`, { headers: { Authorization: `Bearer ${token}` } })
+      .then((r) => setUser(r.data))
+      .catch(() => { localStorage.removeItem(TRADER_TOKEN_KEY); setUser(null); });
+  };
+
+  useEffect(() => { refresh(); }, []);
+
+  return [user, refresh];
+};
+
+/**
  * P&F Studio's gate: requires a signed-in trader with an active
  * pnf_access_until (or an admin). Anyone else is bounced to the /pnf-studio
  * marketing/subscribe page rather than /login, since that page is what

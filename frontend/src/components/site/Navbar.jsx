@@ -3,6 +3,8 @@ import { motion, AnimatePresence } from "framer-motion";
 import { Menu, X, ChevronDown, Ticket, NotebookText, LineChart, Mail, User } from "lucide-react";
 import { useNavigate, useLocation } from "react-router-dom";
 import { scrollToId } from "./SmoothScroll";
+import { useCurrentUser } from "../../lib/auth";
+import AccountMenu from "./AccountMenu";
 import LOGO from "../../assets/sac-logo-mark.svg";
 // Dark mode toggle is hidden for now (2026-08-03) -- ThemeToggle.jsx and
 // ThemeContext are untouched, just not imported/rendered here. Re-add the
@@ -45,17 +47,22 @@ const MORE_LINKS = [
   { label: "About", id: "about", icon: User },
 ];
 
-const ALL_LINKS = [...PRIMARY_LINKS.slice(0, 2), ...CHARTING_LINKS, ...PRIMARY_LINKS.slice(2), ...MORE_LINKS];
-
 export const Navbar = () => {
   const [scrolled, setScrolled] = useState(false);
   const [open, setOpen] = useState(false);
   const [moreOpen, setMoreOpen] = useState(false);
   const [chartingOpen, setChartingOpen] = useState(false);
+  // Separate from the desktop dropdowns' chartingOpen/moreOpen above --
+  // sharing that state would let a Charting/More group left open on
+  // mobile stay open if the viewport is then resized to desktop (and
+  // vice versa), popping open a dropdown nobody clicked.
+  const [mobileChartingOpen, setMobileChartingOpen] = useState(false);
+  const [mobileMoreOpen, setMobileMoreOpen] = useState(false);
   const moreRef = useRef(null);
   const chartingRef = useRef(null);
   const navigate = useNavigate();
   const location = useLocation();
+  const [user, refreshUser] = useCurrentUser();
 
   useEffect(() => {
     const onScroll = () => setScrolled(window.scrollY > 24);
@@ -112,31 +119,31 @@ export const Navbar = () => {
       }`}
       data-testid="site-navbar"
     >
-      <nav className="w-full max-w-7xl mx-auto px-6 md:px-10 lg:px-14 flex items-center justify-between gap-4 h-16 md:h-20">
+      <nav className="w-full max-w-7xl mx-auto px-6 md:px-10 lg:px-14 flex items-center justify-between gap-4 h-16 md:h-24">
         <button
           onClick={() => goSection("home")}
           className="flex items-center gap-3.5 group min-w-0"
           data-testid="nav-logo"
         >
           <span className="logo-pill p-1 flex items-center justify-center shrink-0 transition-transform duration-300 group-hover:scale-105">
-            <img src={LOGO} alt="Sapphire Alpha Capital" className="h-10 w-10 object-contain" />
+            <img src={LOGO} alt="Sapphire Alpha Capital" className="h-10 w-10 md:h-12 md:w-12 object-contain" />
           </span>
           <span className="flex flex-col leading-none text-left">
-            <span className="font-display font-extrabold text-white text-[13px] sm:text-base tracking-normal sm:tracking-tight whitespace-nowrap">
+            <span className="font-display font-extrabold text-white text-[13px] sm:text-lg tracking-normal sm:tracking-tight whitespace-nowrap">
               SAPPHIRE ALPHA
             </span>
-            <span className="font-mono-ui text-[9px] tracking-[0.3em] text-bone/60 uppercase mt-0.5">
+            <span className="font-mono-ui text-[9px] md:text-[10px] tracking-[0.3em] text-bone/60 uppercase mt-0.5">
               Capital
             </span>
           </span>
         </button>
 
-        <div className="hidden md:flex items-center gap-8 lg:gap-10">
+        <div className="hidden md:flex items-center gap-8 lg:gap-10 md:text-base">
           {PRIMARY_LINKS.slice(0, 2).map((l) => (
             <button
               key={l.id || l.to}
               onClick={() => handleLink(l)}
-              className="relative text-sm text-slate-300 hover:text-white transition-colors duration-200 group"
+              className="relative text-sm md:text-base text-slate-300 hover:text-white transition-colors duration-200 group"
               data-testid={`nav-${testId(l)}-link`}
             >
               {l.label}
@@ -147,7 +154,7 @@ export const Navbar = () => {
           <div className="relative" ref={chartingRef}>
             <button
               onClick={() => setChartingOpen((v) => !v)}
-              className="relative flex items-center gap-1 text-sm text-slate-300 hover:text-white transition-colors duration-200"
+              className="relative flex items-center gap-1 text-sm md:text-base text-slate-300 hover:text-white transition-colors duration-200"
               data-testid="nav-charting-link"
               aria-expanded={chartingOpen}
             >
@@ -183,7 +190,7 @@ export const Navbar = () => {
             l.comingSoon ? (
               <span
                 key={l.id || l.to}
-                className="group relative text-sm text-slate-500 cursor-not-allowed select-none"
+                className="group relative text-sm md:text-base text-slate-500 cursor-not-allowed select-none"
                 data-testid={`nav-${testId(l)}-link`}
               >
                 {l.label}
@@ -195,7 +202,7 @@ export const Navbar = () => {
               <button
                 key={l.id || l.to}
                 onClick={() => handleLink(l)}
-                className="relative text-sm text-slate-300 hover:text-white transition-colors duration-200 group"
+                className="relative text-sm md:text-base text-slate-300 hover:text-white transition-colors duration-200 group"
                 data-testid={`nav-${testId(l)}-link`}
               >
                 {l.label}
@@ -207,7 +214,7 @@ export const Navbar = () => {
           <div className="relative" ref={moreRef}>
             <button
               onClick={() => setMoreOpen((v) => !v)}
-              className="relative flex items-center gap-1 text-sm text-slate-300 hover:text-white transition-colors duration-200"
+              className="relative flex items-center gap-1 text-sm md:text-base text-slate-300 hover:text-white transition-colors duration-200"
               data-testid="nav-more-link"
               aria-expanded={moreOpen}
             >
@@ -246,20 +253,28 @@ export const Navbar = () => {
 
         <div className="flex items-center gap-4 shrink-0">
           {/* <ThemeToggle /> -- hidden for now, see the import comment above */}
-          <button
-            onClick={() => navigate("/login", { state: { from: location.pathname } })}
-            className="hidden lg:inline-flex items-center justify-center rounded-full border border-white/15 px-4 py-2 text-sm font-medium text-slate-200 hover:text-white hover:border-white/30 hover:bg-white/5 transition-colors duration-200"
-            data-testid="nav-login-btn"
-          >
-            Log In
-          </button>
-          <button
-            onClick={() => navigate("/signup", { state: { from: location.pathname } })}
-            className="hidden lg:inline-flex items-center justify-center border border-bone/70 bg-bone px-4 py-2 text-sm font-medium text-plate hover:bg-transparent hover:text-bone transition-colors duration-200"
-            data-testid="nav-signup-btn"
-          >
-            Sign Up
-          </button>
+          {user ? (
+            <div className="hidden lg:block">
+              <AccountMenu user={user} onUserChange={refreshUser} />
+            </div>
+          ) : (
+            <>
+              <button
+                onClick={() => navigate("/login", { state: { from: location.pathname } })}
+                className="hidden lg:inline-flex items-center justify-center rounded-full border border-white/15 px-4 py-2 text-sm md:text-base font-medium text-slate-200 hover:text-white hover:border-white/30 hover:bg-white/5 transition-colors duration-200"
+                data-testid="nav-login-btn"
+              >
+                Log In
+              </button>
+              <button
+                onClick={() => navigate("/signup", { state: { from: location.pathname } })}
+                className="hidden lg:inline-flex items-center justify-center border border-bone/70 bg-bone px-4 py-2 text-sm md:text-base font-medium text-plate hover:bg-transparent hover:text-bone transition-colors duration-200"
+                data-testid="nav-signup-btn"
+              >
+                Sign Up
+              </button>
+            </>
+          )}
           <button
             onClick={() => setOpen((v) => !v)}
             className="md:hidden text-white p-2"
@@ -282,7 +297,55 @@ export const Navbar = () => {
             data-testid="nav-mobile-menu"
           >
             <div className="w-full px-6 py-6 flex flex-col gap-4">
-              {ALL_LINKS.map((l) => (
+              {PRIMARY_LINKS.slice(0, 2).map((l) => (
+                <button
+                  key={l.id || l.to}
+                  onClick={() => handleLink(l)}
+                  className="text-left text-base py-1 text-slate-200"
+                  data-testid={`nav-mobile-${testId(l)}-link`}
+                >
+                  {l.label}
+                </button>
+              ))}
+
+              <div>
+                <button
+                  type="button"
+                  onClick={() => setMobileChartingOpen((v) => !v)}
+                  className="w-full flex items-center justify-between text-left text-base py-1 text-slate-200"
+                  aria-expanded={mobileChartingOpen}
+                  data-testid="nav-mobile-charting-link"
+                >
+                  Charting
+                  <ChevronDown size={16} className={`text-slate-500 transition-transform duration-200 ${mobileChartingOpen ? "rotate-180" : ""}`} />
+                </button>
+                <AnimatePresence initial={false}>
+                  {mobileChartingOpen && (
+                    <motion.div
+                      initial={{ height: 0, opacity: 0 }}
+                      animate={{ height: "auto", opacity: 1 }}
+                      exit={{ height: 0, opacity: 0 }}
+                      transition={{ duration: 0.25, ease: EASE }}
+                      className="overflow-hidden"
+                    >
+                      <div className="flex flex-col gap-3 pl-4 pt-3">
+                        {CHARTING_LINKS.map((l) => (
+                          <button
+                            key={l.to}
+                            onClick={() => handleLink(l)}
+                            className="text-left text-sm text-slate-400"
+                            data-testid={`nav-mobile-charting-${testId(l)}-link`}
+                          >
+                            {l.label}
+                          </button>
+                        ))}
+                      </div>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+              </div>
+
+              {PRIMARY_LINKS.slice(2).map((l) => (
                 <button
                   key={l.id || l.to}
                   onClick={() => handleLink(l)}
@@ -299,20 +362,66 @@ export const Navbar = () => {
                   )}
                 </button>
               ))}
-              <button
-                onClick={() => { setOpen(false); navigate("/login", { state: { from: location.pathname } }); }}
-                className="mt-2 w-full inline-flex items-center justify-center rounded-full border border-white/15 py-2.5 text-sm font-medium text-slate-200"
-                data-testid="nav-mobile-login-btn"
-              >
-                Log In
-              </button>
-              <button
-                onClick={() => { setOpen(false); navigate("/signup", { state: { from: location.pathname } }); }}
-                className="w-full inline-flex items-center justify-center border border-bone/70 bg-bone py-2.5 text-sm font-medium text-plate"
-                data-testid="nav-mobile-signup-btn"
-              >
-                Sign Up
-              </button>
+
+              <div>
+                <button
+                  type="button"
+                  onClick={() => setMobileMoreOpen((v) => !v)}
+                  className="w-full flex items-center justify-between text-left text-base py-1 text-slate-200"
+                  aria-expanded={mobileMoreOpen}
+                  data-testid="nav-mobile-more-link"
+                >
+                  More
+                  <ChevronDown size={16} className={`text-slate-500 transition-transform duration-200 ${mobileMoreOpen ? "rotate-180" : ""}`} />
+                </button>
+                <AnimatePresence initial={false}>
+                  {mobileMoreOpen && (
+                    <motion.div
+                      initial={{ height: 0, opacity: 0 }}
+                      animate={{ height: "auto", opacity: 1 }}
+                      exit={{ height: 0, opacity: 0 }}
+                      transition={{ duration: 0.25, ease: EASE }}
+                      className="overflow-hidden"
+                    >
+                      <div className="flex flex-col gap-3 pl-4 pt-3">
+                        {MORE_LINKS.map((l) => (
+                          <button
+                            key={l.id || l.to}
+                            onClick={() => handleLink(l)}
+                            className="text-left text-sm text-slate-400"
+                            data-testid={`nav-mobile-more-${testId(l)}-link`}
+                          >
+                            {l.label}
+                          </button>
+                        ))}
+                      </div>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+              </div>
+
+              {user ? (
+                <div className="mt-2">
+                  <AccountMenu user={user} onUserChange={refreshUser} />
+                </div>
+              ) : (
+                <>
+                  <button
+                    onClick={() => { setOpen(false); navigate("/login", { state: { from: location.pathname } }); }}
+                    className="mt-2 w-full inline-flex items-center justify-center rounded-full border border-white/15 py-2.5 text-sm font-medium text-slate-200"
+                    data-testid="nav-mobile-login-btn"
+                  >
+                    Log In
+                  </button>
+                  <button
+                    onClick={() => { setOpen(false); navigate("/signup", { state: { from: location.pathname } }); }}
+                    className="w-full inline-flex items-center justify-center border border-bone/70 bg-bone py-2.5 text-sm font-medium text-plate"
+                    data-testid="nav-mobile-signup-btn"
+                  >
+                    Sign Up
+                  </button>
+                </>
+              )}
             </div>
           </motion.div>
         )}

@@ -3,6 +3,7 @@ from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
 import os
+import re
 import logging
 import asyncio
 import bisect
@@ -366,6 +367,22 @@ def _check_password_strength(password: str, email: str = None):
         raise HTTPException(status_code=400, detail="Password is too weak. Try a longer, less predictable passphrase.")
 
 
+USERNAME_RE = re.compile(r"^[a-z0-9_]{3,20}$")
+
+
+async def _check_username(username: str, current_email: str = None):
+    """Normalizes to lowercase (usernames are case-insensitive) and enforces
+    format before the unique index gets a chance to reject a collision --
+    gives a real "already taken" message instead of a raw duplicate-key error."""
+    username = username.strip().lower()
+    if not USERNAME_RE.match(username):
+        raise HTTPException(status_code=400, detail="Username must be 3-20 characters: lowercase letters, numbers, and underscores only.")
+    existing = await db.users.find_one({"username": username})
+    if existing and existing["email"] != current_email:
+        raise HTTPException(status_code=409, detail="That username is already taken.")
+    return username
+
+
 def create_access_token(user_id: str, email: str, role: str) -> str:
     payload = {
         "sub": user_id,
@@ -606,6 +623,7 @@ async def auth_me(user: dict = Depends(get_current_user)):
     return {
         "email": user["email"],
         "name": user.get("name", "Admin"),
+        "username": user.get("username"),
         "role": user.get("role", "trader"),
         "setup_tags": user.get("setup_tags", []),
         "emotion_tags": user.get("emotion_tags", []),
@@ -613,10 +631,22 @@ async def auth_me(user: dict = Depends(get_current_user)):
     }
 
 
+class UsernameUpdate(BaseModel):
+    username: str
+
+
+@api_router.patch("/auth/username")
+async def update_username(payload: UsernameUpdate, user: dict = Depends(get_current_user)):
+    username = await _check_username(payload.username, current_email=user["email"])
+    await db.users.update_one({"email": user["email"]}, {"$set": {"username": username}})
+    return {"username": username}
+
+
 class SignupRequest(BaseModel):
     email: EmailStr
     password: str
     name: str
+    username: str
 
 
 @api_router.post("/auth/signup")
@@ -628,6 +658,7 @@ async def signup(payload: SignupRequest, request: Request):
         await _record_rate_limit_failure(identifiers)
         raise HTTPException(status_code=409, detail="An account with this email already exists.")
 
+    username = await _check_username(payload.username)
     _check_password_strength(payload.password, email)
 
     now = datetime.now(timezone.utc)
@@ -637,6 +668,7 @@ async def signup(payload: SignupRequest, request: Request):
         "email": email,
         "password_hash": hash_password(payload.password),
         "name": payload.name,
+        "username": username,
         "role": "trader",
         "email_verified": False,
         "created_at": now.isoformat(),
@@ -677,6 +709,37 @@ async def verify_email(token: str):
         raise HTTPException(status_code=400, detail="Invalid verification link.")
     await db.users.update_one({"id": payload["sub"]}, {"$set": {"email_verified": True}})
     return {"message": "Email verified. You can now log in."}
+
+
+async def _send_username_migration_emails():
+    """One-off nudge for accounts created before usernames existed -- not a
+    recurring cron, triggered manually via the admin endpoint below.
+    Idempotent (username_migration_email_sent_at guards re-runs), so it's
+    safe to call again if new pre-migration accounts show up later."""
+    cursor = db.users.find({"username": {"$exists": False}, "username_migration_email_sent_at": {"$exists": False}})
+    async for u in cursor:
+        asyncio.create_task(send_email(
+            recipient=u["email"],
+            subject="Choose your username — Sapphire Alpha Capital",
+            html=_wrap_email(
+                "Pick a username",
+                f"Hi {u.get('name') or 'there'},<br/><br/>"
+                "Accounts on Sapphire Alpha Capital now have usernames — yours will show in place of your email "
+                "wherever you're signed in. Sign in and use the account menu in the top-right to set yours "
+                "(it takes a few seconds, and nothing else about your account changes).<br/><br/>"
+                f'<a href="{FRONTEND_BASE_URL}/login" style="color:#437EEB;">Sign In</a>'
+            ),
+        ))
+        await db.users.update_one(
+            {"email": u["email"]},
+            {"$set": {"username_migration_email_sent_at": datetime.now(timezone.utc).isoformat()}},
+        )
+
+
+@api_router.post("/admin/notify-username-migration")
+async def notify_username_migration(background_tasks: BackgroundTasks, admin: dict = Depends(get_current_admin)):
+    background_tasks.add_task(_send_username_migration_emails)
+    return {"status": "started"}
 
 
 class PasswordResetRequest(BaseModel):
@@ -1742,6 +1805,7 @@ async def on_startup():
 
     try:
         await db.users.create_index("email", unique=True)
+        await db.users.create_index("username", unique=True, sparse=True)  # sparse -- pre-migration users have no username yet
         await db.pnf_orders.create_index("order_id", unique=True)
         await db.terminal_stocks.create_index([("scanner", 1), ("order", 1)])
         await db.refresh_tokens.create_index("token_hash", unique=True)
