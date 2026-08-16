@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import axios from "axios";
 import { Loader2, Search } from "lucide-react";
 import { createChart, CandlestickSeries, LineSeries, LineType, ColorType } from "lightweight-charts";
@@ -226,7 +226,7 @@ const TVChart = ({ chart, sessions, interval, onIntervalChange, fetchGen }) => {
   );
 };
 
-const SymbolPicker = ({ onSelect, placeholder = "Search symbol… e.g. AAPL" }) => {
+const SymbolPicker = ({ onSelect, placeholder = "Search symbol… e.g. AAPL", searchPath = "/us-markets/symbols/search" }) => {
   const [query, setQuery] = useState("");
   const [options, setOptions] = useState([]);
   const [open, setOpen] = useState(false);
@@ -239,7 +239,7 @@ const SymbolPicker = ({ onSelect, placeholder = "Search symbol… e.g. AAPL" }) 
     if (v.trim().length < 1) { setOptions([]); setOpen(false); return; }
     debounceRef.current = setTimeout(async () => {
       try {
-        const { data } = await axios.get(`${API}/us-markets/symbols/search`, { params: { q: v.trim() } });
+        const { data } = await axios.get(`${API}${searchPath}`, { params: { q: v.trim() } });
         setOptions(data || []);
         setOpen(true);
       } catch { setOptions([]); }
@@ -275,7 +275,16 @@ const SymbolPicker = ({ onSelect, placeholder = "Search symbol… e.g. AAPL" }) 
   );
 };
 
-const USExitlineTool = () => {
+// `searchPath`/`levelsPath` point this same tool at another market's
+// Exitline endpoints. Those endpoints return an identical payload
+// (sessions/levels/chart/ltp/zone), so Forex and Crypto get the SAME
+// candlestick chart, level ladder and SL/TP panel as US -- rather than a
+// separate lookalike with no chart, which is what they had before.
+const USExitlineTool = ({
+  searchPath = "/us-markets/symbols/search",
+  levelsPath = "/us-markets/exitline",
+  placeholder = "Search symbol… e.g. AAPL",
+} = {}) => {
   const [symbol, setSymbol] = useState("");
   const [result, setResult] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -283,10 +292,13 @@ const USExitlineTool = () => {
   const genRef = useRef(0);
   const paramsRef = useRef(null);
 
-  const fetchLevels = async (params, { silent, gen } = {}) => {
+  // useCallback because `levelsPath` is now a prop: without it the poll
+  // effect below would capture the first render's path forever and keep
+  // polling the previous market's endpoint after a switch.
+  const fetchLevels = useCallback(async (params, { silent, gen } = {}) => {
     if (!silent) { setLoading(true); setResult(null); }
     try {
-      const { data } = await axios.get(`${API}/us-markets/exitline`, { params });
+      const { data } = await axios.get(`${API}${levelsPath}`, { params });
       setResult((prev) => ({ ...data, __fetchGen: gen !== undefined ? gen : prev?.__fetchGen }));
     } catch {
       if (!silent) setResult({ error: true });
@@ -294,7 +306,7 @@ const USExitlineTool = () => {
     } finally {
       if (!silent) setLoading(false);
     }
-  };
+  }, [levelsPath]);
 
   // Keeps the chart/LTP live while a result is on screen, same as NSE Exitline.
   useEffect(() => {
@@ -302,7 +314,7 @@ const USExitlineTool = () => {
       if (paramsRef.current) fetchLevels(paramsRef.current, { silent: true });
     }, POLL_MS);
     return () => window.clearInterval(pollId);
-  }, []);
+  }, [fetchLevels]);
 
   const runScan = async (sym) => {
     setSymbol(sym);
@@ -323,7 +335,7 @@ const USExitlineTool = () => {
 
   return (
     <div data-testid="us-exitline-module">
-      <div className="mb-6"><SymbolPicker onSelect={runScan} /></div>
+      <div className="mb-6"><SymbolPicker onSelect={runScan} searchPath={searchPath} placeholder={placeholder} /></div>
 
       {!symbol && !loading && <EmptyState reason="Search for a US stock above to run its Exitline levels." />}
       {loading && (

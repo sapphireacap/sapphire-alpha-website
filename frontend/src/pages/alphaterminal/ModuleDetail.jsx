@@ -23,7 +23,7 @@ import { USMomentumLeadersTool, USMomentumInvestingTool } from "./USMomentum";
 import USMarketAssessmentTool from "./USMarketAssessment";
 import CryptoDashboard from "./CryptoDashboard";
 import {
-  MMExitline, MMMomentumInvesting, MMMomentumLeaders,
+  MMMomentumInvesting, MMMomentumLeaders,
   MMSharpe, MMIndexVector, MMPeterTingle, MMUnavailable,
 } from "./MultiMarketTools";
 
@@ -212,7 +212,15 @@ const LiveDashboard = ({ module, signals }) => (
     {/* Adapter-backed modules — one component per module, `market` picks
         the data source. See MultiMarketTools.jsx for why these are generic
         rather than one component per (module x market). */}
-    {module.kind === "mm-exitline" && <MMExitline market={module.market} />}
+    {/* The SAME Exitline tool the US tab renders — candlestick chart, level
+        ladder and SL/TP panel — pointed at this market's endpoints. */}
+    {module.kind === "mm-exitline" && (
+      <USExitlineTool
+        searchPath={`/markets/${module.market}/search`}
+        levelsPath={`/markets/${module.market}/exitline`}
+        placeholder={module.market === "crypto" ? "Search pair… e.g. BTCUSDT" : "Search pair… e.g. EURUSD"}
+      />
+    )}
     {/* The SAME BreadthTool the India and US tabs render — it was already
         endpoint-parameterised, so multi-market needed no new UI at all. */}
     {module.kind === "mm-breadth" && (

@@ -92,8 +92,12 @@ def create_multi_market_router(db, get_current_admin, cron_secret: str) -> APIRo
 
     @router.get("/{market}/search")
     async def search(market: str, q: str = "", limit: int = 25):
+        """`company_name` is aliased onto `label` because the shared
+        Exitline symbol picker reads that field — same contract as the US
+        search route it was written against."""
         adapter = _adapter_or_404(market)
-        return await adapter.search(db, q, limit)
+        rows = await adapter.search(db, q, limit)
+        return [{**r, "company_name": r.get("company_name") or r.get("label")} for r in rows]
 
     # ------------------------------------------------------------ Exitline --
     @router.get("/{market}/exitline")

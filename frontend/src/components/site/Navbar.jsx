@@ -30,7 +30,7 @@ const PRIMARY_LINKS = [
   { label: "Lattice", to: "/lattice" },
   { label: "Market", to: "/market" },
   { label: "Alpha Terminal", to: "/alpha-terminal" },
-  { label: "The Black Box", to: "/black-box", comingSoon: true },
+  { label: "The Black Box", to: "/black-box" },
   { label: "Pricing", to: "/pricing" },
 ];
 
@@ -138,12 +138,17 @@ export const Navbar = () => {
           </span>
         </button>
 
-        <div className="hidden md:flex items-center gap-8 lg:gap-10 md:text-base">
+        {/* Every nav item stays on ONE line -- multi-word labels ("Alpha
+            Terminal", "The Black Box") were wrapping to two lines and
+            breaking the bar's alignment. whitespace-nowrap on each item
+            plus a slightly tighter gap keeps the row single-line without
+            shrinking the type. */}
+        <div className="hidden md:flex items-center gap-6 lg:gap-8 md:text-base">
           {PRIMARY_LINKS.slice(0, 2).map((l) => (
             <button
               key={l.id || l.to}
               onClick={() => handleLink(l)}
-              className="relative text-sm md:text-base text-slate-300 hover:text-white transition-colors duration-200 group"
+              className="relative whitespace-nowrap text-sm md:text-base text-slate-300 hover:text-white transition-colors duration-200 group"
               data-testid={`nav-${testId(l)}-link`}
             >
               {l.label}
@@ -154,7 +159,7 @@ export const Navbar = () => {
           <div className="relative" ref={chartingRef}>
             <button
               onClick={() => setChartingOpen((v) => !v)}
-              className="relative flex items-center gap-1 text-sm md:text-base text-slate-300 hover:text-white transition-colors duration-200"
+              className="relative flex items-center gap-1 whitespace-nowrap text-sm md:text-base text-slate-300 hover:text-white transition-colors duration-200"
               data-testid="nav-charting-link"
               aria-expanded={chartingOpen}
             >
@@ -190,7 +195,7 @@ export const Navbar = () => {
             l.comingSoon ? (
               <span
                 key={l.id || l.to}
-                className="group relative text-sm md:text-base text-slate-500 cursor-not-allowed select-none"
+                className="group relative whitespace-nowrap text-sm md:text-base text-slate-500 cursor-not-allowed select-none"
                 data-testid={`nav-${testId(l)}-link`}
               >
                 {l.label}
@@ -202,7 +207,7 @@ export const Navbar = () => {
               <button
                 key={l.id || l.to}
                 onClick={() => handleLink(l)}
-                className="relative text-sm md:text-base text-slate-300 hover:text-white transition-colors duration-200 group"
+                className="relative whitespace-nowrap text-sm md:text-base text-slate-300 hover:text-white transition-colors duration-200 group"
                 data-testid={`nav-${testId(l)}-link`}
               >
                 {l.label}
@@ -214,7 +219,7 @@ export const Navbar = () => {
           <div className="relative" ref={moreRef}>
             <button
               onClick={() => setMoreOpen((v) => !v)}
-              className="relative flex items-center gap-1 text-sm md:text-base text-slate-300 hover:text-white transition-colors duration-200"
+              className="relative flex items-center gap-1 whitespace-nowrap text-sm md:text-base text-slate-300 hover:text-white transition-colors duration-200"
               data-testid="nav-more-link"
               aria-expanded={moreOpen}
             >
