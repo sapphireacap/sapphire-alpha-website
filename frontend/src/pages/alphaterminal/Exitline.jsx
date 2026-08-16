@@ -3,6 +3,7 @@ import axios from "axios";
 import { toast } from "sonner";
 import { Loader2, Crosshair } from "lucide-react";
 import { createChart, CandlestickSeries, LineSeries, LineType, ColorType } from "lightweight-charts";
+import SessionDividers from "./ChartSessionDividers";
 import { field, selectCls, label, LoadingParticles, EmptyState } from "./QuantLab";
 
 const POLL_MS = 30000; // keep the LTP marker live while results are showing
@@ -287,6 +288,7 @@ const TVChart = ({ chart, sessions, interval, onIntervalChange, fetchGen }) => {
         )}
         {/* App-wide Lenis smooth-scroll (SmoothScroll.jsx) reads wheel deltas on its own listener and animates the page regardless of preventDefault() elsewhere — data-lenis-prevent-wheel/data-lenis-prevent are both real Lenis opt-out attributes (confirmed against Lenis's own source, 2026-08-10); using the general one here. */}
         <div ref={containerRef} className="h-96" style={{ touchAction: "none" }} data-lenis-prevent="true" data-testid="exitline-tv-chart" />
+        <SessionDividers chartRef={chartRef} bars={chart} redrawKey={`${interval}-${fetchGen}`} />
       </div>
     </div>
   );

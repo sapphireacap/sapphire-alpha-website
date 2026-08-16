@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import axios from "axios";
 import { Loader2, Search } from "lucide-react";
 import { createChart, CandlestickSeries, LineSeries, LineType, ColorType } from "lightweight-charts";
+import SessionDividers from "./ChartSessionDividers";
 import { field, label as fieldLabel, EmptyState } from "./QuantLab";
 
 const POLL_MS = 30000; // keep the LTP/chart live while results are showing, same as NSE Exitline
@@ -221,6 +222,7 @@ const TVChart = ({ chart, sessions, interval, onIntervalChange, fetchGen }) => {
         )}
         {/* See Exitline.jsx's TVChart for why this is data-lenis-prevent, not data-lenis-prevent-wheel. */}
         <div ref={containerRef} className="h-96" style={{ touchAction: "none" }} data-lenis-prevent="true" data-testid="us-exitline-tv-chart" />
+        <SessionDividers chartRef={chartRef} bars={chart} redrawKey={`${interval}-${fetchGen}`} />
       </div>
     </div>
   );

@@ -22,10 +22,7 @@ import USExitlineTool from "./USExitline";
 import { USMomentumLeadersTool, USMomentumInvestingTool } from "./USMomentum";
 import USMarketAssessmentTool from "./USMarketAssessment";
 import CryptoDashboard from "./CryptoDashboard";
-import {
-  MMMomentumInvesting, MMMomentumLeaders,
-  MMSharpe, MMIndexVector, MMPeterTingle, MMUnavailable,
-} from "./MultiMarketTools";
+import { MMMomentumLeaders, MMIndexVector, MMUnavailable } from "./MultiMarketTools";
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 const EASE = [0.16, 1, 0.3, 1];
@@ -236,9 +233,21 @@ const LiveDashboard = ({ module, signals }) => (
         dateIsUs
       />
     )}
-    {module.kind === "mm-momentum-investing" && <MMMomentumInvesting market={module.market} />}
+    {module.kind === "mm-momentum-investing" && (
+      <MomentumDashboardTool
+        universePath={`/markets/${module.market}/universe-symbols`}
+        dashboardPath={`/markets/${module.market}/momentum-dashboard`}
+        statusPath={`/markets/${module.market}/momentum-refresh-status`}
+      />
+    )}
     {module.kind === "mm-momentum-leaders" && <MMMomentumLeaders market={module.market} />}
-    {module.kind === "mm-sharpe" && <MMSharpe market={module.market} />}
+    {module.kind === "mm-sharpe" && (
+      <SharpeDashboardTool
+        universePath={`/markets/${module.market}/universe-symbols`}
+        dashboardPath={`/markets/${module.market}/sharpe-dashboard`}
+        statusPath={`/markets/${module.market}/sharpe-refresh-status`}
+      />
+    )}
     {module.kind === "mm-ewma" && (
       <EwmaCrossoverTool
         scanPath={`/markets/${module.market}/ewma-crossover`}
@@ -249,7 +258,10 @@ const LiveDashboard = ({ module, signals }) => (
       <OptionsTrendTool scanPath={`/markets/${module.market}/options-trend/scan`} />
     )}
     {module.kind === "mm-index-vector" && <MMIndexVector market={module.market} />}
-    {module.kind === "mm-peter-tingle" && <MMPeterTingle market={module.market} />}
+    {/* India's own Peter Tingle tool already carries an India/US market
+        toggle, so US uses it directly. Forex and Crypto never reach here —
+        both are locked (no balance sheet behind a pair or a token). */}
+    {module.kind === "mm-peter-tingle" && <PeterTingleTool />}
     {module.kind === "mm-unavailable" && <MMUnavailable module={module} />}
     {module.kind === "crypto-dashboard" && <CryptoDashboard />}
   </Section>

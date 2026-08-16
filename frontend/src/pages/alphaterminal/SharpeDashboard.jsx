@@ -170,7 +170,14 @@ const ResultsTable = ({ results }) => {
   );
 };
 
-const SharpeDashboardTool = () => {
+// Endpoint props let this same tool serve any market; the multi-market
+// routes speak the identical quant-lab contract (see
+// multi_market_routes' _dashboard). India defaults are unchanged.
+const SharpeDashboardTool = ({
+  universePath = "/quant-lab/nifty500-symbols",
+  dashboardPath = "/quant-lab/sharpe-dashboard",
+  statusPath = "/quant-lab/sharpe-refresh-status",
+} = {}) => {
   const [mode, setMode] = useState("compare");
   const [universe, setUniverse] = useState([]);
   const [selected, setSelected] = useState([]);
@@ -180,8 +187,8 @@ const SharpeDashboardTool = () => {
   const [refreshStatus, setRefreshStatus] = useState(null);
 
   useEffect(() => {
-    axios.get(`${API}/quant-lab/nifty500-symbols`).then((r) => setUniverse(r.data)).catch(() => {});
-  }, []);
+    axios.get(`${API}${universePath}`).then((r) => setUniverse(r.data)).catch(() => {});
+  }, [universePath]);
 
   const submit = async () => {
     setLoading(true);
@@ -190,10 +197,10 @@ const SharpeDashboardTool = () => {
       const body = mode === "compare"
         ? { mode: "compare", symbols: selected }
         : { mode: "top", top_n: Number(topN) };
-      const { data } = await axios.post(`${API}/quant-lab/sharpe-dashboard`, body);
+      const { data } = await axios.post(`${API}${dashboardPath}`, body);
       setResult(data);
       if (!data.found && mode === "top") {
-        axios.get(`${API}/quant-lab/sharpe-refresh-status`).then((r) => setRefreshStatus(r.data)).catch(() => {});
+        axios.get(`${API}${statusPath}`).then((r) => setRefreshStatus(r.data)).catch(() => {});
       }
     } catch (err) {
       toast.error(err?.response?.data?.detail || "Request failed. Please try again.");

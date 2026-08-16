@@ -170,7 +170,14 @@ const ResultsTable = ({ results }) => {
   );
 };
 
-const MomentumDashboardTool = () => {
+// Endpoint props let this same tool serve any market; the multi-market
+// routes speak the identical quant-lab contract (see
+// multi_market_routes' _dashboard). India defaults are unchanged.
+const MomentumDashboardTool = ({
+  universePath = "/quant-lab/nifty500-symbols",
+  dashboardPath = "/quant-lab/momentum-dashboard",
+  statusPath = "/quant-lab/momentum-refresh-status",
+} = {}) => {
   const [mode, setMode] = useState("compare");
   const [universe, setUniverse] = useState([]);
   const [selected, setSelected] = useState([]);
@@ -180,8 +187,8 @@ const MomentumDashboardTool = () => {
   const [refreshStatus, setRefreshStatus] = useState(null);
 
   useEffect(() => {
-    axios.get(`${API}/quant-lab/nifty500-symbols`).then((r) => setUniverse(r.data)).catch(() => {});
-  }, []);
+    axios.get(`${API}${universePath}`).then((r) => setUniverse(r.data)).catch(() => {});
+  }, [universePath]);
 
   const submit = async () => {
     setLoading(true);
@@ -190,10 +197,10 @@ const MomentumDashboardTool = () => {
       const body = mode === "compare"
         ? { mode: "compare", symbols: selected }
         : { mode: "top", top_n: Number(topN) };
-      const { data } = await axios.post(`${API}/quant-lab/momentum-dashboard`, body);
+      const { data } = await axios.post(`${API}${dashboardPath}`, body);
       setResult(data);
       if (!data.found && mode === "top") {
-        axios.get(`${API}/quant-lab/momentum-refresh-status`).then((r) => setRefreshStatus(r.data)).catch(() => {});
+        axios.get(`${API}${statusPath}`).then((r) => setRefreshStatus(r.data)).catch(() => {});
       }
     } catch (err) {
       toast.error(err?.response?.data?.detail || "Request failed. Please try again.");

@@ -238,6 +238,115 @@ def create_multi_market_router(db, get_current_admin, cron_secret: str) -> APIRo
         background_tasks.add_task(_safe_ranking_refresh, adapter, started)
         return {"status": "started", "market": adapter.market_id, "modules": started}
 
+    # ------------------------- Sharpe / Momentum dashboards -----------------
+    # These three routes per module exist to speak the quant-lab contract the
+    # shared SharpeDashboardTool and MomentumDashboardTool were written
+    # against ({mode:"compare"|"top"} in; {found, results:[{symbol,
+    # resolved_symbol, stats:{...}}]} out), so those components render every
+    # market with no branching inside them.
+    DASHBOARDS = {
+        "sharpe": {"runner": eng.sharpe, "slug": "sharpe-dashboard",
+                    "stats": ("sharpe", "sortino", "max_drawdown"), "sort": "sharpe"},
+        "momentum": {"runner": eng.momentum_investing, "slug": "momentum-investing",
+                      "stats": ("momentum_score", "return_12_1", "volatility"), "sort": "momentum_score"},
+    }
+
+    def _to_stats_rows(rows: list, stat_keys: tuple) -> list:
+        """Flat cached row -> the nested {symbol, resolved_symbol, stats{}}
+        shape the shared dashboard components read."""
+        return [{
+            "symbol": r["symbol"],
+            "resolved_symbol": r["symbol"],
+            "company_name": r.get("name"),
+            "cached": True,
+            "stats": {k: r.get(k) for k in stat_keys},
+        } for r in rows]
+
+    @router.get("/{market}/universe-symbols")
+    async def universe_symbols(market: str):
+        """[{symbol, company_name}] — the shape SymbolMultiSelect expects."""
+        adapter = _adapter_or_404(market)
+        rows = await adapter.universe(db)
+        return [{"symbol": r["symbol"], "company_name": r.get("name") or r["symbol"]} for r in rows]
+
+    async def _dashboard(market: str, key: str, payload: dict):
+        adapter = _adapter_or_404(market)
+        cfg = DASHBOARDS[key]
+        blocked = _blocked(adapter, cfg["slug"])
+        if blocked:
+            return {"found": False, "reason": blocked["reason"]}
+
+        mode = (payload or {}).get("mode")
+        if mode not in ("compare", "top"):
+            return {"found": False, "reason": "mode must be 'compare' or 'top'."}
+
+        if mode == "compare":
+            symbols = [s for s in (payload.get("symbols") or []) if s]
+            if len(symbols) < 2:
+                return {"found": False, "reason": "Select at least two symbols to compare."}
+            # Bounded and computed live — at most ten symbols is cheap, unlike
+            # the full-universe pass, which stays cron-driven.
+            result = await cfg["runner"](adapter, db, symbols=symbols[:10]) if key == "sharpe" \
+                else await _compare_momentum(adapter, symbols[:10])
+            rows = result["rows"] if isinstance(result, dict) else result
+            if not rows:
+                return {"found": False, "reason": "None of the requested symbols could be evaluated."}
+            resolved = {r["symbol"] for r in rows}
+            return {"found": True, "results": _to_stats_rows(rows, cfg["stats"]),
+                    "skipped": [s for s in symbols if s not in resolved]}
+
+        doc = await db[RANKING_CACHE].find_one(
+            {"market": adapter.market_id, "module": cfg["slug"]}, {"_id": 0})
+        if not doc or not doc.get("rows"):
+            return {"found": False,
+                    "reason": "This ranking hasn't been computed yet — it refreshes on a schedule."}
+        top_n = int((payload or {}).get("top_n") or 10)
+        rows = doc["rows"][:top_n]
+        return {"found": True, "results": _to_stats_rows(rows, cfg["stats"]),
+                "universe_coverage": {"cached": len(doc["rows"]), "total": len(doc["rows"])}}
+
+    async def _compare_momentum(adapter, symbols: list) -> list:
+        """Momentum has no symbols= path on its runner (it ranks a whole
+        universe), so a bounded comparison computes per symbol directly off
+        the same pure function the ranking uses."""
+        rows = []
+        for symbol in symbols:
+            try:
+                bars = await adapter.daily_bars(db, symbol.strip().upper())
+            except AdapterError:
+                continue
+            stats = eng._momentum_investing_compute(bars)
+            if stats:
+                rows.append({"symbol": symbol.strip().upper(), **stats})
+        rows.sort(key=lambda r: r["momentum_score"], reverse=True)
+        return rows
+
+    async def _refresh_status(market: str, key: str):
+        adapter = _adapter_or_404(market)
+        doc = await db[RANKING_CACHE].find_one(
+            {"market": adapter.market_id, "module": DASHBOARDS[key]["slug"]}, {"_id": 0})
+        if not doc:
+            return {"status": "idle", "total": 0, "done": 0, "cached": 0, "failed": 0}
+        cached = len(doc.get("rows") or [])
+        return {"status": "done", "total": cached, "done": cached, "cached": cached, "failed": 0,
+                "computed_at": doc.get("computed_at")}
+
+    @router.post("/{market}/sharpe-dashboard")
+    async def sharpe_dashboard(market: str, payload: dict = None):
+        return await _dashboard(market, "sharpe", payload)
+
+    @router.get("/{market}/sharpe-refresh-status")
+    async def sharpe_refresh_status(market: str):
+        return await _refresh_status(market, "sharpe")
+
+    @router.post("/{market}/momentum-dashboard")
+    async def momentum_dashboard(market: str, payload: dict = None):
+        return await _dashboard(market, "momentum", payload)
+
+    @router.get("/{market}/momentum-refresh-status")
+    async def momentum_refresh_status(market: str):
+        return await _refresh_status(market, "momentum")
+
     # -------------------------------------------------------- EWMA Scanner --
     @router.get("/{market}/ewma")
     async def ewma(market: str, symbol: str, fast: int = 20, slow: int = 50):
