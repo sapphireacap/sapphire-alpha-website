@@ -516,3 +516,26 @@ export const getModulesForMarket = (market) => MARKET_MODULES[market] || MODULES
 const ALL_MODULES = [...MODULES, ...US_MODULES, ...US_FULL_MODULES, ...FOREX_MODULES, ...CRYPTO_MODULES];
 
 export const getModule = (slug) => ALL_MODULES.find((m) => m.slug === slug) || null;
+
+/* ---------------------------- Sign-in requirement ---------------------------
+   Index Vector and Exitline are the only Alpha Terminal modules open to
+   signed-out visitors. Every other module on every market tab requires an
+   account.
+
+   Keyed on the CANONICAL slug, so this holds across all four markets at
+   once — us-breadth, forex-breadth and crypto-breadth are all gated by the
+   single "breadth-indicator" entry, and a new market inherits the rule
+   automatically rather than needing its own list.
+
+   This is the UI half only. It is enforced independently on the backend
+   (see the auth dependency in multi_market_routes.py and the India/US
+   module routers) — a client-side flag alone would be trivially bypassed
+   by calling the API directly, so it is not the access control, just the
+   thing that stops a signed-out visitor walking into a dead page.
+*/
+export const FREE_MODULE_SLUGS = new Set(["index-vector", "exitline"]);
+
+export const moduleRequiresAuth = (module) => {
+  if (!module) return false;
+  return !FREE_MODULE_SLUGS.has(module.canonicalSlug || module.slug);
+};

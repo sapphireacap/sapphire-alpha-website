@@ -6,8 +6,8 @@ import { ArrowUpRight, ChevronRight, TrendingUp, TrendingDown, Minus, ExternalLi
 import Navbar from "../components/site/Navbar";
 import Footer from "../components/site/Footer";
 import BiasBadge from "../components/site/BiasBadge";
-import { getModulesForMarket } from "./alphaterminal/modules";
-import { useIsAdmin } from "../lib/auth";
+import { getModulesForMarket, moduleRequiresAuth } from "./alphaterminal/modules";
+import { useIsAdmin, useIsSignedIn } from "../lib/auth";
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 const EASE = [0.16, 1, 0.3, 1];
@@ -371,7 +371,7 @@ export const TrackRecordPanel = ({ record }) => (
 // locked card instead — same visual treatment as Black Box's "Coming Soon"
 // cards, just a different badge label, so every "you can't open this right
 // now" case on Alpha Terminal reads consistently.
-const LockedDirectoryCard = ({ module, index, label }) => {
+const LockedDirectoryCard = ({ module, index, label, signInPrompt = false }) => {
   const Icon = module.icon;
   return (
     <motion.div
@@ -404,7 +404,16 @@ const LockedDirectoryCard = ({ module, index, label }) => {
             {module.reason}
           </p>
         )}
-        <div className="flex items-center justify-end gap-3 pt-4 border-t border-white/[0.06]">
+        <div className="flex items-center justify-between gap-3 pt-4 border-t border-white/[0.06]">
+          {signInPrompt ? (
+            <Link
+              to="/auth"
+              className="inline-flex items-center gap-1.5 text-xs font-medium text-sapphire-light hover:text-white transition-colors"
+              data-testid={`module-signin-${module.slug}`}
+            >
+              Sign in to open <ArrowUpRight size={13} />
+            </Link>
+          ) : <span />}
           <span className="inline-flex items-center gap-1.5 font-mono-ui text-[11px] uppercase tracking-wider text-slate-500">
             <Lock size={10} /> {label}
           </span>
@@ -414,13 +423,19 @@ const LockedDirectoryCard = ({ module, index, label }) => {
   );
 };
 
-const DirectoryCard = ({ module, index, onAbout, isAdmin }) => {
+const DirectoryCard = ({ module, index, onAbout, isAdmin, isSignedIn }) => {
   const Icon = module.icon;
 
   if (!module.live) return <LockedDirectoryCard module={module} index={index} label="Coming Soon" />;
   // isAdmin === null is still loading /auth/me -- treat as locked until
   // resolved rather than flashing the real card open then yanking it away.
   if (module.adminOnly && !isAdmin) return <LockedDirectoryCard module={module} index={index} label="Admin Only" />;
+  // Only Index Vector and Exitline are open to signed-out visitors. Checked
+  // against `=== false` so the brief "still resolving" window doesn't flash
+  // every gated card locked and then unlock it.
+  if (moduleRequiresAuth(module) && isSignedIn === false) {
+    return <LockedDirectoryCard module={module} index={index} label="Sign In Required" signInPrompt />;
+  }
 
   return (
     <motion.div
@@ -690,6 +705,7 @@ export default function AlphaTerminal() {
   const [aboutTerminalOpen, setAboutTerminalOpen] = useState(false);
   const [activeMarket, setActiveMarket] = useState("india");
   const isAdmin = useIsAdmin();
+  const isSignedIn = useIsSignedIn();
   useEffect(() => { window.scrollTo(0, 0); }, []);
   const market = MARKETS.find((m) => m.id === activeMarket) || MARKETS[0];
 
@@ -746,7 +762,7 @@ export default function AlphaTerminal() {
                   data-testid="module-directory"
                 >
                   {getModulesForMarket(market.id).map((m, i) => (
-                    <DirectoryCard key={m.slug} module={m} index={i} onAbout={setAboutModule} isAdmin={isAdmin} />
+                    <DirectoryCard key={m.slug} module={m} index={i} onAbout={setAboutModule} isAdmin={isAdmin} isSignedIn={isSignedIn} />
                   ))}
                 </motion.div>
               )}

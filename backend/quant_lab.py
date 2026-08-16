@@ -490,11 +490,16 @@ class MomentumDashboardRequest(BaseModel):
     top_n: int = Field(default=10, ge=1, le=20)
 
 
-def create_quant_lab_router(db, definedge, get_current_admin, cron_secret: str) -> APIRouter:
+def create_quant_lab_router(db, definedge, get_current_admin, get_current_user, cron_secret: str) -> APIRouter:
     router = APIRouter(prefix="/quant-lab")
 
+    # Alpha Terminal access rule: only Index Vector and Exitline are open to
+    # signed-out visitors; the Quant Lab tools (EWMA, Sharpe, Momentum) all
+    # need an account. Enforced here, not just in the UI.
+    require_user = Depends(get_current_user)
+
     @router.post("/ewma-crossover")
-    async def ewma_crossover(payload: EwmaCrossoverRequest):
+    async def ewma_crossover(payload: EwmaCrossoverRequest, user: dict = require_user):
         segment = payload.segment.strip().upper()
         symbol = payload.symbol.strip().upper()
         fast_span, slow_span = payload.fast_span, payload.slow_span
@@ -559,14 +564,14 @@ def create_quant_lab_router(db, definedge, get_current_admin, cron_secret: str) 
         return result
 
     @router.get("/nifty500-symbols")
-    async def nifty500_symbols():
+    async def nifty500_symbols(user: dict = require_user):
         try:
             return await _fetch_nifty500_list()
         except DefinedgeError as e:
             raise HTTPException(status_code=502, detail=str(e))
 
     @router.post("/sharpe-dashboard")
-    async def sharpe_dashboard(payload: SharpeDashboardRequest):
+    async def sharpe_dashboard(payload: SharpeDashboardRequest, user: dict = require_user):
         if payload.mode not in ("compare", "top"):
             return {"found": False, "reason": "mode must be 'compare' or 'top'."}
 
@@ -620,7 +625,7 @@ def create_quant_lab_router(db, definedge, get_current_admin, cron_secret: str) 
         return {"found": True, "results": ranked, "universe_coverage": {"cached": len(fresh), "total": len(docs)}}
 
     @router.get("/sharpe-refresh-status")
-    async def sharpe_refresh_status():
+    async def sharpe_refresh_status(user: dict = require_user):
         doc = await db.quant_lab_sharpe_refresh_status.find_one({"id": "current"}, {"_id": 0})
         return doc or {"status": "idle", "total": 0, "done": 0, "cached": 0, "failed": 0}
 
@@ -641,7 +646,7 @@ def create_quant_lab_router(db, definedge, get_current_admin, cron_secret: str) 
         return {"status": "started"}
 
     @router.post("/momentum-dashboard")
-    async def momentum_dashboard(payload: MomentumDashboardRequest):
+    async def momentum_dashboard(payload: MomentumDashboardRequest, user: dict = require_user):
         if payload.mode not in ("compare", "top"):
             return {"found": False, "reason": "mode must be 'compare' or 'top'."}
 
@@ -695,7 +700,7 @@ def create_quant_lab_router(db, definedge, get_current_admin, cron_secret: str) 
         return {"found": True, "results": ranked, "universe_coverage": {"cached": len(fresh), "total": len(docs)}}
 
     @router.get("/momentum-refresh-status")
-    async def momentum_refresh_status():
+    async def momentum_refresh_status(user: dict = require_user):
         doc = await db.quant_lab_momentum_refresh_status.find_one({"id": "current"}, {"_id": 0})
         return doc or {"status": "idle", "total": 0, "done": 0, "cached": 0, "failed": 0}
 

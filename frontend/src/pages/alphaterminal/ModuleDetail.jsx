@@ -8,7 +8,7 @@ import Footer from "../../components/site/Footer";
 import {
   MomentumTable, StraddleCompass, openTradingViewChart,
 } from "../AlphaTerminal";
-import { getModule } from "./modules";
+import { getModule, moduleRequiresAuth } from "./modules";
 import EwmaCrossoverTool from "./EwmaCrossover";
 import SharpeDashboardTool from "./SharpeDashboard";
 import MomentumDashboardTool from "./MomentumDashboard";
@@ -17,7 +17,7 @@ import RelativeStrengthMatrix from "./RelativeStrengthMatrix";
 import BreadthTool from "./Breadth";
 import OptionsTrendTool from "./OptionsTrend";
 import PeterTingleTool from "./PeterTingle";
-import { useIsAdmin } from "../../lib/auth";
+import { useIsAdmin, useIsSignedIn } from "../../lib/auth";
 import USExitlineTool from "./USExitline";
 import { USMomentumLeadersTool, USMomentumInvestingTool } from "./USMomentum";
 import USMarketAssessmentTool from "./USMarketAssessment";
@@ -383,6 +383,7 @@ export default function ModuleDetail() {
   const module = getModule(slug);
   const [signals, setSignals] = useState({});
   const isAdmin = useIsAdmin();
+  const isSignedIn = useIsSignedIn();
 
   useEffect(() => {
     window.scrollTo(0, 0);
@@ -440,6 +441,8 @@ export default function ModuleDetail() {
             <PausedModuleNotice module={module} />
           ) : module.adminOnly && isAdmin !== true ? (
             <AdminOnlyNotice loading={isAdmin === null} />
+          ) : moduleRequiresAuth(module) && isSignedIn !== true ? (
+            <SignInRequiredNotice loading={isSignedIn === null} />
           ) : (
             <>
               <LiveDashboard module={module} signals={signals} />
@@ -488,6 +491,34 @@ const PausedModuleNotice = ({ module }) => (
 // this doesn't flash "Admin Access Required" at an admin before their
 // role comes back. The backend (peter_tingle_routes.py) is independently
 // admin-gated too -- this is UI-layer, not the only enforcement.
+// Shown when a signed-out visitor opens a gated module's URL directly.
+// Index Vector and Exitline never reach this; every other module does.
+// The backend enforces the same rule independently — this is the humane
+// version of the 401 the API would return anyway.
+const SignInRequiredNotice = ({ loading }) => (
+  <Section no="01" testId="section-live-dashboard">
+    <div className={`${SURFACE} border-dashed px-6 py-14 text-center`} data-testid="module-signin-required">
+      {loading ? (
+        <Loader2 size={18} className="animate-spin text-slate-600 mx-auto" />
+      ) : (
+        <>
+          <p className="font-mono-ui text-[11px] uppercase tracking-[0.28em] text-slate-600 mb-3">Sign In Required</p>
+          <p className="text-sm font-light text-slate-500 max-w-sm mx-auto mb-6">
+            This module is available to account holders. Index Vector and Exitline stay open to everyone.
+          </p>
+          <Link
+            to="/auth"
+            className="inline-flex items-center gap-1.5 rounded-full border border-sapphire-light/40 bg-sapphire/10 px-5 py-2.5 text-sm font-medium text-white hover:border-sapphire-light/70 transition-colors"
+            data-testid="module-signin-cta"
+          >
+            Sign in or create an account <ChevronRight size={14} />
+          </Link>
+        </>
+      )}
+    </div>
+  </Section>
+);
+
 const AdminOnlyNotice = ({ loading }) => (
   <Section no="01" testId="section-live-dashboard">
     <div className={`${SURFACE} border-dashed px-6 py-14 text-center`} data-testid="module-admin-only">

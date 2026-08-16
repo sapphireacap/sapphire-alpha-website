@@ -32,7 +32,12 @@ MAX_CONCURRENT_FETCHES = 3  # each stock costs ~5 Definedge calls (spot, futures
                             # more conservative than Breadth's 5 given the far heavier per-symbol payload
 
 
-def create_options_trend_router(db, definedge, get_current_admin, cron_secret: str) -> APIRouter:
+def create_options_trend_router(db, definedge, get_current_admin, get_current_user, cron_secret: str) -> APIRouter:
+    # Alpha Terminal access rule: only Index Vector and Exitline are open to
+    # signed-out visitors; every other module needs an account. Enforced on
+    # the server too, since these endpoints are directly callable.
+    require_user = Depends(get_current_user)
+
     router = APIRouter(prefix="/terminal/options-trend", tags=["options-trend"])
 
     async def _minute_closes(segment: str, token: str) -> list:
@@ -152,7 +157,7 @@ def create_options_trend_router(db, definedge, get_current_admin, cron_secret: s
         )
 
     @router.get("/scan")
-    async def scan():
+    async def scan(user: dict = require_user):
         today_ist = datetime.now(IST).strftime("%Y-%m-%d")
         docs = await db[SCAN_COLLECTION].find({}, {"_id": 0}).to_list(length=600)
         if not docs:

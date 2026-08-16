@@ -1907,13 +1907,13 @@ blackbox_options_router = create_blackbox_options_router(db, definedge, get_curr
 exitline_router = create_exitline_router(db, definedge)
 pnf_router = create_pnf_router(db, definedge, get_current_pnf_subscriber)
 renko_router = create_renko_router(db, definedge, get_current_pnf_subscriber)
-relative_strength_router = create_relative_strength_router(db, definedge)
-breadth_router = create_breadth_router(db, definedge, get_current_admin, CRON_SECRET)
+relative_strength_router = create_relative_strength_router(db, definedge, get_current_user)
+breadth_router = create_breadth_router(db, definedge, get_current_admin, get_current_user, CRON_SECRET)
 intraday_breadth_router = create_intraday_breadth_router(db, definedge, get_current_admin, CRON_SECRET)
 n50_quotes_router = create_n50_quotes_router(db, definedge, get_current_admin, CRON_SECRET)
 oi_buildup_router = create_oi_buildup_router(db, definedge, get_current_admin, CRON_SECRET)
 multi_asset_returns_router = create_multi_asset_returns_router()
-options_trend_router = create_options_trend_router(db, definedge, get_current_admin, CRON_SECRET)
+options_trend_router = create_options_trend_router(db, definedge, get_current_admin, get_current_user, CRON_SECRET)
 market_dashboard_router = create_market_dashboard_router(db, get_current_admin, CRON_SECRET)
 
 app.include_router(api_router)
@@ -1939,7 +1939,7 @@ if "journal" not in DISABLED_FEATURES:
     app.include_router(journal_router, prefix="/api")
     app.include_router(analytics_router, prefix="/api")
 if "quant_lab" not in DISABLED_FEATURES:
-    quant_lab_router = create_quant_lab_router(db, definedge, get_current_admin, CRON_SECRET)
+    quant_lab_router = create_quant_lab_router(db, definedge, get_current_admin, get_current_user, CRON_SECRET)
     app.include_router(quant_lab_router, prefix="/api")
 if "blackbox_legacy" not in DISABLED_FEATURES:
     blackbox_router = create_blackbox_router(db, definedge, get_current_admin, CRON_SECRET)
@@ -1949,16 +1949,16 @@ if "stock_terminal" not in DISABLED_FEATURES:
     app.include_router(stock_terminal_router, prefix="/api")
     lattice_router = create_lattice_router(db, definedge, get_current_admin, CRON_SECRET)
     app.include_router(lattice_router, prefix="/api")
-    peter_tingle_router = create_peter_tingle_router(db, definedge, get_current_admin, CRON_SECRET)
+    peter_tingle_router = create_peter_tingle_router(db, definedge, get_current_admin, get_current_user, CRON_SECRET)
     app.include_router(peter_tingle_router, prefix="/api")
-us_markets_router = create_us_markets_router(db, get_current_admin, CRON_SECRET)
+us_markets_router = create_us_markets_router(db, get_current_admin, get_current_user, CRON_SECRET)
 app.include_router(us_markets_router, prefix="/api")
 
 # Forex/Crypto/US module parity — one router, /api/markets/{market}/{module}.
 # The existing us_markets_router above is deliberately left in place and
 # untouched: its six modules are live and already have frontend components
 # pointed at their URLs, so nothing is rerouted through the new layer.
-multi_market_router = create_multi_market_router(db, get_current_admin, CRON_SECRET)
+multi_market_router = create_multi_market_router(db, get_current_admin, get_current_user, CRON_SECRET)
 app.include_router(multi_market_router, prefix="/api")
 
 app.add_middleware(

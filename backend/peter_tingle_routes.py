@@ -59,11 +59,16 @@ def _price_performance(metrics: dict) -> dict:
     return {label: m.get(key) for label, key in _PRICE_PERFORMANCE_KEYS.items()}
 
 
-def create_peter_tingle_router(db, definedge, get_current_admin, cron_secret: str) -> APIRouter:
+def create_peter_tingle_router(db, definedge, get_current_admin, get_current_user, cron_secret: str) -> APIRouter:
+    # Alpha Terminal access rule: only Index Vector and Exitline are open to
+    # signed-out visitors; every other module needs an account. Enforced on
+    # the server too, since these endpoints are directly callable.
+    require_user = Depends(get_current_user)
+
     router = APIRouter(prefix="/peter-tingle")
 
     @router.get("/scan/{symbol}")
-    async def scan(symbol: str):
+    async def scan(symbol: str, user: dict = require_user):
         symbol = symbol.strip().upper()
         master = await db.stock_symbol_master.find_one({"symbol": symbol}, {"_id": 0})
         if not master:
@@ -100,7 +105,7 @@ def create_peter_tingle_router(db, definedge, get_current_admin, cron_secret: st
         }
 
     @router.get("/us/symbols/search")
-    async def search_us_symbols(q: str = ""):
+    async def search_us_symbols(q: str = "", user: dict = require_user):
         q = q.strip()
         if len(q) < 1:
             return []
@@ -112,7 +117,7 @@ def create_peter_tingle_router(db, definedge, get_current_admin, cron_secret: st
         return rows
 
     @router.get("/us/scan/{symbol}")
-    async def scan_us(symbol: str):
+    async def scan_us(symbol: str, user: dict = require_user):
         symbol = symbol.strip().upper()
         master = await db.us_stock_symbol_master.find_one({"symbol": symbol}, {"_id": 0})
         if not master:

@@ -7,7 +7,7 @@ import asyncio
 import logging
 from datetime import datetime
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Depends
 
 import relative_strength_matrix as rsm
 import yahoo_finance_client as yf
@@ -31,11 +31,16 @@ CACHE_COLLECTION = "rs_daily_closes"
 YEARS_BACK = 20
 
 
-def create_relative_strength_router(db, definedge) -> APIRouter:
+def create_relative_strength_router(db, definedge, get_current_user) -> APIRouter:
+    # Alpha Terminal access rule: only Index Vector and Exitline are open to
+    # signed-out visitors; every other module needs an account. Enforced on
+    # the server too, since these endpoints are directly callable.
+    require_user = Depends(get_current_user)
+
     router = APIRouter(prefix="/terminal/relative-strength", tags=["relative-strength"])
 
     @router.get("/groups")
-    async def groups():
+    async def groups(user: dict = require_user):
         return {"groups": [
             {"key": k, "label": v["label"], "symbols": v["symbols"]} for k, v in GROUPS.items()
         ]}
@@ -99,7 +104,7 @@ def create_relative_strength_router(db, definedge) -> APIRouter:
         return {b["date"]: b["close"] for b in bars}
 
     @router.get("/matrix")
-    async def matrix(group: str, box_pcts: str = "0.25,1,3"):
+    async def matrix(group: str, box_pcts: str = "0.25,1,3", user: dict = require_user):
         """Full multi-box-size matrix + ranking for one fixed group. Box
         sizes default to the book's own short/medium/long-term convention
         (0.25% / 1% / 3%) — pass a different comma-separated list to

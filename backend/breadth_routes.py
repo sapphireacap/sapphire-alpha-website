@@ -28,7 +28,12 @@ YEARS_BACK = 15  # generous — this is each stock's OWN P&F state, not a ratio 
 MAX_CONCURRENT_FETCHES = 5  # courteous to Definedge, same bound quant_lab.py uses for its 500-symbol refresh
 
 
-def create_breadth_router(db, definedge, get_current_admin, cron_secret: str) -> APIRouter:
+def create_breadth_router(db, definedge, get_current_admin, get_current_user, cron_secret: str) -> APIRouter:
+    # Alpha Terminal access rule: only Index Vector and Exitline are open to
+    # signed-out visitors; every other module needs an account. Enforced on
+    # the server too, since these endpoints are directly callable.
+    require_user = Depends(get_current_user)
+
     router = APIRouter(prefix="/terminal/breadth", tags=["breadth"])
 
     async def _closes_for(symbol: str, master) -> dict:
@@ -174,11 +179,11 @@ def create_breadth_router(db, definedge, get_current_admin, cron_secret: str) ->
         )
 
     @router.get("/groups")
-    async def groups():
+    async def groups(user: dict = require_user):
         return {"groups": [{"key": k, "label": v["label"]} for k, v in GROUPS.items()]}
 
     @router.get("/x-percent")
-    async def x_percent(group: str):
+    async def x_percent(group: str, user: dict = require_user):
         if group not in GROUPS:
             raise HTTPException(status_code=404, detail=f"Unknown group '{group}'. Must be one of {', '.join(GROUPS)}.")
         doc = await db[SERIES_CACHE_COLLECTION].find_one({"group": group}, {"_id": 0})

@@ -59,8 +59,20 @@ def _blocked(adapter, slug: str) -> dict | None:
     return None
 
 
-def create_multi_market_router(db, get_current_admin, cron_secret: str) -> APIRouter:
+def create_multi_market_router(db, get_current_admin, get_current_user, cron_secret: str) -> APIRouter:
     router = APIRouter(prefix="/markets", tags=["markets"])
+
+    # Alpha Terminal access rule: Index Vector and Exitline are open to
+    # everyone; every other module requires an account. Enforced HERE, not
+    # only in the UI — a client-side flag is a courtesy, not access control,
+    # since these endpoints are directly callable.
+    #
+    # Left deliberately open alongside those two modules:
+    #   /modules  the directory's availability map, which the signed-out
+    #             grid needs in order to render its locked cards at all
+    #   /search   the Exitline symbol picker
+    #   /option-underlyings  the Index Vector underlying list
+    require_user = Depends(get_current_user)
 
     def _require_cron(request: Request):
         if not cron_secret or request.headers.get("X-Cron-Key") != cron_secret:
@@ -85,7 +97,7 @@ def create_multi_market_router(db, get_current_admin, cron_secret: str) -> APIRo
                 "groups": adapter.groups(), "modules": out}
 
     @router.get("/{market}/universe")
-    async def universe(market: str):
+    async def universe(market: str, user: dict = require_user):
         adapter = _adapter_or_404(market)
         rows = await adapter.universe(db)
         return {"market": adapter.market_id, "total": len(rows), "rows": rows}
@@ -110,7 +122,7 @@ def create_multi_market_router(db, get_current_admin, cron_secret: str) -> APIRo
 
     # ------------------------------------------------------------- Breadth --
     @router.get("/{market}/breadth/groups")
-    async def breadth_groups(market: str):
+    async def breadth_groups(market: str, user: dict = require_user):
         """{key, label} pairs — the exact shape the shared BreadthTool
         component already expects from the India/US breadth endpoints, so
         that one component serves every market with no branching in it."""
@@ -118,7 +130,7 @@ def create_multi_market_router(db, get_current_admin, cron_secret: str) -> APIRo
         return {"groups": [{"key": g, "label": g} for g in adapter.groups()]}
 
     @router.get("/{market}/breadth")
-    async def breadth(market: str, group: str = None):
+    async def breadth(market: str, group: str = None, user: dict = require_user):
         adapter = _adapter_or_404(market)
         group = group or adapter.groups()[0]
         return await eng.breadth_read(adapter, db, group)
@@ -157,12 +169,12 @@ def create_multi_market_router(db, get_current_admin, cron_secret: str) -> APIRo
 
     # ---------------------------------------------------- Relative Strength --
     @router.get("/{market}/relative-strength/groups")
-    async def relative_strength_groups(market: str):
+    async def relative_strength_groups(market: str, user: dict = require_user):
         adapter = _adapter_or_404(market)
         return {"groups": [{"key": g, "label": g} for g in adapter.groups()]}
 
     @router.get("/{market}/relative-strength/matrix")
-    async def relative_strength_matrix(market: str, group: str = None, box_pcts: str = "0.25,1,3"):
+    async def relative_strength_matrix(market: str, group: str = None, box_pcts: str = "0.25,1,3", user: dict = require_user):
         """Same signature and same response shape as the India route's
         /terminal/relative-strength/matrix, including the book's default
         short/medium/long-term box sizes -- see eng.relative_strength."""
@@ -182,7 +194,7 @@ def create_multi_market_router(db, get_current_admin, cron_secret: str) -> APIRo
 
     # ------------------------------------------- Universe-ranking modules ---
     @router.get("/{market}/{slug}/top")
-    async def ranking_top(market: str, slug: str, limit: int = 20):
+    async def ranking_top(market: str, slug: str, limit: int = 20, user: dict = require_user):
         """Cached read for the three universe-walking modules. Never
         computes inline -- see the module docstring on why."""
         adapter = _adapter_or_404(market)
@@ -263,7 +275,7 @@ def create_multi_market_router(db, get_current_admin, cron_secret: str) -> APIRo
         } for r in rows]
 
     @router.get("/{market}/universe-symbols")
-    async def universe_symbols(market: str):
+    async def universe_symbols(market: str, user: dict = require_user):
         """[{symbol, company_name}] — the shape SymbolMultiSelect expects."""
         adapter = _adapter_or_404(market)
         rows = await adapter.universe(db)
@@ -332,24 +344,24 @@ def create_multi_market_router(db, get_current_admin, cron_secret: str) -> APIRo
                 "computed_at": doc.get("computed_at")}
 
     @router.post("/{market}/sharpe-dashboard")
-    async def sharpe_dashboard(market: str, payload: dict = None):
+    async def sharpe_dashboard(market: str, payload: dict = None, user: dict = require_user):
         return await _dashboard(market, "sharpe", payload)
 
     @router.get("/{market}/sharpe-refresh-status")
-    async def sharpe_refresh_status(market: str):
+    async def sharpe_refresh_status(market: str, user: dict = require_user):
         return await _refresh_status(market, "sharpe")
 
     @router.post("/{market}/momentum-dashboard")
-    async def momentum_dashboard(market: str, payload: dict = None):
+    async def momentum_dashboard(market: str, payload: dict = None, user: dict = require_user):
         return await _dashboard(market, "momentum", payload)
 
     @router.get("/{market}/momentum-refresh-status")
-    async def momentum_refresh_status(market: str):
+    async def momentum_refresh_status(market: str, user: dict = require_user):
         return await _refresh_status(market, "momentum")
 
     # -------------------------------------------------------- EWMA Scanner --
     @router.get("/{market}/ewma")
-    async def ewma(market: str, symbol: str, fast: int = 20, slow: int = 50):
+    async def ewma(market: str, symbol: str, fast: int = 20, slow: int = 50, user: dict = require_user):
         adapter = _adapter_or_404(market)
         try:
             return await eng.ewma(adapter, db, symbol, fast, slow)
@@ -357,7 +369,7 @@ def create_multi_market_router(db, get_current_admin, cron_secret: str) -> APIRo
             raise HTTPException(status_code=422, detail=str(e)) from e
 
     @router.post("/{market}/ewma-crossover")
-    async def ewma_crossover(market: str, payload: dict):
+    async def ewma_crossover(market: str, payload: dict, user: dict = require_user):
         """POST twin of the GET above, speaking the India route's exact
         request and response contract ({symbol, fast_span, slow_span} in;
         found/reason/resolved_symbol out) so the shared EwmaCrossoverTool
@@ -381,7 +393,7 @@ def create_multi_market_router(db, get_current_admin, cron_secret: str) -> APIRo
 
     # ---------------------------------------------------------- Gamma Pulse --
     @router.get("/{market}/gamma-pulse")
-    async def gamma_pulse(market: str, symbol: str = None):
+    async def gamma_pulse(market: str, symbol: str = None, user: dict = require_user):
         adapter = _adapter_or_404(market)
         blocked = _blocked(adapter, "options-trend-scanner")
         if blocked:
@@ -395,7 +407,7 @@ def create_multi_market_router(db, get_current_admin, cron_secret: str) -> APIRo
             raise HTTPException(status_code=502, detail=str(e)) from e
 
     @router.get("/{market}/options-trend/scan")
-    async def options_trend_scan(market: str):
+    async def options_trend_scan(market: str, user: dict = require_user):
         """Universe scan in the India route's shape — see
         eng.gamma_pulse_scan. Blocked markets return the same
         {available:false, reason} envelope every other module uses."""
@@ -430,7 +442,7 @@ def create_multi_market_router(db, get_current_admin, cron_secret: str) -> APIRo
 
     # ---------------------------------------------------------- Peter Tingle --
     @router.get("/{market}/peter-tingle")
-    async def peter_tingle(market: str, symbol: str):
+    async def peter_tingle(market: str, symbol: str, user: dict = require_user):
         adapter = _adapter_or_404(market)
         blocked = _blocked(adapter, "peter-tingle")
         if blocked:

@@ -33,7 +33,12 @@ MOMENTUM_INVESTING_MIN_COVERAGE = 300
 INDEX_QUOTES = {"SPX": "%5EGSPC", "NDX": "%5ENDX"}
 
 
-def create_us_markets_router(db, get_current_admin, cron_secret: str) -> APIRouter:
+def create_us_markets_router(db, get_current_admin, get_current_user, cron_secret: str) -> APIRouter:
+    # Alpha Terminal access rule: only Index Vector and Exitline are open to
+    # signed-out visitors; every other module needs an account. Enforced on
+    # the server too, since these endpoints are directly callable.
+    require_user = Depends(get_current_user)
+
     router = APIRouter(prefix="/us-markets", tags=["us-markets"])
 
     def _require_cron(request: Request):
@@ -69,7 +74,7 @@ def create_us_markets_router(db, get_current_admin, cron_secret: str) -> APIRout
 
     # -- Momentum Investing (12-1, risk-adjusted, positional) ---------------
     @router.get("/momentum-investing/top")
-    async def momentum_investing_top(limit: int = 20):
+    async def momentum_investing_top(limit: int = 20, user: dict = require_user):
         today = datetime.now(timezone.utc).date().isoformat()
         docs = await db.us_momentum_cache.find({}, {"_id": 0}).to_list(600)
         fresh = [d for d in docs if d.get("computed_date") == today and d.get("stats", {}).get("momentum_score") is not None]
@@ -99,7 +104,7 @@ def create_us_markets_router(db, get_current_admin, cron_secret: str) -> APIRout
 
     # -- Momentum Leaders (1w/1m short-term ranking) -------------------------
     @router.get("/momentum-leaders/top")
-    async def momentum_leaders_top(limit: int = 20):
+    async def momentum_leaders_top(limit: int = 20, user: dict = require_user):
         today = datetime.now(timezone.utc).date().isoformat()
         docs = await db.us_momentum_leaders_cache.find({}, {"_id": 0}).to_list(600)
         fresh = [d for d in docs if d.get("computed_date") == today]
@@ -125,7 +130,7 @@ def create_us_markets_router(db, get_current_admin, cron_secret: str) -> APIRout
 
     # -- Breadth --------------------------------------------------------------
     @router.get("/breadth")
-    async def breadth():
+    async def breadth(user: dict = require_user):
         doc = await db[us_breadth.SERIES_CACHE_COLLECTION].find_one({"group": us_breadth.GROUP_KEY}, {"_id": 0})
         if not doc or not doc.get("series"):
             raise HTTPException(status_code=404, detail="S&P 500 breadth hasn't been computed yet — trigger a refresh.")
@@ -150,7 +155,7 @@ def create_us_markets_router(db, get_current_admin, cron_secret: str) -> APIRout
 
     # -- Market Assessment (composite: index levels, breadth, sectors, movers) --
     @router.get("/market-assessment")
-    async def market_assessment():
+    async def market_assessment(user: dict = require_user):
         index_levels = {}
         for key, yahoo_sym in INDEX_QUOTES.items():
             try:

@@ -133,6 +133,34 @@ export const useCurrentUser = () => {
 };
 
 /**
+ * Non-redirecting, non-blocking "is anyone signed in?" check — the
+ * Alpha Terminal counterpart to useIsAdmin, for greying out module cards
+ * rather than gating a whole page.
+ *
+ * Returns null while resolving, then a real boolean. The null state is
+ * load-bearing here: treating "still checking" as signed-out would flash
+ * every gated card into its locked state on every page load, then unlock
+ * them a moment later. Callers render the locked treatment only once this
+ * is exactly `false`.
+ *
+ * Checks both token keys for the same reason useIsAdmin does — an admin
+ * may be signed in via /admin33 rather than as a trader.
+ */
+export const useIsSignedIn = () => {
+  const [signedIn, setSignedIn] = useState(null);
+
+  useEffect(() => {
+    const token = localStorage.getItem(TRADER_TOKEN_KEY) || localStorage.getItem(ADMIN_TOKEN_KEY);
+    if (!token) { setSignedIn(false); return; }
+    axios.get(`${API}/auth/me`, { headers: { Authorization: `Bearer ${token}` } })
+      .then(() => setSignedIn(true))
+      .catch(() => setSignedIn(false));
+  }, []);
+
+  return signedIn;
+};
+
+/**
  * P&F Studio's gate: requires a signed-in trader with an active
  * pnf_access_until (or an admin). Anyone else is bounced to the /pnf-studio
  * marketing/subscribe page rather than /login, since that page is what

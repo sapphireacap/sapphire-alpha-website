@@ -89,7 +89,6 @@ export const SignupPage = () => {
               data-testid="signup-username"
               required
             />
-            <p className="text-xs text-slate-600 mt-2">This is what shows once you're signed in — 3-20 characters, lowercase letters, numbers, underscores.</p>
           </div>
           <div>
             <label className="font-mono-ui text-[11px] uppercase tracking-[0.2em] text-slate-500 block mb-2">Email</label>
