@@ -219,10 +219,15 @@ async def breadth_read(adapter, db, group: str) -> dict:
 # ---------------------------------------------------------------------------
 # Relative Strength Engine
 # ---------------------------------------------------------------------------
-async def relative_strength(adapter, db, group: str, box_pct: float) -> dict:
-    """Pairwise ratio P&F across a group -- compute_matrix imported from
-    relative_strength_matrix.py unchanged, including its per-pair date
-    alignment and x1000 ratio scaling."""
+async def relative_strength(adapter, db, group: str, box_pcts: list) -> dict:
+    """Pairwise ratio P&F across a group, at several box sizes at once.
+
+    Uses relative_strength_matrix.compute_ranking -- the SAME function the
+    India route calls -- and returns the SAME response shape
+    (label/symbols/as_of/matrices/ranking). That is what lets the shared
+    RelativeStrengthMatrix component render this market with no branching
+    inside it: the module has to look identical on every tab, so the
+    endpoint feeding it has to speak the identical contract."""
     symbols = await adapter.group_members(db, group)
     if len(symbols) < 2:
         raise AdapterError(f"Group '{group}' needs at least two members.")
@@ -239,12 +244,32 @@ async def relative_strength(adapter, db, group: str, box_pct: float) -> dict:
     if len(resolved) < 2:
         raise AdapterError(f"Only {len(resolved)} of {len(symbols)} symbols in '{group}' returned data.")
 
-    matrix = rsm.compute_matrix(resolved, closes_by_symbol, box_pct)
+    # Same note as the India route: NOT truncated to a group-wide date
+    # intersection for the computation -- compute_matrix aligns each PAIR to
+    # its own common dates. This intersection is only used for the displayed
+    # as_of/history_from labels.
+    common = sorted(set.intersection(*(set(closes_by_symbol[s].keys()) for s in resolved)))
+    if len(common) < 2:
+        raise AdapterError(f"Not enough overlapping price history across '{group}' yet.")
+
+    result = rsm.compute_ranking(resolved, closes_by_symbol, box_pcts)
+    label_by_value = {bp: (f"{bp:g}") for bp in box_pcts}
+
     return {
-        "market": adapter.market_id, "group": group, "box_pct": box_pct,
-        "reversal_boxes": rsm.DEFAULT_REVERSAL,
-        "symbols": resolved, "universe_total": len(symbols), "universe_resolved": len(resolved),
-        "computed_at": datetime.now(timezone.utc).isoformat(), **matrix,
+        "market": adapter.market_id, "group": group, "label": group,
+        "symbols": resolved, "as_of": common[-1], "history_from": common[0],
+        "box_pcts": [label_by_value[bp] for bp in box_pcts],
+        "universe_total": len(symbols), "universe_resolved": len(resolved),
+        "matrices": {
+            label_by_value[bp]: {"grid": m["grid"], "scores": m["scores"]}
+            for bp, m in result["matrices"].items()
+        },
+        "ranking": [
+            {"symbol": r["symbol"],
+             "scores": {label_by_value[bp]: sc for bp, sc in r["scores"].items()},
+             "total": r["total"]}
+            for r in result["ranking"]
+        ],
     }
 
 
@@ -393,6 +418,42 @@ async def gamma_pulse(adapter, db, symbol: str) -> dict:
         "box": {"future_pct": ote.FUTURE_BOX_PCT, "option_pct": ote.OPTION_BOX_PCT,
                 "reversal": ote.OPTION_REVERSAL},
         "computed_at": datetime.now(timezone.utc).isoformat(),
+    }
+
+
+async def gamma_pulse_scan(adapter, db) -> dict:
+    """Every option underlying in this market, scanned — the SAME response
+    shape the India route serves (results/as_of/universe_total, with each
+    row carrying symbol/verdict/atm_strike/future/call/put/computed_at), so
+    the shared OptionsTrendTool component renders it with no branching.
+
+    India scans a large stock universe; here the universe is however many
+    instruments actually have a readable options chain (BTC/ETH on Deribit,
+    the liquid US names on Alpaca). Smaller, but real — and the count is
+    reported honestly rather than padded."""
+    symbols = adapter.option_underlyings()
+    rows = []
+    for symbol in symbols:
+        try:
+            r = await gamma_pulse(adapter, db, symbol)
+        except AdapterError as e:
+            logger.info("Gamma Pulse scan: %s/%s unavailable: %s", adapter.market_id, symbol, e)
+            continue
+        if not r.get("available"):
+            continue
+        rows.append({
+            "symbol": symbol,
+            "verdict": r["verdict"],
+            "atm_strike": r["strike"],
+            "future": r["legs"]["future"]["direction"],
+            "call": r["legs"]["call"]["direction"],
+            "put": r["legs"]["put"]["direction"],
+            "computed_at": r["computed_at"],
+        })
+    return {
+        "results": rows,
+        "as_of": datetime.now(timezone.utc).date().isoformat(),
+        "universe_total": len(rows),
     }
 
 

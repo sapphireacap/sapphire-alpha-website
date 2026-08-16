@@ -23,8 +23,8 @@ import { USMomentumLeadersTool, USMomentumInvestingTool } from "./USMomentum";
 import USMarketAssessmentTool from "./USMarketAssessment";
 import CryptoDashboard from "./CryptoDashboard";
 import {
-  MMExitline, MMBreadth, MMRelativeStrength, MMMomentumInvesting, MMMomentumLeaders,
-  MMSharpe, MMEwma, MMGammaPulse, MMIndexVector, MMPeterTingle, MMUnavailable,
+  MMExitline, MMMomentumInvesting, MMMomentumLeaders,
+  MMSharpe, MMIndexVector, MMPeterTingle, MMUnavailable,
 } from "./MultiMarketTools";
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
@@ -213,13 +213,33 @@ const LiveDashboard = ({ module, signals }) => (
         the data source. See MultiMarketTools.jsx for why these are generic
         rather than one component per (module x market). */}
     {module.kind === "mm-exitline" && <MMExitline market={module.market} />}
-    {module.kind === "mm-breadth" && <MMBreadth market={module.market} />}
-    {module.kind === "mm-relative-strength" && <MMRelativeStrength market={module.market} />}
+    {/* The SAME BreadthTool the India and US tabs render — it was already
+        endpoint-parameterised, so multi-market needed no new UI at all. */}
+    {module.kind === "mm-breadth" && (
+      <BreadthTool
+        groupsPath={`/markets/${module.market}/breadth/groups`}
+        seriesPath={`/markets/${module.market}/breadth`}
+      />
+    )}
+    {module.kind === "mm-relative-strength" && (
+      <RelativeStrengthMatrix
+        groupsPath={`/markets/${module.market}/relative-strength/groups`}
+        matrixPath={`/markets/${module.market}/relative-strength/matrix`}
+        dateIsUs
+      />
+    )}
     {module.kind === "mm-momentum-investing" && <MMMomentumInvesting market={module.market} />}
     {module.kind === "mm-momentum-leaders" && <MMMomentumLeaders market={module.market} />}
     {module.kind === "mm-sharpe" && <MMSharpe market={module.market} />}
-    {module.kind === "mm-ewma" && <MMEwma market={module.market} />}
-    {module.kind === "mm-gamma-pulse" && <MMGammaPulse market={module.market} />}
+    {module.kind === "mm-ewma" && (
+      <EwmaCrossoverTool
+        scanPath={`/markets/${module.market}/ewma-crossover`}
+        defaultSymbol={module.market === "crypto" ? "BTCUSDT" : module.market === "forex" ? "EURUSD" : "AAPL"}
+      />
+    )}
+    {module.kind === "mm-gamma-pulse" && (
+      <OptionsTrendTool scanPath={`/markets/${module.market}/options-trend/scan`} />
+    )}
     {module.kind === "mm-index-vector" && <MMIndexVector market={module.market} />}
     {module.kind === "mm-peter-tingle" && <MMPeterTingle market={module.market} />}
     {module.kind === "mm-unavailable" && <MMUnavailable module={module} />}

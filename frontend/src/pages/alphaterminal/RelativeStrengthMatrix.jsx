@@ -108,8 +108,18 @@ const MatrixGrid = ({ symbols, grid }) => (
 // India page used to omit groupPrefix entirely, so its selector showed
 // every group from BOTH markets side by side (Nifty Bank/IT/Auto mixed
 // in with US Technology/Financials/etc.) -- always pass a prefix now.
-const RelativeStrengthMatrix = ({ groupPrefix, defaultGroup = "nifty-bank" }) => {
-  const isUs = groupPrefix === "us-";
+// `groupsPath`/`matrixPath` point this same tool at another market's
+// relative-strength endpoints, which speak an identical contract (see
+// multi_market_engine.relative_strength). Forex/Crypto groups come from
+// their own market-scoped endpoint, so they need no `groupPrefix` filter —
+// that mechanism exists only because India and US share one GROUPS
+// registry. `dateIsUs` controls date formatting independently of the
+// prefix, since a non-India market may have no prefix at all.
+const RelativeStrengthMatrix = ({ groupPrefix, defaultGroup = "nifty-bank",
+                                  groupsPath = "/terminal/relative-strength/groups",
+                                  matrixPath = "/terminal/relative-strength/matrix",
+                                  dateIsUs = null }) => {
+  const isUs = dateIsUs === null ? groupPrefix === "us-" : dateIsUs;
   const [groups, setGroups] = useState([]);
   const [group, setGroup] = useState(defaultGroup);
   const [boxTab, setBoxTab] = useState("1");
@@ -118,21 +128,27 @@ const RelativeStrengthMatrix = ({ groupPrefix, defaultGroup = "nifty-bank" }) =>
   const [error, setError] = useState(false);
 
   useEffect(() => {
-    axios.get(`${API}/terminal/relative-strength/groups`)
-      .then(({ data: d }) => setGroups(groupPrefix ? d.groups.filter((g) => g.key.startsWith(groupPrefix)) : d.groups))
+    axios.get(`${API}${groupsPath}`)
+      .then(({ data: d }) => {
+        const list = groupPrefix ? d.groups.filter((g) => g.key.startsWith(groupPrefix)) : d.groups;
+        setGroups(list);
+        // Same self-correction as BreadthTool: a market whose group keys
+        // don't include the default would otherwise open on a blank matrix.
+        setGroup((g) => (list.some((x) => x.key === g) ? g : (list[0]?.key || g)));
+      })
       .catch(() => {});
-  }, [groupPrefix]);
+  }, [groupPrefix, groupsPath]);
 
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
     setError(false);
-    axios.get(`${API}/terminal/relative-strength/matrix`, { params: { group, box_pcts: "0.25,1,3" } })
+    axios.get(`${API}${matrixPath}`, { params: { group, box_pcts: "0.25,1,3" } })
       .then(({ data: d }) => { if (!cancelled) setData(d); })
       .catch(() => { if (!cancelled) setError(true); })
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
-  }, [group]);
+  }, [group, matrixPath]);
 
   return (
     <div data-testid="rs-matrix-tool">

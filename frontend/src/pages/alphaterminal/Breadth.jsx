@@ -102,9 +102,14 @@ const BreadthChart = ({ series }) => (
 // market's breadth endpoint — the US Markets section has only one group
 // (S&P 500, no group picker needed) so it skips the /groups fetch
 // entirely via `fixedGroup` and calls seriesPath with no `group` param.
-const BreadthTool = ({ groupsPath = "/terminal/breadth/groups", seriesPath = "/terminal/breadth/x-percent", fixedGroup = null }) => {
+// `defaultGroup` is which group loads first. It defaults to nifty-50 so the
+// India page behaves exactly as before; other markets pass their own, since
+// asking a Forex/Crypto endpoint for "nifty-50" would just miss on first
+// paint and show an empty chart until the user clicked something.
+const BreadthTool = ({ groupsPath = "/terminal/breadth/groups", seriesPath = "/terminal/breadth/x-percent",
+                       fixedGroup = null, defaultGroup = "nifty-50" }) => {
   const [groups, setGroups] = useState(fixedGroup ? [] : []);
-  const [group, setGroup] = useState(fixedGroup || "nifty-50");
+  const [group, setGroup] = useState(fixedGroup || defaultGroup);
   const [zoom, setZoom] = useState("3m");
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -113,7 +118,13 @@ const BreadthTool = ({ groupsPath = "/terminal/breadth/groups", seriesPath = "/t
   useEffect(() => {
     if (fixedGroup) return;
     axios.get(`${API}${groupsPath}`)
-      .then(({ data: d }) => setGroups(d.groups))
+      .then(({ data: d }) => {
+        setGroups(d.groups);
+        // Fall back to the first real group whenever the current selection
+        // isn't in this market's list — otherwise switching markets leaves
+        // an India group key selected and the first paint is a blank chart.
+        setGroup((g) => (d.groups?.some((x) => x.key === g) ? g : (d.groups?.[0]?.key || g)));
+      })
       .catch(() => {});
   }, [groupsPath, fixedGroup]);
 

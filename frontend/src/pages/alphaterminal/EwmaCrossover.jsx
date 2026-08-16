@@ -87,8 +87,11 @@ const EwmaResults = ({ result }) => (
   </div>
 );
 
-const EwmaCrossoverTool = () => {
-  const [form, setForm] = useState({ segment: "NSE", symbol: "", fast_span: 20, slow_span: 50 });
+// `scanPath`/`defaultSymbol` point this same tool at another market's EWMA
+// endpoint, which speaks the identical request/response contract (see
+// multi_market_routes' /markets/{market}/ewma-crossover).
+const EwmaCrossoverTool = ({ scanPath = "/quant-lab/ewma-crossover", defaultSymbol = "" }) => {
+  const [form, setForm] = useState({ segment: "NSE", symbol: defaultSymbol, fast_span: 20, slow_span: 50 });
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState(null); // { found: true, ... } | { found: false, reason } | null
 
@@ -100,7 +103,7 @@ const EwmaCrossoverTool = () => {
     setLoading(true);
     setResult(null);
     try {
-      const { data } = await axios.post(`${API}/quant-lab/ewma-crossover`, {
+      const { data } = await axios.post(`${API}${scanPath}`, {
         segment: form.segment,
         symbol: form.symbol.trim(),
         fast_span: Number(form.fast_span),

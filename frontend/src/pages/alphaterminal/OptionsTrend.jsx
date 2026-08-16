@@ -43,18 +43,25 @@ const Row = ({ r }) => {
   );
 };
 
-const OptionsTrendTool = () => {
+// `scanPath` points this same tool at another market's Gamma Pulse scan,
+// which returns an identical results/as_of/universe_total payload (see
+// multi_market_engine.gamma_pulse_scan).
+const OptionsTrendTool = ({ scanPath = "/terminal/options-trend/scan" }) => {
   const [data, setData] = useState(null);
   const [filter, setFilter] = useState("All");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
 
   useEffect(() => {
-    axios.get(`${API}/terminal/options-trend/scan`)
-      .then(({ data: d }) => setData(d))
-      .catch(() => setError(true))
-      .finally(() => setLoading(false));
-  }, []);
+    let cancelled = false;
+    setLoading(true);
+    setError(false);
+    axios.get(`${API}${scanPath}`)
+      .then(({ data: d }) => { if (!cancelled) setData(d); })
+      .catch(() => { if (!cancelled) setError(true); })
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
+  }, [scanPath]);
 
   const rows = useMemo(() => {
     if (!data?.results) return [];

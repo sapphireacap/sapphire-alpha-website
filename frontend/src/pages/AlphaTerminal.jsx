@@ -219,7 +219,13 @@ export const INDEX_LABELS = { NIFTY: "NIFTY", BANKNIFTY: "BANKNIFTY", FINNIFTY: 
 
 const fmtFlipLevel = (v) => (v == null ? "—" : Math.round(v).toLocaleString("en-IN"));
 
-export const StraddleCompass = ({ signal, index = "NIFTY" }) => {
+// `livePoll` is the ONLY thing that varies by market here — the rendering
+// below is shared verbatim so Index Vector looks identical on every tab.
+// India polls /terminal/spot on an NSE session clock for a ticking spot;
+// other markets have no such endpoint (and no NSE calendar), so they pass
+// livePoll={false} and the compass simply shows the spot that came back
+// with their own signal. Nothing about the visual output changes.
+export const StraddleCompass = ({ signal, index = "NIFTY", livePoll = true }) => {
   const s = signal || {};
   const bias = s.bias || "Neutral";
   const style = BIAS_STYLE[bias] || BIAS_STYLE.Neutral;
@@ -229,6 +235,7 @@ export const StraddleCompass = ({ signal, index = "NIFTY" }) => {
   const [liveSpot, setLiveSpot] = useState(null);
   useEffect(() => {
     setLiveSpot(null);
+    if (!livePoll) return undefined;
     const tick = () => {
       if (!isNseSessionLive()) return;
       axios.get(`${API}/terminal/spot`, { params: { index } }).then((r) => {
@@ -238,7 +245,7 @@ export const StraddleCompass = ({ signal, index = "NIFTY" }) => {
     tick();
     const id = setInterval(tick, 3000);
     return () => clearInterval(id);
-  }, [index]);
+  }, [index, livePoll]);
 
   const displaySpot = liveSpot?.spot || s.spot;
   const changeNegative = liveSpot?.change?.startsWith("-");

@@ -105,6 +105,14 @@ def create_multi_market_router(db, get_current_admin, cron_secret: str) -> APIRo
             raise HTTPException(status_code=502, detail=str(e)) from e
 
     # ------------------------------------------------------------- Breadth --
+    @router.get("/{market}/breadth/groups")
+    async def breadth_groups(market: str):
+        """{key, label} pairs — the exact shape the shared BreadthTool
+        component already expects from the India/US breadth endpoints, so
+        that one component serves every market with no branching in it."""
+        adapter = _adapter_or_404(market)
+        return {"groups": [{"key": g, "label": g} for g in adapter.groups()]}
+
     @router.get("/{market}/breadth")
     async def breadth(market: str, group: str = None):
         adapter = _adapter_or_404(market)
@@ -144,12 +152,27 @@ def create_multi_market_router(db, get_current_admin, cron_secret: str) -> APIRo
                 logger.warning("Breadth refresh failed (%s/%s): %s", adapter.market_id, group, e)
 
     # ---------------------------------------------------- Relative Strength --
-    @router.get("/{market}/relative-strength")
-    async def relative_strength(market: str, group: str = None, box_pct: float = 3.0):
+    @router.get("/{market}/relative-strength/groups")
+    async def relative_strength_groups(market: str):
+        adapter = _adapter_or_404(market)
+        return {"groups": [{"key": g, "label": g} for g in adapter.groups()]}
+
+    @router.get("/{market}/relative-strength/matrix")
+    async def relative_strength_matrix(market: str, group: str = None, box_pcts: str = "0.25,1,3"):
+        """Same signature and same response shape as the India route's
+        /terminal/relative-strength/matrix, including the book's default
+        short/medium/long-term box sizes -- see eng.relative_strength."""
         adapter = _adapter_or_404(market)
         group = group or adapter.groups()[0]
+        tokens = [t.strip() for t in box_pcts.split(",") if t.strip()]
         try:
-            return await eng.relative_strength(adapter, db, group, box_pct)
+            values = [float(t) for t in tokens]
+        except ValueError:
+            raise HTTPException(status_code=400, detail="box_pcts must be comma-separated numbers.")
+        if not values:
+            raise HTTPException(status_code=400, detail="Provide at least one box_pct.")
+        try:
+            return await eng.relative_strength(adapter, db, group, values)
         except AdapterError as e:
             raise HTTPException(status_code=502, detail=str(e)) from e
 
@@ -220,6 +243,29 @@ def create_multi_market_router(db, get_current_admin, cron_secret: str) -> APIRo
         except AdapterError as e:
             raise HTTPException(status_code=422, detail=str(e)) from e
 
+    @router.post("/{market}/ewma-crossover")
+    async def ewma_crossover(market: str, payload: dict):
+        """POST twin of the GET above, speaking the India route's exact
+        request and response contract ({symbol, fast_span, slow_span} in;
+        found/reason/resolved_symbol out) so the shared EwmaCrossoverTool
+        component can point here unchanged. Returns found:false rather than
+        an error status for "not enough history", same as India — the
+        component renders that as an empty state, not a failure."""
+        adapter = _adapter_or_404(market)
+        symbol = (payload.get("symbol") or "").strip()
+        if not symbol:
+            raise HTTPException(status_code=422, detail="symbol is required.")
+        try:
+            fast = int(payload.get("fast_span") or 20)
+            slow = int(payload.get("slow_span") or 50)
+        except (TypeError, ValueError):
+            raise HTTPException(status_code=422, detail="fast_span/slow_span must be integers.")
+        try:
+            result = await eng.ewma(adapter, db, symbol, fast, slow)
+        except AdapterError as e:
+            return {"found": False, "reason": str(e)}
+        return {"found": True, "resolved_symbol": result["symbol"], "cached": False, **result}
+
     # ---------------------------------------------------------- Gamma Pulse --
     @router.get("/{market}/gamma-pulse")
     async def gamma_pulse(market: str, symbol: str = None):
@@ -232,6 +278,20 @@ def create_multi_market_router(db, get_current_admin, cron_secret: str) -> APIRo
             raise HTTPException(status_code=422, detail="No option underlying available.")
         try:
             return await eng.gamma_pulse(adapter, db, symbol)
+        except AdapterError as e:
+            raise HTTPException(status_code=502, detail=str(e)) from e
+
+    @router.get("/{market}/options-trend/scan")
+    async def options_trend_scan(market: str):
+        """Universe scan in the India route's shape — see
+        eng.gamma_pulse_scan. Blocked markets return the same
+        {available:false, reason} envelope every other module uses."""
+        adapter = _adapter_or_404(market)
+        blocked = _blocked(adapter, "options-trend-scanner")
+        if blocked:
+            return blocked
+        try:
+            return await eng.gamma_pulse_scan(adapter, db)
         except AdapterError as e:
             raise HTTPException(status_code=502, detail=str(e)) from e
 
