@@ -3,7 +3,7 @@ import axios from "axios";
 import { toast } from "sonner";
 import { Loader2, Crosshair } from "lucide-react";
 import { createChart, CandlestickSeries, LineSeries, LineType, ColorType } from "lightweight-charts";
-import SessionDividers from "./ChartSessionDividers";
+import SessionDividers, { useSessionDividers } from "./ChartSessionDividers";
 import { field, selectCls, label, LoadingParticles, EmptyState } from "./QuantLab";
 
 const POLL_MS = 30000; // keep the LTP marker live while results are showing
@@ -70,6 +70,17 @@ const FULL_NAMES = {
   Pivot: "Pivot Zone",
   L3: "Vault 3", L4: "Vault 4", L5: "Vault 5",
 };
+
+// How many bars of the PREVIOUS session to keep on screen at open, so the
+// dotted session divider at today's open lands inside the pane instead of
+// off its left edge. Sized from a real measurement, not taste: at the
+// default zoom a session spans ~1728px against an ~1125px pane, and the
+// chart's own right-edge clamp (the visible range asks for `now`, which is
+// past the last bar) pushed the session start to about -422px. 12 bars of
+// 5m data is only ~72px, nowhere near enough; 90 bars clears it with room
+// to spare. Same value on every market so the four Exitline views open
+// identically.
+const PREV_SESSION_TAIL_BARS = 90;
 
 const INTERVALS = [
   { key: 1, label: "1m" },
@@ -249,12 +260,23 @@ const TVChart = ({ chart, sessions, interval, onIntervalChange, fetchGen }) => {
       const lastBar = activeBars[activeBars.length - 1]?.time;
       if (sessionStart != null && lastBar != null) {
         const nowTs = Math.floor(Date.now() / 1000);
-        tvChart.timeScale().setVisibleRange({ from: sessionStart, to: Math.max(lastBar + interval * 60, nowTs) });
+        // Keep a short tail of the previous session on screen so the dotted
+        // session divider at today's open sits inside the pane instead of
+        // exactly on the left edge, where it reads as no line at all. Real
+        // prior bars, not a subtracted duration, so no empty overnight gap.
+        const startIdx = cleanChart.findIndex((b) => b.time === sessionStart);
+        const from = startIdx > 0 ? cleanChart[Math.max(0, startIdx - PREV_SESSION_TAIL_BARS)].time : sessionStart;
+        tvChart.timeScale().setVisibleRange({ from, to: Math.max(lastBar + interval * 60, nowTs) });
       } else {
         tvChart.timeScale().fitContent();
       }
     }
   }, [chart, sessions, interval, fetchGen]);
+
+  // Computed HERE, inside the chart component, where chartRef is
+  // guaranteed populated — see ChartSessionDividers for why a child
+  // component reading this ref could never work.
+  const dividerXs = useSessionDividers(chartRef, containerRef, chart, [sessions, interval, fetchGen]);
 
   const isEmpty = !chart || chart.length === 0;
 
@@ -288,7 +310,7 @@ const TVChart = ({ chart, sessions, interval, onIntervalChange, fetchGen }) => {
         )}
         {/* App-wide Lenis smooth-scroll (SmoothScroll.jsx) reads wheel deltas on its own listener and animates the page regardless of preventDefault() elsewhere — data-lenis-prevent-wheel/data-lenis-prevent are both real Lenis opt-out attributes (confirmed against Lenis's own source, 2026-08-10); using the general one here. */}
         <div ref={containerRef} className="h-96" style={{ touchAction: "none" }} data-lenis-prevent="true" data-testid="exitline-tv-chart" />
-        <SessionDividers chartRef={chartRef} bars={chart} redrawKey={`${interval}-${fetchGen}`} />
+        <SessionDividers xs={dividerXs} />
       </div>
     </div>
   );
