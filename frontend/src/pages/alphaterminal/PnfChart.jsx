@@ -7,7 +7,7 @@ import { toast } from "sonner";
 import {
   Loader2, Search, Crosshair, TrendingUp, TrendingDown, Minus,
   MousePointer2, Activity, RotateCcw, Pencil, Ruler, Type, Eraser, Radio,
-  X, Zap, Target, SeparatorVertical,
+  X, Zap, Target, SeparatorVertical, Info,
 } from "lucide-react";
 import { EmptyState } from "./QuantLab";
 import { TRADER_TOKEN_KEY } from "../Auth";
@@ -183,7 +183,13 @@ const StatRow = ({ label, value }) => (
 // formations stay whole-chart concepts either way, since "what would the
 // NEXT print do" only means something for the presently open column, not
 // an arbitrary column in the chart's history.
-const CommentaryPanel = ({ data, hoverCol }) => {
+//
+// `variant`: "sidebar" (default) is the desktop right-hand rail, hidden
+// below md since there's no room for a fixed 240px column on a phone.
+// "sheet" is the same content re-skinned as a full-width panel for the
+// mobile bottom sheet below -- one component, two wrappers, so the two
+// surfaces can never drift out of sync on what they actually show.
+const CommentaryPanel = ({ data, hoverCol, variant = "sidebar", onClose }) => {
   if (!data) return null;
   const { columns, summary, patterns, params } = data;
   if (!columns?.length) return null;
@@ -214,11 +220,27 @@ const CommentaryPanel = ({ data, hoverCol }) => {
   // boundary, not a calendar-day price.
   const priorLeg = prev ? (prev.direction === "X" ? prev.top_price : prev.bottom_price) : null;
 
+  const wrapperClass = variant === "sheet"
+    ? "flex flex-col w-full max-h-[65vh] bg-[#0B1220] px-4 pt-2 pb-5 overflow-y-auto rounded-t-2xl border-t border-white/10"
+    : "hidden md:flex flex-col w-[240px] shrink-0 border-l border-white/10 bg-[#0B1220] px-3.5 py-3 overflow-y-auto";
+
   return (
-    <div
-      className="hidden md:flex flex-col w-[240px] shrink-0 border-l border-white/10 bg-[#0B1220] px-3.5 py-3 overflow-y-auto"
-      data-testid="pnf-commentary-panel"
-    >
+    <div className={wrapperClass} data-testid="pnf-commentary-panel">
+      {variant === "sheet" && (
+        <>
+          <div className="flex justify-end -mr-1">
+            <button
+              type="button"
+              onClick={onClose}
+              className="text-slate-500 hover:text-white p-1"
+              aria-label="Close"
+            >
+              <X size={16} />
+            </button>
+          </div>
+          <div className="w-10 h-1 rounded-full bg-white/15 mx-auto mb-3" aria-hidden="true" />
+        </>
+      )}
       <StatRow label="Hi" value={fmtNum(hi)} />
       <StatRow label="Lo" value={fmtNum(lo)} />
       <StatRow label="Hi Date" value={hiCol?.start_label ? hiCol.start_label.slice(0, 10) : "—"} />
@@ -972,7 +994,7 @@ const ToolRail = ({
   showExitline, onToggleExitline, exitlineDisabled, exitlineLoading,
   showSessionDividers, onToggleSessionDividers, sessionDividersDisabled,
 }) => (
-  <div className="hidden lg:flex flex-col items-center gap-1 w-12 shrink-0 border-r border-white/10 bg-[#0B1220] py-3">
+  <div className="flex flex-col items-center gap-1 w-10 sm:w-12 shrink-0 border-r border-white/10 bg-[#0B1220] py-2 sm:py-3">
     <RailButton icon={MousePointer2} active title="Cursor" onClick={() => {}} />
     <div className="w-6 h-px bg-white/10 my-1.5" />
     <RailButton icon={TrendingUp} active={showTrendLines} title="45° Trend Lines" onClick={() => setShowTrendLines((v) => !v)} />
@@ -1059,6 +1081,10 @@ const PnfChart = forwardRef(({ embedded = false, controlled = false, onPlotted, 
   const [plotCount, setPlotCount] = useState(0);
   const [loading, setLoading] = useState(false);
   const [hoverCol, setHoverCol] = useState(null);
+  // The Commentary sidebar is desktop-only (no room for a fixed 240px
+  // column on a phone) -- this drives its mobile stand-in, a bottom sheet
+  // opened from a small trigger in the stat readout row.
+  const [showCommentarySheet, setShowCommentarySheet] = useState(false);
   const gridRef = useRef(null);
 
   // Every interval can go live now (see LIVE_REFRESH_MS) -- except a
@@ -1327,7 +1353,17 @@ const PnfChart = forwardRef(({ embedded = false, controlled = false, onPlotted, 
               <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" /> Live
             </span>
           )}
-          <span className="ml-auto text-slate-500">
+          {/* Commentary lives in the right-hand sidebar on md+ (see
+              CommentaryPanel); below that this is the only way to reach it. */}
+          <button
+            type="button"
+            onClick={() => setShowCommentarySheet(true)}
+            className="md:hidden inline-flex items-center gap-1 text-sapphire-light"
+            data-testid="pnf-commentary-sheet-open"
+          >
+            <Info size={12} /> Commentary
+          </button>
+          <span className="ml-auto hidden sm:inline text-slate-500">
             {data.meta.total_columns} cols · {data.meta.bars} bars · {data.meta.first_label} → {data.meta.last_label}
           </span>
         </div>
@@ -1369,7 +1405,9 @@ const PnfChart = forwardRef(({ embedded = false, controlled = false, onPlotted, 
                 showSessionDividers={showSessionDividers && isIntradayInterval(interval)}
               />
             </div>
-            <div className="shrink-0 mt-1.5 flex items-center justify-between text-[11px] text-slate-500 font-mono-ui">
+            {/* Mouse-gesture hint + hover readout — hover has no meaning on
+                a touch screen, so the whole line is desktop-only. */}
+            <div className="hidden sm:flex shrink-0 mt-1.5 items-center justify-between text-[11px] text-slate-500 font-mono-ui">
               <span>
                 {hoverCol
                   ? <>Col {hoverCol.index} · {hoverCol.direction} × {hoverCol.box_count} · {fmtNum(hoverCol.bottom_price)} – {fmtNum(hoverCol.top_price)}{hoverCol.start_label && <> · {hoverCol.start_label} → {hoverCol.end_label}</>}</>
@@ -1379,6 +1417,23 @@ const PnfChart = forwardRef(({ embedded = false, controlled = false, onPlotted, 
           </div>
 
           <CommentaryPanel data={data} hoverCol={hoverCol} />
+
+          {/* Mobile stand-in for the sidebar above — same component, a
+              bottom-sheet wrapper instead (see CommentaryPanel's `variant`). */}
+          {showCommentarySheet && (
+            <div
+              className="md:hidden fixed inset-0 z-50 flex items-end justify-center"
+              onClick={() => setShowCommentarySheet(false)}
+            >
+              <div className="absolute inset-0 bg-black/60" aria-hidden="true" />
+              <div className="relative w-full" onClick={(e) => e.stopPropagation()}>
+                <CommentaryPanel
+                  data={data} hoverCol={hoverCol} variant="sheet"
+                  onClose={() => setShowCommentarySheet(false)}
+                />
+              </div>
+            </div>
+          )}
         </div>
       )}
     </div>

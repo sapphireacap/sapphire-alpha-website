@@ -32,10 +32,18 @@ const LAYOUTS = [
 // Tailwind needs literal class strings (no dynamic template interpolation
 // makes it into the build), so the grid shape per layout is spelled out
 // rather than computed from `cells`.
+//
+// Below `sm`, the container itself switches from `grid` to a plain
+// vertical `flex` (see the JSX below) -- a CSS grid dividing a phone's
+// viewport height into 2 or 4 EQUAL rows leaves each chart a sliver too
+// short to read, whereas a scrollable flex column gives every cell a real,
+// usable height and lets the user scroll between them. These classes only
+// need to describe the sm+ grid shape; the mobile stack needs no grid
+// classes of its own.
 const GRID_CLASS = {
-  1: "grid-cols-1 grid-rows-1",
-  2: "grid-cols-2 grid-rows-1",
-  4: "grid-cols-2 grid-rows-2",
+  1: "sm:grid-cols-1 sm:grid-rows-1",
+  2: "sm:grid-cols-2 sm:grid-rows-1",
+  4: "sm:grid-cols-2 sm:grid-rows-2",
 };
 
 const LayoutPicker = ({ active, onChange }) => (
@@ -143,8 +151,8 @@ const PnfWorkspace = () => {
 
   return (
     <div className="h-[100dvh] w-screen overflow-hidden bg-[#060B14] text-white flex flex-col">
-      <div className="shrink-0 border-b border-white/10 bg-[#0B1220] px-3 sm:px-4 py-2.5">
-        <div className="flex flex-wrap items-center gap-2">
+      <div className="shrink-0 border-b border-white/10 bg-[#0B1220] px-2 sm:px-4 py-2 sm:py-2.5">
+        <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
           <select className={compactField} value={segment} onChange={(e) => { setSegment(e.target.value); setSymbol(""); }}>
             {SEGMENTS.map((s) => <option key={s.key} value={s.key}>{s.label}</option>)}
           </select>
@@ -215,30 +223,47 @@ const PnfWorkspace = () => {
         </div>
       </div>
 
-      <div className={`flex-1 min-h-0 grid ${GRID_CLASS[cellCount]}`} data-testid="pnf-workspace-grid">
-        {[0, 1, 2, 3].map((i) => (
-          <div
-            key={`pnf-cell-${i}`}
-            onClick={() => setActiveCell(i)}
-            // Cells beyond the current layout's count stay mounted (see
-            // module docstring) but are removed from layout AND painting,
-            // so a hidden chart costs no space and no compositing.
-            className={`min-w-0 min-h-0 overflow-hidden transition-shadow ${
-              i < cellCount ? "block" : "hidden"
-            } ${i % 2 === 0 && cellCount > 1 ? "border-r border-white/10" : ""} ${
-              i < 2 && cellCount > 2 ? "border-b border-white/10" : ""
-            } ${activeCell === i && cellCount > 1 ? "ring-1 ring-inset ring-sapphire-light/60" : ""}`}
-            data-testid={`pnf-cell-${i}`}
-          >
-            <PnfChart
-              ref={cellRefs[i]}
-              embedded
-              controlled
-              onPlotted={() => onCellPlotted(i)}
-              onLiveChange={(v) => onCellLiveChange(i, v)}
-            />
-          </div>
-        ))}
+      {/* Below `sm`: a scrollable vertical stack, each cell a real fraction
+          of the viewport tall. At `sm`+: the actual 1/2/4 grid, no scroll
+          needed since the grid divides the available height evenly. */}
+      <div
+        className={`flex-1 min-h-0 flex flex-col sm:grid overflow-y-auto sm:overflow-hidden ${GRID_CLASS[cellCount]}`}
+        data-testid="pnf-workspace-grid"
+      >
+        {[0, 1, 2, 3].map((i) => {
+          const borderParts = [];
+          // Mobile stack: a divider under every visible cell but the last.
+          if (i < cellCount - 1) borderParts.push("border-b border-white/10 sm:border-b-0");
+          // sm+ grid: right border on the left column, bottom border on the top row.
+          if (cellCount > 1 && i % 2 === 0) borderParts.push("sm:border-r sm:border-white/10");
+          if (cellCount > 2 && i < 2) borderParts.push("sm:border-b sm:border-white/10");
+          return (
+            <div
+              key={`pnf-cell-${i}`}
+              onClick={() => setActiveCell(i)}
+              // Cells beyond the current layout's count stay mounted (see
+              // module docstring) but are removed from layout AND painting,
+              // so a hidden chart costs no space and no compositing.
+              // `min-h-[70vh] sm:min-h-0 shrink-0` gives every stacked
+              // mobile cell a genuinely usable height instead of letting
+              // flex divide the viewport into slivers.
+              className={`min-w-0 min-h-[70vh] sm:min-h-0 shrink-0 sm:shrink overflow-hidden transition-shadow ${
+                i < cellCount ? "block" : "hidden"
+              } ${borderParts.join(" ")} ${
+                activeCell === i && cellCount > 1 ? "ring-1 ring-inset ring-sapphire-light/60" : ""
+              }`}
+              data-testid={`pnf-cell-${i}`}
+            >
+              <PnfChart
+                ref={cellRefs[i]}
+                embedded
+                controlled
+                onPlotted={() => onCellPlotted(i)}
+                onLiveChange={(v) => onCellLiveChange(i, v)}
+              />
+            </div>
+          );
+        })}
       </div>
     </div>
   );
