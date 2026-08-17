@@ -589,7 +589,12 @@ const PnfGrid = forwardRef(({
       .map((p) => {
         const start = Math.min(p.start_index, p.index);
         const end = Math.max(p.start_index, p.index);
-        const y = PAD_T + rowOf(p.trigger_level) * ROW_H + ROW_H / 2;
+        // The TOP edge of the trigger box, not its middle: the level a
+        // formation qualifies on IS a column's high, so the line has to
+        // touch that high the way the reference platform draws it. Centring
+        // it in the row left it floating half a box below the X it belongs
+        // to, which read as a near-miss rather than a level.
+        const y = PAD_T + rowOf(p.trigger_level) * ROW_H;
         return {
           key: `${p.name}-${p.index}`,
           x1: colX(start),
@@ -1212,6 +1217,22 @@ const PnfChart = () => {
             {loading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Crosshair className="w-3.5 h-3.5" />}
             Plot
           </button>
+
+          {data && (
+            <button
+              onClick={() => setShowPatternLines((v) => !v)}
+              title={showPatternLines ? "Hide formation lines" : "Show formation lines"}
+              className={`h-[30px] px-3 rounded-md text-xs font-semibold transition-colors flex items-center gap-1.5 ${
+                showPatternLines
+                  ? "bg-emerald-500/15 text-emerald-300 border border-emerald-500/30"
+                  : "border border-white/10 text-slate-400 hover:text-white"
+              }`}
+              data-testid="pnf-toggle-formation-lines"
+            >
+              <Layers size={13} />
+              Formations
+            </button>
+          )}
 
           {canGoLive && data && (
             <button
