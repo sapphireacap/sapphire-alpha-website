@@ -26,7 +26,7 @@ import { TRADER_TOKEN_KEY } from "@/pages/Auth";
 const AlphaTerminal = lazy(() => import("@/pages/AlphaTerminal"));
 const BlackBox = lazy(() => import("@/pages/BlackBox"));
 const ModuleDetail = lazy(() => import("@/pages/alphaterminal/ModuleDetail"));
-const PnfChart = lazy(() => import("@/pages/alphaterminal/PnfChart"));
+const PnfWorkspace = lazy(() => import("@/pages/alphaterminal/PnfWorkspace"));
 const PnfStudio = lazy(() => import("@/pages/PnfStudio"));
 const RenkoChart = lazy(() => import("@/pages/alphaterminal/RenkoChart"));
 const RenkoStudio = lazy(() => import("@/pages/RenkoStudio"));
@@ -83,7 +83,7 @@ const AppShell = () => {
                 swallowed as a module slug and never reaches this page.
                 Paid-access gated (see RequirePnfAccess) -- /pnf-studio is
                 the marketing/subscribe page anyone lacking access lands on. */}
-            <Route path="/alpha-terminal/pnf" element={<RequirePnfAccess><PnfChart /></RequirePnfAccess>} />
+            <Route path="/alpha-terminal/pnf" element={<RequirePnfAccess><PnfWorkspace /></RequirePnfAccess>} />
             <Route path="/pnf-studio" element={<PnfStudio />} />
             {/* Same reasoning as /alpha-terminal/pnf above: must precede
                 the /:slug route or "renko" gets swallowed as a module slug. */}

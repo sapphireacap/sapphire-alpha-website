@@ -7,7 +7,7 @@ import { toast } from "sonner";
 import {
   Loader2, Search, Crosshair, TrendingUp, TrendingDown, Minus,
   MousePointer2, Activity, RotateCcw, Pencil, Ruler, Type, Eraser, Radio,
-  Layers, X, Zap, Target, SeparatorVertical,
+  Layers, X, Zap, Target, SeparatorVertical, ChevronRight, ChevronLeft,
 } from "lucide-react";
 import { EmptyState } from "./QuantLab";
 import { TRADER_TOKEN_KEY } from "../Auth";
@@ -984,7 +984,18 @@ const ToolRail = ({
 
 const compactField = "bg-white/5 border border-white/10 rounded-md px-2.5 py-1.5 text-xs text-white outline-none focus:border-sapphire-light transition-colors [color-scheme:dark]";
 
-const PnfChart = () => {
+// `embedded`: renders to fill its parent instead of claiming the full
+// viewport (h-[100dvh] w-screen) -- what lets four instances sit in one
+// CSS grid for the multi-chart workspace below, each keeping its OWN
+// independent state (symbol, interval, box size, overlays), since this
+// component already owns all of that internally and needed no refactor
+// to be reused this way.
+//
+// `defaultPanelsOpen=false` starts a cell with the tool rail and
+// formations panel collapsed -- a quarter-screen cell has far less room
+// than a full page, and four charts each opening at full chrome would
+// leave almost nothing for the actual grid.
+const PnfChart = ({ embedded = false, defaultPanelsOpen = !embedded } = {}) => {
   const [segment, setSegment] = useState("NSE");
   const [symbols, setSymbols] = useState([]);
   const [query, setQuery] = useState("");
@@ -1004,6 +1015,11 @@ const PnfChart = () => {
   const [onlyActive, setOnlyActive] = useState(true);
   const [live, setLive] = useState(false);
   const [showPatterns, setShowPatterns] = useState(false);
+  // Desktop panel visibility, separate from `showPatterns` (which only
+  // drives the mobile bottom-sheet). On xl+ the panel used to be
+  // permanently on screen with no way to hide it -- this is what makes it
+  // collapsible there too.
+  const [patternsPanelOpen, setPatternsPanelOpen] = useState(defaultPanelsOpen);
 
   // Exitline overlay + intraday session dividers — see exitlineOverlay.js.
   const [showExitline, setShowExitline] = useState(false);
@@ -1163,7 +1179,7 @@ const PnfChart = () => {
   const BiasIcon = BIAS_STYLE[bias].Icon;
 
   return (
-    <div className="h-[100dvh] w-screen overflow-hidden bg-[#060B14] text-white flex flex-col">
+    <div className={`${embedded ? "h-full w-full" : "h-[100dvh] w-screen"} overflow-hidden bg-[#060B14] text-white flex flex-col`}>
       {/* Compact toolbar — everything needed to plot a chart in one row,
           wraps on narrow screens instead of stacking into a tall block. */}
       <div className="shrink-0 border-b border-white/10 bg-[#0B1220] px-3 sm:px-4 py-2.5">
@@ -1343,13 +1359,39 @@ const PnfChart = () => {
           {showPatterns && (
             <div className="fixed inset-0 z-20 bg-black/60 xl:hidden" onClick={() => setShowPatterns(false)} />
           )}
+          {/* Collapsed state on desktop: a slim reveal tab instead of the
+              panel, so it can be hidden when not in use rather than always
+              eating 320px of chart width. Mobile is unaffected -- it still
+              opens as a bottom sheet via the Formations toolbar button. */}
+          {!patternsPanelOpen && (
+            <button
+              onClick={() => setPatternsPanelOpen(true)}
+              title={`Show formations (${visiblePatterns.length})`}
+              className="hidden xl:flex flex-col items-center gap-2 w-9 shrink-0 border-l border-white/10 bg-white/[0.02] py-4 text-slate-500 hover:text-white hover:bg-white/[0.04] transition-colors"
+              data-testid="pnf-formations-panel-open"
+            >
+              <ChevronLeft size={14} />
+              <span className="[writing-mode:vertical-rl] font-mono-ui text-[10px] uppercase tracking-[0.18em]">
+                Formations
+              </span>
+              <span className="font-mono-ui text-[10px] text-slate-400">{visiblePatterns.length}</span>
+            </button>
+          )}
           <div
-            className={`${showPatterns ? "flex" : "hidden"} xl:flex flex-col fixed xl:static inset-x-0 bottom-0 xl:inset-auto z-30 xl:z-auto max-h-[75vh] xl:max-h-none w-full xl:w-[320px] shrink-0 rounded-t-2xl xl:rounded-none border-t xl:border-t-0 xl:border-l border-white/10 bg-[#0B1220] xl:bg-white/[0.02] p-4 overflow-y-auto`}
+            className={`${showPatterns ? "flex" : "hidden"} ${patternsPanelOpen ? "xl:flex" : "xl:hidden"} flex-col fixed xl:static inset-x-0 bottom-0 xl:inset-auto z-30 xl:z-auto max-h-[75vh] xl:max-h-none w-full xl:w-[320px] shrink-0 rounded-t-2xl xl:rounded-none border-t xl:border-t-0 xl:border-l border-white/10 bg-[#0B1220] xl:bg-white/[0.02] p-4 overflow-y-auto`}
           >
             <div className="flex items-center justify-between mb-3">
               <h2 className="font-mono-ui text-[10px] uppercase tracking-[0.18em] text-slate-500">
                 Formations ({visiblePatterns.length})
               </h2>
+              <button
+                onClick={() => setPatternsPanelOpen(false)}
+                title="Hide panel"
+                className="hidden xl:block text-slate-500 hover:text-white p-1"
+                data-testid="pnf-formations-panel-close"
+              >
+                <ChevronRight size={16} />
+              </button>
               <button onClick={() => setShowPatterns(false)} className="xl:hidden text-slate-500 hover:text-white p-1">
                 <X size={16} />
               </button>
