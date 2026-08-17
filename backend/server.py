@@ -1580,6 +1580,9 @@ async def definedge_status(admin: dict = Depends(get_current_admin)):
     _run_otp_auto_login) so it can outlive any external cron's timeout."""
     status = await definedge.status()
     status["last_auto_login"] = await db[OTP_AUTO_LOGIN_COLLECTION].find_one({"id": "last"}, {"_id": 0})
+    # The auto-refresh route returns as soon as the work is queued, so a
+    # per-index compute failure can only be seen here.
+    status["last_auto_refresh"] = await db[AUTO_REFRESH_COLLECTION].find_one({"id": "last"}, {"_id": 0})
     return status
 
 
@@ -1616,22 +1619,72 @@ async def definedge_refresh(index: str = "NIFTY", admin: dict = Depends(get_curr
         raise HTTPException(status_code=400, detail=str(e))
 
 
+AUTO_REFRESH_COLLECTION = "definedge_auto_refresh"
+
+
+async def _record_auto_refresh(outcome: str, detail=None, started_at: datetime = None):
+    """One doc (id="last") holding the most recent refresh's result. The
+    route returns before the work finishes, so this doc -- surfaced by GET
+    /admin/definedge/status -- is the only place a per-index failure shows
+    up. Same shape and same reasoning as _record_otp_auto_login below."""
+    await db[AUTO_REFRESH_COLLECTION].update_one(
+        {"id": "last"},
+        {"$set": {"id": "last", "outcome": outcome, "detail": detail,
+                   "started_at": (started_at or datetime.now(timezone.utc)).isoformat(),
+                   "finished_at": datetime.now(timezone.utc).isoformat()}},
+        upsert=True,
+    )
+
+
+async def _run_auto_refresh():
+    """The actual work, run as a BackgroundTask so it can outlive the
+    caller's timeout. Indices still run CONCURRENTLY; one index failing
+    (e.g. a transient history-fetch error) doesn't block the others."""
+    started = datetime.now(timezone.utc)
+
+    async def _refresh_one(idx):
+        try:
+            signal = await definedge.compute_vector(idx)
+            return idx, {"bias": signal["bias"]}
+        except DefinedgeError as e:
+            return idx, {"error": str(e)}
+        except Exception as e:  # noqa: BLE001 — a background task must never take the process down
+            return idx, {"error": f"unexpected: {e}"}
+
+    try:
+        results = dict(await asyncio.gather(*(_refresh_one(idx) for idx in VALID_INDICES)))
+    except Exception as e:  # noqa: BLE001
+        logger.exception("Index Vector auto-refresh failed")
+        await _record_auto_refresh("error", str(e), started)
+        return
+    failed = {k: v["error"] for k, v in results.items() if "error" in v}
+    await _record_auto_refresh("error" if failed else "ok", failed or results, started)
+
+
 @api_router.post("/admin/definedge/auto-refresh")
-async def definedge_auto_refresh(request: Request):
+async def definedge_auto_refresh(request: Request, background_tasks: BackgroundTasks):
     """Called by the external (cron-job.org) cron on a schedule during NSE
     hours. Authenticated with a static shared secret rather than an admin
-    login, since this is a machine caller, not the interactive admin. Runs
-    every Index Vector index CONCURRENTLY (not sequentially, despite the
-    original "conservative about hammering Definedge" reasoning) -- the
-    external cron pinging this route (cron-job.org's free tier) has a hard
-    30s execution cap, confirmed live 2026-08-10: 3 indices sequentially
-    took ~27-30s and intermittently timed out right at that ceiling.
-    Concurrent (gather) cuts total wall time to roughly the slowest single
-    index (~9-10s) instead of their sum, comfortably under any external
-    cron's timeout, and 3 simultaneous Definedge calls is not the kind of
-    burst that reasoning was actually guarding against. One index failing
-    (e.g. a transient history-fetch error) doesn't block the others —
-    each result is still reported individually."""
+    login, since this is a machine caller, not the interactive admin.
+
+    Returns as soon as the work is QUEUED, NOT when it finishes -- same
+    fire-and-forget shape as /admin/definedge/otp-auto-login below, and for
+    the same reason. cron-job.org's free tier has a hard 30s execution cap
+    that cannot be raised. Computing three vectors takes ~24s warm and
+    longer on a cold Render instance, so a blocking response sat right on
+    that ceiling: it worked when warm (measured 23.61s) and timed out when
+    not (measured 30s, spent almost entirely in Receive). Running the
+    indices concurrently was the 2026-08-10 fix for this and bought real
+    headroom, but concurrency cannot guarantee a hard ceiling it doesn't
+    control -- only decoupling the response from the work can.
+
+    The pre-flight checks below stay SYNCHRONOUS on purpose. They are cheap
+    (a Mongo read), and they are the failures worth surfacing to the cron
+    as a non-2xx: during market hours a missing session means the module is
+    serving stale data, and cron-job.org only looks at the HTTP status
+    (2026-08-11 -- a full day of stale Index Vector data hid behind a 200
+    whose body nothing read). A per-index compute failure lands in
+    `last_auto_refresh` on GET /admin/definedge/status instead."""
     if not CRON_SECRET or request.headers.get("X-Cron-Key") != CRON_SECRET:
         raise HTTPException(status_code=401, detail="Invalid cron key")
 
@@ -1641,29 +1694,14 @@ async def definedge_auto_refresh(request: Request):
     if not _is_market_open(now):
         return {"skipped": "outside market hours"}
 
-    # These two are NOT "nothing to do", they're "this should be working
-    # and isn't" -- during market hours a missing session means the whole
-    # module is serving stale data. Answered 503 so the external cron marks
-    # the run failed and it's actually visible. This used to be a 200 whose
-    # body the GitHub Actions workflow grepped for "skipped"; that check
-    # went inert when the schedule moved to cron-job.org, which only looks
-    # at the HTTP status (2026-08-11 -- a full day of stale Index Vector
-    # data hid behind exactly this).
     if not definedge.configured():
         raise HTTPException(status_code=503, detail="Definedge not configured")
     status = await definedge.status()
     if not status.get("connected"):
         raise HTTPException(status_code=503, detail="No Definedge session -- the daily OTP login has not succeeded today")
 
-    async def _refresh_one(idx):
-        try:
-            signal = await definedge.compute_vector(idx)
-            return idx, {"bias": signal["bias"]}
-        except DefinedgeError as e:
-            return idx, {"error": str(e)}
-
-    pairs = await asyncio.gather(*(_refresh_one(idx) for idx in VALID_INDICES))
-    return dict(pairs)
+    background_tasks.add_task(_run_auto_refresh)
+    return {"status": "started", "indices": list(VALID_INDICES)}
 
 
 OTP_AUTO_LOGIN_COLLECTION = "definedge_otp_auto_login"
