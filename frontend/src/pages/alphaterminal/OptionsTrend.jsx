@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo } from "react";
 import axios from "axios";
+import { authHeaders } from "../../lib/auth";
 import { TrendingUp, TrendingDown, Minus, Loader2 } from "lucide-react";
 import { EmptyState } from "./QuantLab";
 
@@ -56,7 +57,7 @@ const OptionsTrendTool = ({ scanPath = "/terminal/options-trend/scan" }) => {
     let cancelled = false;
     setLoading(true);
     setError(false);
-    axios.get(`${API}${scanPath}`)
+    axios.get(`${API}${scanPath}`, { headers: authHeaders() })
       .then(({ data: d }) => { if (!cancelled) setData(d); })
       .catch(() => { if (!cancelled) setError(true); })
       .finally(() => { if (!cancelled) setLoading(false); });

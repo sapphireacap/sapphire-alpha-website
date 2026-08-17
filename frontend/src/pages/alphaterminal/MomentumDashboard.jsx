@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import axios from "axios";
+import { authHeaders } from "../../lib/auth";
 import { toast } from "sonner";
 import { Loader2, ArrowUpDown } from "lucide-react";
 import { LoadingParticles, EmptyState, field, label } from "./QuantLab";
@@ -187,7 +188,7 @@ const MomentumDashboardTool = ({
   const [refreshStatus, setRefreshStatus] = useState(null);
 
   useEffect(() => {
-    axios.get(`${API}${universePath}`).then((r) => setUniverse(r.data)).catch(() => {});
+    axios.get(`${API}${universePath}`, { headers: authHeaders() }).then((r) => setUniverse(r.data)).catch(() => {});
   }, [universePath]);
 
   const submit = async () => {
@@ -197,10 +198,10 @@ const MomentumDashboardTool = ({
       const body = mode === "compare"
         ? { mode: "compare", symbols: selected }
         : { mode: "top", top_n: Number(topN) };
-      const { data } = await axios.post(`${API}${dashboardPath}`, body);
+      const { data } = await axios.post(`${API}${dashboardPath}`, body, { headers: authHeaders() });
       setResult(data);
       if (!data.found && mode === "top") {
-        axios.get(`${API}${statusPath}`).then((r) => setRefreshStatus(r.data)).catch(() => {});
+        axios.get(`${API}${statusPath}`, { headers: authHeaders() }).then((r) => setRefreshStatus(r.data)).catch(() => {});
       }
     } catch (err) {
       toast.error(err?.response?.data?.detail || "Request failed. Please try again.");

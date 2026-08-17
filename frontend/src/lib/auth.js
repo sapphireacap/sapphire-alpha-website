@@ -7,6 +7,25 @@ import { TRADER_TOKEN_KEY } from "../pages/Auth";
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 export const ADMIN_TOKEN_KEY = "sac_admin_token"; // matches Admin.jsx's local TOKEN_KEY, not exported there
 
+/**
+ * `{ Authorization: "Bearer <token>" }` for an axios call, or `{}` if
+ * nobody's signed in. Checks both token keys, same reasoning as
+ * useIsAdmin/useIsSignedIn — an admin may be signed in via /admin33
+ * (ADMIN_TOKEN_KEY) or as a trader account (TRADER_TOKEN_KEY).
+ *
+ * Exists because the Alpha Terminal module routes require an account
+ * (2026-08-17), and every tool component reading one of them needs to
+ * attach a token now. Several had it stripped back on 2026-08-12, when
+ * those same routes were briefly public and an unauthenticated request
+ * sending "Authorization: Bearer null" was harmless-but-misleading dead
+ * weight — correct at the time, and a real regression once the routes
+ * were gated again without restoring this on the frontend.
+ */
+export const authHeaders = () => {
+  const token = localStorage.getItem(TRADER_TOKEN_KEY) || localStorage.getItem(ADMIN_TOKEN_KEY);
+  return token ? { Authorization: `Bearer ${token}` } : {};
+};
+
 let interceptorInstalled = false;
 
 /**

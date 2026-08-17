@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import axios from "axios";
+import { authHeaders } from "../../lib/auth";
 import { Loader2 } from "lucide-react";
 import { EmptyState } from "./QuantLab";
 
@@ -128,7 +129,7 @@ const RelativeStrengthMatrix = ({ groupPrefix, defaultGroup = "nifty-bank",
   const [error, setError] = useState(false);
 
   useEffect(() => {
-    axios.get(`${API}${groupsPath}`)
+    axios.get(`${API}${groupsPath}`, { headers: authHeaders() })
       .then(({ data: d }) => {
         const list = groupPrefix ? d.groups.filter((g) => g.key.startsWith(groupPrefix)) : d.groups;
         setGroups(list);
@@ -143,7 +144,7 @@ const RelativeStrengthMatrix = ({ groupPrefix, defaultGroup = "nifty-bank",
     let cancelled = false;
     setLoading(true);
     setError(false);
-    axios.get(`${API}${matrixPath}`, { params: { group, box_pcts: "0.25,1,3" } })
+    axios.get(`${API}${matrixPath}`, { params: { group, box_pcts: "0.25,1,3" }, headers: authHeaders() })
       .then(({ data: d }) => { if (!cancelled) setData(d); })
       .catch(() => { if (!cancelled) setError(true); })
       .finally(() => { if (!cancelled) setLoading(false); });

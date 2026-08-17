@@ -1,6 +1,7 @@
 import { useState } from "react";
 import axios from "axios";
 import { toast } from "sonner";
+import { authHeaders } from "../../lib/auth";
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceDot,
 } from "recharts";
@@ -108,7 +109,7 @@ const EwmaCrossoverTool = ({ scanPath = "/quant-lab/ewma-crossover", defaultSymb
         symbol: form.symbol.trim(),
         fast_span: Number(form.fast_span),
         slow_span: Number(form.slow_span),
-      });
+      }, { headers: authHeaders() });
       setResult(data);
     } catch (err) {
       toast.error(err?.response?.data?.detail || "Backtest failed. Please try again.");

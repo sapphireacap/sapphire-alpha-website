@@ -3,14 +3,15 @@ import axios from "axios";
 import { ShieldAlert } from "lucide-react";
 import { field, label, LoadingParticles, EmptyState } from "./QuantLab";
 import BiasBadge from "../../components/site/BiasBadge";
+import { authHeaders } from "../../lib/auth";
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
-// No auth header -- Peter Tingle's read routes were made public
-// 2026-08-12 (backend/peter_tingle_routes.py, modules.js's `adminOnly`
-// removed at the same time). This component used to attach an admin/
-// trader JWT here, back when every route required Depends(get_current_
-// admin); a logged-out visitor now reaching this page would have sent
-// "Authorization: Bearer null", harmless but misleading dead weight.
+// Auth header restored 2026-08-17: Peter Tingle's scan routes (and the US
+// search route) require an account again as of that date's Alpha Terminal
+// access-gating change. It was correctly removed on 2026-08-12 when these
+// routes were briefly public, and became a real bug the moment they were
+// gated again without this coming back -- a signed-in user hit the same
+// 401 a signed-out one would.
 
 const FLAG_STYLE = {
   PASS: { color: "text-emerald-400", bg: "bg-emerald-400/10 border-emerald-400/25" },
@@ -57,7 +58,7 @@ const SymbolPicker = ({ market, onSelect }) => {
     if (v.trim().length < 1) { setOptions([]); setOpen(false); return; }
     debounceRef.current = setTimeout(async () => {
       try {
-        const { data } = await axios.get(`${API}${market.searchPath}`, { params: { q: v.trim() } });
+        const { data } = await axios.get(`${API}${market.searchPath}`, { params: { q: v.trim() }, headers: authHeaders() });
         setOptions(data || []);
         setOpen(true);
       } catch {
@@ -512,7 +513,7 @@ const PeterTingleTool = () => {
     setLoading(true);
     setResult(null);
     try {
-      const { data } = await axios.get(`${API}${market.scanPath}/${sym}`);
+      const { data } = await axios.get(`${API}${market.scanPath}/${sym}`, { headers: authHeaders() });
       setResult(data);
     } catch {
       setResult({ has_data: false });

@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo } from "react";
 import axios from "axios";
+import { authHeaders } from "../../lib/auth";
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine,
 } from "recharts";
@@ -117,7 +118,7 @@ const BreadthTool = ({ groupsPath = "/terminal/breadth/groups", seriesPath = "/t
 
   useEffect(() => {
     if (fixedGroup) return;
-    axios.get(`${API}${groupsPath}`)
+    axios.get(`${API}${groupsPath}`, { headers: authHeaders() })
       .then(({ data: d }) => {
         setGroups(d.groups);
         // Fall back to the first real group whenever the current selection
@@ -132,7 +133,7 @@ const BreadthTool = ({ groupsPath = "/terminal/breadth/groups", seriesPath = "/t
     let cancelled = false;
     setLoading(true);
     setError(false);
-    axios.get(`${API}${seriesPath}`, { params: fixedGroup ? {} : { group } })
+    axios.get(`${API}${seriesPath}`, { params: fixedGroup ? {} : { group }, headers: authHeaders() })
       .then(({ data: d }) => { if (!cancelled) setData(d); })
       .catch(() => { if (!cancelled) setError(true); })
       .finally(() => { if (!cancelled) setLoading(false); });
