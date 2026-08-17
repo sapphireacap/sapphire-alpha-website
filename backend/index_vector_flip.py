@@ -59,7 +59,9 @@ def _straddle_flip_spots(target_price: float, K: float, T: float, sigma_ce: floa
 def compute_leg_flip(state: dict, current_spot: float, strike: float, expiry: date,
                       box_pct: float, reversal_boxes: int, is_straddle: bool,
                       ce_ltp: float = None, pe_ltp: float = None, option_type: str = None,
-                      leg_ltp: float = None) -> dict:
+                      leg_ltp: float = None,
+                      iv_ce_market: float = None, iv_pe_market: float = None,
+                      iv_market: float = None) -> dict:
     """state: the caller's own definedge_service.pnf_column_state(...)
     result for this leg (same series/box_pct/reversal_boxes it already
     used to derive the leg's trend label) — passed in rather than
@@ -89,8 +91,17 @@ def compute_leg_flip(state: dict, current_spot: float, strike: float, expiry: da
     }
 
     if is_straddle:
-        iv_ce = implied_vol(ce_ltp, current_spot, strike, T, "CE")
-        iv_pe = implied_vol(pe_ltp, current_spot, strike, T, "PE")
+        # Market IV when the caller has it (Dhan publishes it per strike),
+        # otherwise back it out of the leg's own LTP. The solver is a real
+        # fallback, not dead code -- it still runs whenever the chain is
+        # unavailable -- but market IV is preferred because the solve has
+        # genuine failure modes at the extremes: vega goes to ~0 on deep
+        # ITM/OTM strikes (Newton becomes unstable, see options_greeks), and
+        # a price sitting at intrinsic yields the 1e-4 floor rather than a
+        # real vol.
+        iv_ce = iv_ce_market if iv_ce_market else implied_vol(ce_ltp, current_spot, strike, T, "CE")
+        iv_pe = iv_pe_market if iv_pe_market else implied_vol(pe_ltp, current_spot, strike, T, "PE")
+        result["iv_source"] = "market" if (iv_ce_market and iv_pe_market) else "computed"
         lower, upper = _straddle_flip_spots(flip_premium, strike, T, iv_ce, iv_pe)
         result["iv_ce"], result["iv_pe"] = iv_ce, iv_pe
         if lower is None:
@@ -103,8 +114,9 @@ def compute_leg_flip(state: dict, current_spot: float, strike: float, expiry: da
             result["flip_spot"] = nearest
             result["flip_spot_alt"] = other[0] if other else None
     else:
-        iv = implied_vol(leg_ltp, current_spot, strike, T, option_type)
+        iv = iv_market if iv_market else implied_vol(leg_ltp, current_spot, strike, T, option_type)
         result["iv"] = iv
+        result["iv_source"] = "market" if iv_market else "computed"
         result["flip_spot"] = spot_for_target_price(flip_premium, strike, T, iv, option_type)
         result["flip_spot_alt"] = None
 

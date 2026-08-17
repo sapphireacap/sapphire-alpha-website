@@ -1031,27 +1031,87 @@ class DefinedgeService:
         values = await asyncio.gather(*fetches.values())
         ltp = dict(zip(keys, values))
 
+        # Market IV per strike, from Dhan. Definedge exposes no IV or Greeks
+        # at all, so before this every leg's vol was back-solved out of its
+        # own LTP by Newton-Raphson -- which is fine mid-chain but has real
+        # failure modes at the edges (vega ~0 on deep ITM/OTM makes Newton
+        # unstable; a price at intrinsic returns the 1e-4 floor, not a vol).
+        #
+        # ONE chain call covers every leg: they all sit on the same expiry,
+        # and the chain carries all strikes. Never fatal -- any failure just
+        # leaves the values None and each leg falls back to its own solve,
+        # so the module keeps working exactly as before if Dhan is down or
+        # the token has lapsed.
+        iv_by_strike = {}
+        try:
+            import dhan_options_client as dhan_oc
+            chain = await dhan_oc.chain(self.db, index_key, expiry=tokens["monthly"]["expiry"])
+            iv_by_strike = chain.get("strikes") or {}
+        except Exception as e:  # noqa: BLE001 — IV is an upgrade, never a dependency
+            logger.info("Index Vector: market IV unavailable for %s (%s) — falling back to computed IV.", index_key, e)
+
+        def market_iv(strike_value, side):
+            """Market IV for one side of the LISTED strike nearest `strike_value`,
+            or None so the caller falls back to solving it."""
+            if not iv_by_strike:
+                return None
+            try:
+                nearest = min(iv_by_strike, key=lambda s: abs(s - float(strike_value)))
+            except (TypeError, ValueError):
+                return None
+            return ((iv_by_strike.get(nearest) or {}).get(side) or {}).get("iv")
+
         leg_results = {
             "monthly_up": compute_leg_flip(monthly_up_state, spot, tokens["up_strike"], monthly_expiry,
                                             BOX_PCT, REVERSAL_BOXES, True,
-                                            ce_ltp=ltp["monthly_up_ce"], pe_ltp=ltp["monthly_up_pe"]),
+                                            ce_ltp=ltp["monthly_up_ce"], pe_ltp=ltp["monthly_up_pe"],
+                                            iv_ce_market=market_iv(tokens["up_strike"], "ce"),
+                                            iv_pe_market=market_iv(tokens["up_strike"], "pe")),
             "monthly_down": compute_leg_flip(monthly_down_state, spot, tokens["down_strike"], monthly_expiry,
                                               BOX_PCT, REVERSAL_BOXES, True,
-                                              ce_ltp=ltp["monthly_down_ce"], pe_ltp=ltp["monthly_down_pe"]),
+                                              ce_ltp=ltp["monthly_down_ce"], pe_ltp=ltp["monthly_down_pe"],
+                                              iv_ce_market=market_iv(tokens["down_strike"], "ce"),
+                                              iv_pe_market=market_iv(tokens["down_strike"], "pe")),
             "monthly_atm_ce": compute_leg_flip(monthly_atm_ce_state, spot, atm, monthly_expiry,
                                                 ATM_LEG_BOX_PCT, ATM_LEG_REVERSAL_BOXES, False,
-                                                leg_ltp=ltp["monthly_atm_ce"], option_type="CE"),
+                                                leg_ltp=ltp["monthly_atm_ce"], option_type="CE",
+                                                iv_market=market_iv(atm, "ce")),
             "monthly_atm_pe": compute_leg_flip(monthly_atm_pe_state, spot, atm, monthly_expiry,
                                                 ATM_LEG_BOX_PCT, ATM_LEG_REVERSAL_BOXES, False,
-                                                leg_ltp=ltp["monthly_atm_pe"], option_type="PE"),
+                                                leg_ltp=ltp["monthly_atm_pe"], option_type="PE",
+                                                iv_market=market_iv(atm, "pe")),
         }
         if weekly_up_state is not None:
+            # The weekly legs are a DIFFERENT expiry, so they need their own
+            # chain -- reusing the monthly one would apply the wrong term's
+            # vol. A second call is affordable here (60s cache, and the
+            # weekly path only runs for chart_mode "6" indices).
+            weekly_iv = {}
+            try:
+                import dhan_options_client as dhan_oc
+                weekly_iv = (await dhan_oc.chain(self.db, index_key, expiry=tokens["weekly"]["expiry"])).get("strikes") or {}
+            except Exception as e:  # noqa: BLE001
+                logger.info("Index Vector: weekly market IV unavailable for %s (%s).", index_key, e)
+
+            def weekly_market_iv(strike_value, side):
+                if not weekly_iv:
+                    return None
+                try:
+                    nearest = min(weekly_iv, key=lambda s: abs(s - float(strike_value)))
+                except (TypeError, ValueError):
+                    return None
+                return ((weekly_iv.get(nearest) or {}).get(side) or {}).get("iv")
+
             leg_results["weekly_up"] = compute_leg_flip(weekly_up_state, spot, tokens["up_strike"], weekly_expiry,
                                                           BOX_PCT, REVERSAL_BOXES, True,
-                                                          ce_ltp=ltp["weekly_up_ce"], pe_ltp=ltp["weekly_up_pe"])
+                                                          ce_ltp=ltp["weekly_up_ce"], pe_ltp=ltp["weekly_up_pe"],
+                                                          iv_ce_market=weekly_market_iv(tokens["up_strike"], "ce"),
+                                                          iv_pe_market=weekly_market_iv(tokens["up_strike"], "pe"))
             leg_results["weekly_down"] = compute_leg_flip(weekly_down_state, spot, tokens["down_strike"], weekly_expiry,
                                                             BOX_PCT, REVERSAL_BOXES, True,
-                                                            ce_ltp=ltp["weekly_down_ce"], pe_ltp=ltp["weekly_down_pe"])
+                                                            ce_ltp=ltp["weekly_down_ce"], pe_ltp=ltp["weekly_down_pe"],
+                                                            iv_ce_market=weekly_market_iv(tokens["down_strike"], "ce"),
+                                                            iv_pe_market=weekly_market_iv(tokens["down_strike"], "pe"))
 
         summary = index_flip_summary(leg_results, spot)
         summary["legs"] = {

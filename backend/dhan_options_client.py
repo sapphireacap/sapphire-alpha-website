@@ -55,6 +55,9 @@ CACHE_TTL_SECONDS = 60
 UNDERLYINGS = {
     "NIFTY": {"scrip": 13, "segment": "IDX_I"},
     "BANKNIFTY": {"scrip": 25, "segment": "IDX_I"},
+    # Confirmed against Dhan's own scrip master, 2026-08-17 (INSTRUMENT=INDEX,
+    # NSE/I): Finnifty is 27. Needed because Index Vector covers all three.
+    "FINNIFTY": {"scrip": 27, "segment": "IDX_I"},
 }
 
 _last_chain_call = 0.0
