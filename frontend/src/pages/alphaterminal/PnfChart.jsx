@@ -19,7 +19,9 @@ import {
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 const authHeaders = () => ({ headers: { Authorization: `Bearer ${localStorage.getItem(TRADER_TOKEN_KEY)}` } });
 
-const SEGMENTS = [
+// Exported for PnfWorkspace's single shared controller, which needs the
+// exact same segment/interval choices as this file's own toolbar.
+export const SEGMENTS = [
   { key: "NSE", label: "NSE (Cash)" },
   { key: "FUT", label: "Futures" },
   { key: "OPT", label: "Options" },
@@ -28,7 +30,7 @@ const SEGMENTS = [
   { key: "CRYPTO", label: "Crypto" },
 ];
 
-const INTERVALS = [
+export const INTERVALS = [
   { key: "daily", label: "Daily" },
   { key: "weekly", label: "Weekly" },
   { key: "monthly", label: "Monthly" },
@@ -100,7 +102,7 @@ const fetchCryptoBars = async (symbol, interval) => {
 // are the default because they keep the box a constant *proportion* of
 // price, which is what makes one parameter set usable across instruments
 // trading at wildly different absolute levels.
-const BOX_SIZES = [0.01, 0.02, 0.05, 0.1, 0.25, 0.5, 1, 2, 3];
+export const BOX_SIZES = [0.01, 0.02, 0.05, 0.1, 0.25, 0.5, 1, 2, 3];
 
 // Fixed platform convention: close-only plotting, 3-box reversal, always.
 // Box size is the only construction dial — the backend doesn't accept a
@@ -1015,16 +1017,16 @@ const compactField = "bg-white/5 border border-white/10 rounded-md px-2.5 py-1.5
 // component already owns all of that internally and needed no refactor
 // to be reused this way.
 //
-// `defaultPanelsOpen=false` starts a cell with the tool rail and
-// formations panel collapsed -- a quarter-screen cell has far less room
-// than a full page, and four charts each opening at full chrome would
-// leave almost nothing for the actual grid.
-// `initialInstrument`: {segment, symbol, expiry, strike, optionType, label}
-// -- when set, this cell auto-plots that instrument on mount instead of
-// waiting for the user to search+select+click Plot. What the multi-chart
-// workspace uses to open pre-populated with real instruments (spot,
-// future, ATM CE/PE) rather than four empty plot forms.
-const PnfChart = ({ embedded = false, initialInstrument = null } = {}) => {
+// `controlled`: hides this cell's own plot toolbar (segment/search/
+// instrument/expiry/strike/interval/box/Plot/Live) -- what the multi-chart
+// workspace uses when ONE shared controller drives all visible cells,
+// rather than each cell duplicating the full form. The imperative handle
+// below (plotInstrument/setLive) is how that shared controller actually
+// drives this specific cell once it's the one the user clicked into.
+// `onPlotted`/`onLiveChange` mirror this cell's own plotted-instrument and
+// live state back up to that controller, so its Live button and (when a
+// different cell becomes active) its fields can reflect reality.
+const PnfChart = forwardRef(({ embedded = false, controlled = false, onPlotted, onLiveChange } = {}, ref) => {
   const [segment, setSegment] = useState("NSE");
   const [symbols, setSymbols] = useState([]);
   const [query, setQuery] = useState("");
@@ -1139,37 +1141,42 @@ const PnfChart = ({ embedded = false, initialInstrument = null } = {}) => {
       if (!silent) {
         setPlotCount((n) => n + 1);
         setPlottedInstrument({ segment: p.segment, symbol: p.symbol, expiry: p.expiry, strike: p.strike, optionType: p.optionType });
+        onPlotted?.({ ...p });
       }
     } catch (e) {
       if (!silent) { toast.error(e?.response?.data?.detail || "Could not plot that chart."); setData(null); }
     } finally {
       if (!silent) setLoading(false);
     }
-  }, [symbol, segment, interval, boxPct, expiry, strike, optionType]);
+  }, [symbol, segment, interval, boxPct, expiry, strike, optionType, onPlotted]);
 
-  // Auto-plot on mount when a workspace cell was opened with a resolved
-  // instrument. Sets the visible form fields too (segment/symbol/expiry/
-  // strike/optionType) so the toolbar reflects what's actually plotted --
-  // a user reaching for the search box shouldn't find it empty under a
-  // live chart.
+  // The shared workspace controller's own imperative handle onto this cell
+  // (only meaningful when `controlled`, but harmless to expose always):
+  // `plotInstrument` sets the visible form state to match AND plots it via
+  // `fetchChart`'s override (rather than relying on state having landed
+  // before fetchChart's closure reads it), `setLive` drives this cell's
+  // own live-refresh toggle from the controller's single Live button.
+  useImperativeHandle(ref, () => ({
+    plotInstrument: (instrument) => {
+      setSegment(instrument.segment);
+      setSymbol(instrument.symbol);
+      setExpiry(instrument.expiry || "");
+      setStrike(instrument.strike ?? "");
+      setOptionType(instrument.optionType || "CE");
+      if (instrument.interval) setIntervalKey(instrument.interval);
+      if (instrument.boxPct != null) setBoxPct(instrument.boxPct);
+      fetchChart({ override: instrument });
+    },
+    setLive: (v) => setLive(v),
+  }), [fetchChart]);
+
+  // Mirrors `live` up to the shared controller so its Live button reflects
+  // this cell's real state (including the auto-off effect below correcting
+  // an invalid toggle, e.g. switching a live cell to a Yahoo-only segment).
   useEffect(() => {
-    if (!initialInstrument) return;
-    setSegment(initialInstrument.segment);
-    setSymbol(initialInstrument.symbol);
-    if (initialInstrument.expiry) setExpiry(initialInstrument.expiry);
-    if (initialInstrument.strike != null) setStrike(initialInstrument.strike);
-    if (initialInstrument.optionType) setOptionType(initialInstrument.optionType);
-    fetchChart({
-      override: {
-        symbol: initialInstrument.symbol, segment: initialInstrument.segment,
-        expiry: initialInstrument.expiry, strike: initialInstrument.strike,
-        optionType: initialInstrument.optionType,
-      },
-    });
-    // Only ever fires once, off the instrument this cell was OPENED with --
-    // not on every keystroke fetchChart's own identity changes with.
+    onLiveChange?.(live);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [initialInstrument]);
+  }, [live]);
 
   // Exitline fetch — keyed to whatever was actually plotted, not the live
   // selector state (see plottedInstrument above). Re-fetches whenever the
@@ -1225,7 +1232,10 @@ const PnfChart = ({ embedded = false, initialInstrument = null } = {}) => {
   return (
     <div className={`${embedded ? "h-full w-full" : "h-[100dvh] w-screen"} overflow-hidden bg-[#060B14] text-white flex flex-col`}>
       {/* Compact toolbar — everything needed to plot a chart in one row,
-          wraps on narrow screens instead of stacking into a tall block. */}
+          wraps on narrow screens instead of stacking into a tall block.
+          Skipped entirely when `controlled` -- the workspace's single
+          shared controller replaces this whole row. */}
+      {!controlled && (
       <div className="shrink-0 border-b border-white/10 bg-[#0B1220] px-3 sm:px-4 py-2.5">
         <div className="flex flex-wrap items-center gap-2">
           <select className={compactField} value={segment} onChange={(e) => { setSegment(e.target.value); setSymbol(""); }}>
@@ -1295,6 +1305,7 @@ const PnfChart = ({ embedded = false, initialInstrument = null } = {}) => {
         </div>
 
       </div>
+      )}
 
       {/* Compact instrument/stat readout — replaces the old 6-tile summary
           strip with a single dense line, TradingView-style, so the chart
@@ -1372,7 +1383,8 @@ const PnfChart = ({ embedded = false, initialInstrument = null } = {}) => {
       )}
     </div>
   );
-};
+});
 
+PnfChart.displayName = "PnfChart";
 
 export default PnfChart;
