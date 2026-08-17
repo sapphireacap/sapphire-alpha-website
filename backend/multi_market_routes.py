@@ -111,6 +111,42 @@ def create_multi_market_router(db, get_current_admin, get_current_user, cron_sec
         rows = await adapter.search(db, q, limit)
         return [{**r, "company_name": r.get("company_name") or r.get("label")} for r in rows]
 
+    @router.get("/{market}/quote")
+    async def quote(market: str, symbol: str):
+        """Tiny, fast-pollable live price — the counterpart to India's
+        /terminal/spot, and what useLivePrice polls to move a chart's
+        forming candle without refetching the series.
+
+        Public, like Exitline itself: this is the live price for the two
+        modules that stay open to signed-out visitors.
+
+        Never surfaces an upstream error. A failed poll returns
+        {"price": null} so the caller keeps showing its last known value
+        rather than blanking — a transient hiccup should not erase a price
+        that was correct a second ago."""
+        adapter = _adapter_or_404(market)
+        try:
+            price = await adapter.latest_price(symbol)
+        except AdapterError:
+            return {"symbol": symbol, "price": None}
+
+        prev_close = None
+        try:
+            bars = await adapter.daily_bars(db, symbol)
+            # The last COMPLETED session's close. Comparing against today's
+            # own bar would report a change of ~0 all day.
+            if len(bars) >= 2:
+                prev_close = bars[-2]["close"] if bars[-1].get("date") == datetime.now(timezone.utc).date().isoformat() else bars[-1]["close"]
+        except Exception:  # noqa: BLE001 — the change figure is additive, never worth failing the price for
+            prev_close = None
+
+        change = round(price - prev_close, 4) if prev_close else None
+        return {
+            "symbol": symbol.strip().upper(), "price": price,
+            "previous_close": prev_close, "change": change,
+            "change_pct": round((change / prev_close) * 100, 2) if change is not None and prev_close else None,
+        }
+
     # ------------------------------------------------------------ Exitline --
     @router.get("/{market}/exitline")
     async def exitline(market: str, symbol: str, interval: int = 5):

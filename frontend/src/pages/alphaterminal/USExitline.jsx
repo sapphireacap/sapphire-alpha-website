@@ -3,6 +3,7 @@ import axios from "axios";
 import { Loader2, Search } from "lucide-react";
 import { createChart, CandlestickSeries, LineSeries, LineType, ColorType } from "lightweight-charts";
 import SessionDividers, { useSessionDividers } from "./ChartSessionDividers";
+import { useLivePrice, useLiveCandle } from "../../lib/useLivePrice";
 import { field, label as fieldLabel, EmptyState } from "./QuantLab";
 
 const POLL_MS = 30000; // keep the LTP/chart live while results are showing, same as NSE Exitline
@@ -84,7 +85,7 @@ const buildLevelSeriesData = (chart, sessionsByDate, key) => {
 // No `ltp` prop: the chart no longer draws a live-price ("PX") line at
 // all (2026-08-12, by request), so it has nothing to do with the live
 // price -- which is still shown in the header stat and the ladder below.
-const TVChart = ({ chart, sessions, interval, onIntervalChange, fetchGen }) => {
+const TVChart = ({ chart, sessions, interval, onIntervalChange, fetchGen, market, symbol }) => {
   const containerRef = useRef(null);
   const chartRef = useRef(null);
   const seriesRef = useRef(null);
@@ -214,6 +215,11 @@ const TVChart = ({ chart, sessions, interval, onIntervalChange, fetchGen }) => {
   // component reading this ref could never work.
   const dividerXs = useSessionDividers(chartRef, containerRef, chart, [sessions, interval, fetchGen]);
 
+  // Live price folded into the forming candle only — the heavy series
+  // is fetched once and never refetched to move it. See lib/useLivePrice.
+  const live = useLivePrice(market, symbol, { enabled: !!symbol });
+  useLiveCandle(seriesRef, chart, live?.price, interval);
+
   const isEmpty = !chart || chart.length === 0;
 
   return (
@@ -310,6 +316,7 @@ const USExitlineTool = ({
   searchPath = "/us-markets/symbols/search",
   levelsPath = "/us-markets/exitline",
   placeholder = "Search symbol… e.g. AAPL",
+  market = "us",
 } = {}) => {
   const [symbol, setSymbol] = useState("");
   const [result, setResult] = useState(null);
@@ -386,7 +393,7 @@ const USExitlineTool = ({
             </div>
           </div>
 
-          <TVChart chart={result.chart} sessions={result.sessions} interval={interval} onIntervalChange={changeInterval} fetchGen={result.__fetchGen} />
+          <TVChart chart={result.chart} sessions={result.sessions} interval={interval} onIntervalChange={changeInterval} fetchGen={result.__fetchGen} market={market} symbol={symbol} />
 
           <div className={`${SURFACE} overflow-hidden`} data-testid="us-exitline-ladder">
             <div className="px-5 py-3 border-b border-white/10"><p className="font-mono-ui text-[10px] uppercase tracking-[0.24em] text-slate-400">Level Ladder</p></div>

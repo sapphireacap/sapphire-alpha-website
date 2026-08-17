@@ -4,6 +4,7 @@ import { toast } from "sonner";
 import { Loader2, Crosshair } from "lucide-react";
 import { createChart, CandlestickSeries, LineSeries, LineType, ColorType } from "lightweight-charts";
 import SessionDividers, { useSessionDividers } from "./ChartSessionDividers";
+import { useLivePrice, useLiveCandle } from "../../lib/useLivePrice";
 import { field, selectCls, label, LoadingParticles, EmptyState } from "./QuantLab";
 
 const POLL_MS = 30000; // keep the LTP marker live while results are showing
@@ -119,7 +120,7 @@ const buildLevelSeriesData = (chart, sessionsByDate, key) => {
 // No `ltp` prop: the chart no longer draws a live-price ("PX") line at
 // all (2026-08-12, by request), so it has nothing to do with the live
 // price. The Ladder below still takes `ltp` and still shows it.
-const TVChart = ({ chart, sessions, interval, onIntervalChange, fetchGen }) => {
+const TVChart = ({ chart, sessions, interval, onIntervalChange, fetchGen, market, symbol }) => {
   const containerRef = useRef(null);
   const chartRef = useRef(null);
   const seriesRef = useRef(null);
@@ -278,6 +279,11 @@ const TVChart = ({ chart, sessions, interval, onIntervalChange, fetchGen }) => {
   // component reading this ref could never work.
   const dividerXs = useSessionDividers(chartRef, containerRef, chart, [sessions, interval, fetchGen]);
 
+  // Live price folded into the forming candle only — the heavy series
+  // is fetched once and never refetched to move it. See lib/useLivePrice.
+  const live = useLivePrice(market, symbol, { enabled: !!symbol });
+  useLiveCandle(seriesRef, chart, live?.price, interval);
+
   const isEmpty = !chart || chart.length === 0;
 
   return (
@@ -372,13 +378,13 @@ const Ladder = ({ levels, ltp }) => {
   );
 };
 
-const ExitlineResults = ({ result, interval, onIntervalChange }) => (
+const ExitlineResults = ({ result, interval, onIntervalChange, instrument }) => (
   <div data-testid="exitline-results">
     <div className="mb-4">
       <p className="text-xl font-bold text-white">{result.tradingsymbol}</p>
     </div>
 
-    <TVChart chart={result.chart} sessions={result.sessions} interval={interval} onIntervalChange={onIntervalChange} fetchGen={result.__fetchGen} />
+    <TVChart chart={result.chart} sessions={result.sessions} interval={interval} onIntervalChange={onIntervalChange} fetchGen={result.__fetchGen} market="india" symbol={instrument} />
 
     <div className="mb-6">
       <Ladder levels={result.levels} ltp={result.ltp} />
@@ -610,7 +616,16 @@ const ExitlineTool = () => {
       {loading && <LoadingParticles title="Computing Levels" subtitle="Fetching prior session H/L/C · Live PX · Level ladder" />}
       {!loading && result && result.found === false && <EmptyState reason={result.reason} />}
       {!loading && result && result.found !== false && (
-        <ExitlineResults result={result} interval={chartInterval} onIntervalChange={changeInterval} />
+        <ExitlineResults
+          result={result}
+          interval={chartInterval}
+          onIntervalChange={changeInterval}
+          // The same instrument /levels resolved — /exitline/quote takes
+          // these params and returns only the LTP. `interval` is dropped:
+          // it doesn't identify the instrument, and leaving it in would
+          // open a fresh poll channel on every timeframe switch.
+          instrument={paramsRef.current ? (({ interval, ...rest }) => rest)(paramsRef.current) : null}
+        />
       )}
     </div>
   );
