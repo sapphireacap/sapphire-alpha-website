@@ -20,6 +20,8 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
 import alpaca_client as ac
+import dhan_history
+import dhan_master
 import binance_client as bn
 import mt5_client as mt5c
 import pnf_chart
@@ -346,10 +348,41 @@ def create_pnf_router(db, definedge, get_current_subscriber) -> APIRouter:
             raise HTTPException(status_code=400,
                                 detail="Crypto charts are built from client-fetched bars — use POST /pnf/chart/crypto.")
 
-        found = await _resolve(segment, symbol, expiry, strike, option_type)
+        # India charting sources its BARS from Dhan, not Definedge. Measured
+        # 2026-08-17: Dhan reaches 4+ years of 1-minute history and 20 years
+        # of daily in a single request, where Definedge hard-400s past ~6
+        # months of minute data. Charting is single-symbol and on-demand, so
+        # Dhan's ~1 req/s ceiling -- which rules it out for the 500-symbol
+        # universe walks Breadth and Relative Strength run -- costs nothing
+        # here.
+        #
+        # DhanBarSource is duck-typed to the Definedge service's own
+        # daily_history/minute_ohlc/equity_quote, so pnf_chart.fetch_bars
+        # and every engine below it are untouched.
+        #
+        # Falls back to Definedge if Dhan cannot resolve or fetch, so a
+        # chart never goes blank on a vendor hiccup. Which source served a
+        # chart is reported on the payload as `bar_source`.
+        found = None
+        bar_source = "dhan"
+        source = None
+        try:
+            dhan_found = await dhan_master.resolve(segment, symbol, expiry, strike, option_type)
+            if dhan_found:
+                found = {"segment": dhan_found["exchange_segment"], "token": dhan_found["security_id"],
+                          "tradingsymbol": dhan_found["tradingsymbol"]}
+                source = dhan_history.DhanBarSource(db, instrument=dhan_found["instrument"])
+        except Exception as e:  # noqa: BLE001 — never fatal, Definedge still stands behind it
+            logger.info("Dhan resolve failed for %s/%s (%s) — falling back to Definedge.", segment, symbol, e)
+
+        if source is None:
+            bar_source = "definedge"
+            found = await _resolve(segment, symbol, expiry, strike, option_type)
+            source = definedge
+
         try:
             payload = await pnf_chart.chart_for_instrument(
-                definedge, found["segment"], found["token"], interval,
+                source, found["segment"], found["token"], interval,
                 box_pct=box_pct, box_value=box_value,
                 reversal=pnf_chart.DEFAULT_REVERSAL,
                 cfg=cfg, xo_lookback=xo_lookback, ma_period=ma_period,
@@ -359,11 +392,14 @@ def create_pnf_router(db, definedge, get_current_subscriber) -> APIRouter:
             raise HTTPException(status_code=400, detail=str(e))
         except DefinedgeError as e:
             raise HTTPException(status_code=502, detail=_public_error(e))
+        except dhan_history.DhanHistoryError as e:
+            raise HTTPException(status_code=502, detail=str(e))
         payload["instrument"] = {
             "symbol": symbol.upper(),
             "selector_segment": segment,
             "tradingsymbol": found["tradingsymbol"],
         }
+        payload["bar_source"] = bar_source
         return payload
 
     # -- crypto (bars fetched client-side, see module docstring in

@@ -20,6 +20,8 @@ import binance_client as bn
 import mt5_client as mt5c
 import renko_chart
 import yahoo_finance_client as yf
+import dhan_history
+import dhan_master
 from definedge_service import DefinedgeError
 from exitline import list_expiries, list_strikes, list_symbols, resolve_instrument
 
@@ -301,10 +303,31 @@ def create_renko_router(db, definedge, get_current_subscriber) -> APIRouter:
             raise HTTPException(status_code=400,
                                  detail="Crypto charts are built from client-fetched bars — use POST /renko/chart/crypto.")
 
-        found = await _resolve(segment, symbol, expiry, strike, option_type)
+        # Bars come from Dhan for the same reasons pnf_routes.py documents
+        # (4+ years of intraday vs Definedge's ~6-month ceiling; charting is
+        # single-symbol so the rate limit is irrelevant). DhanBarSource is
+        # duck-typed to the Definedge service, so renko_chart and its engine
+        # are untouched. Definedge remains the fallback.
+        found = None
+        bar_source = "dhan"
+        source = None
+        try:
+            dhan_found = await dhan_master.resolve(segment, symbol, expiry, strike, option_type)
+            if dhan_found:
+                found = {"segment": dhan_found["exchange_segment"], "token": dhan_found["security_id"],
+                          "tradingsymbol": dhan_found["tradingsymbol"]}
+                source = dhan_history.DhanBarSource(db, instrument=dhan_found["instrument"])
+        except Exception as e:  # noqa: BLE001 — never fatal
+            logger.info("Dhan resolve failed for %s/%s (%s) — falling back to Definedge.", segment, symbol, e)
+
+        if source is None:
+            bar_source = "definedge"
+            found = await _resolve(segment, symbol, expiry, strike, option_type)
+            source = definedge
+
         try:
             payload = await renko_chart.chart_for_instrument(
-                definedge, found["segment"], found["token"], interval,
+                source, found["segment"], found["token"], interval,
                 box_pct=box_pct, box_value=box_value, cfg=cfg, ma_period=ma_period,
                 years=years, days=days,
             )
@@ -312,11 +335,14 @@ def create_renko_router(db, definedge, get_current_subscriber) -> APIRouter:
             raise HTTPException(status_code=400, detail=str(e))
         except DefinedgeError as e:
             raise HTTPException(status_code=502, detail=_public_error(e))
+        except dhan_history.DhanHistoryError as e:
+            raise HTTPException(status_code=502, detail=str(e))
         payload["instrument"] = {
             "symbol": symbol.upper(),
             "selector_segment": segment,
             "tradingsymbol": found["tradingsymbol"],
         }
+        payload["bar_source"] = bar_source
         return payload
 
     # -- crypto (bars fetched client-side, same reason as pnf_routes.py) ---
