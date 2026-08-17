@@ -26,6 +26,8 @@ import binance_client as bn
 import mt5_client as mt5c
 import pnf_chart
 import yahoo_finance_client as yf
+import definedge_service as ds_module
+from datetime import datetime
 from definedge_service import DefinedgeError
 from exitline import list_expiries, list_strikes, list_symbols, resolve_instrument
 from pnf_indicators import DEFAULT_XO_LOOKBACK
@@ -296,6 +298,68 @@ def create_pnf_router(db, definedge, get_current_subscriber) -> APIRouter:
             "tradingsymbol": master.get("company_name") or sym,
         }
         return payload
+
+    @router.get("/workspace/nifty-default")
+    async def workspace_nifty_default(user: dict = Depends(get_current_subscriber)):
+        """Resolves the four instruments the P&F Studio workspace opens
+        with by default: NIFTY spot, its current weekly future, and the
+        ATM strike's weekly call and put.
+
+        The weekly expiry is picked with DefinedgeService._pick_expiry --
+        the SAME function Index Vector's own weekly leg already uses
+        (nearest listed expiry, rolled to the next one on Monday/Tuesday)
+        -- rather than a second rule that could quietly diverge from it.
+        The ATM strike is the nearest LISTED strike to live spot for that
+        exact expiry (never a rounded number that might not actually be
+        listed), same discipline exitline.py's own ATM resolver uses.
+
+        Returns the four legs as {segment, symbol, expiry, strike,
+        option_type} -- the exact query shape GET /pnf/chart already
+        accepts -- so the frontend auto-plots each workspace cell through
+        the SAME plotting path a manual search+plot uses. No second
+        charting code path to keep in sync."""
+        try:
+            master = await definedge._get_all_master()
+        except DefinedgeError as e:
+            raise HTTPException(status_code=502, detail=_public_error(e))
+
+        try:
+            spot_quote = await definedge.spot_quote("NIFTY")
+            spot = float(str(spot_quote.get("spot") or "").replace(",", ""))
+        except Exception as e:  # noqa: BLE001 — surfaced as a clean 502, not a stack trace
+            raise HTTPException(status_code=502, detail="Live NIFTY spot is temporarily unavailable.")
+        if not spot:
+            raise HTTPException(status_code=502, detail="Live NIFTY spot is temporarily unavailable.")
+
+        future_expiries = list_expiries(master, "FUT", "NIFTY")
+        if not future_expiries:
+            raise HTTPException(status_code=502, detail="No listed NIFTY futures found.")
+        expiry_dates = sorted(datetime.strptime(e, "%Y-%m-%d").date() for e in future_expiries)
+        today = datetime.now(ds_module.IST).date()
+        weekly_expiry = ds_module.DefinedgeService._pick_expiry(expiry_dates, today)
+        if weekly_expiry is None:
+            raise HTTPException(status_code=502, detail="No valid NIFTY weekly expiry found.")
+        weekly_expiry_str = weekly_expiry.isoformat()
+
+        strikes = list_strikes(master, "NIFTY", weekly_expiry_str)
+        if not strikes:
+            raise HTTPException(status_code=502, detail=f"No listed NIFTY strikes for {weekly_expiry_str}.")
+        atm_strike = min(strikes, key=lambda s: abs(s - spot))
+        expiry_label = weekly_expiry.strftime("%d-%b-%Y").upper()
+
+        return {
+            "spot": {"segment": "NSE", "symbol": "NIFTY", "label": "NIFTY 50"},
+            "future": {"segment": "FUT", "symbol": "NIFTY", "expiry": weekly_expiry_str,
+                       "label": f"NIFTY {expiry_label} FUT"},
+            "atm_ce": {"segment": "OPT", "symbol": "NIFTY", "expiry": weekly_expiry_str,
+                       "strike": atm_strike, "option_type": "CE",
+                       "label": f"NIFTY {expiry_label} {atm_strike:g} CE"},
+            "atm_pe": {"segment": "OPT", "symbol": "NIFTY", "expiry": weekly_expiry_str,
+                       "strike": atm_strike, "option_type": "PE",
+                       "label": f"NIFTY {expiry_label} {atm_strike:g} PE"},
+            "resolved_spot": spot,
+            "resolved_at": datetime.now(ds_module.IST).isoformat(),
+        }
 
     @router.get("/chart")
     async def chart(symbol: str, segment: str = "NSE", interval: str = "daily",

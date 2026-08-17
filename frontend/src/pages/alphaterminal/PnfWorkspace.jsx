@@ -1,6 +1,22 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import axios from "axios";
 import { LayoutGrid, Rows2, Square } from "lucide-react";
 import PnfChart from "./PnfChart";
+import { TRADER_TOKEN_KEY } from "../Auth";
+
+const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
+const authHeaders = () => ({ headers: { Authorization: `Bearer ${localStorage.getItem(TRADER_TOKEN_KEY)}` } });
+
+// Cell order matches the user's own stated default: spot, future, ATM CE,
+// ATM PE. Each leg's backend shape ({segment, symbol, expiry, strike,
+// option_type, label}) is mapped to PnfChart's initialInstrument shape
+// (optionType, camelCase) here rather than in the backend, since /pnf/chart
+// and every other consumer of pnf_routes already speaks snake_case.
+const DEFAULT_LEG_ORDER = ["spot", "future", "atm_ce", "atm_pe"];
+const toInitialInstrument = (leg) => leg && ({
+  segment: leg.segment, symbol: leg.symbol, expiry: leg.expiry,
+  strike: leg.strike, optionType: leg.option_type, label: leg.label,
+});
 
 /*
   Multi-chart layout for P&F Studio — TradingView-style 1/2/4 grid.
@@ -62,8 +78,37 @@ const LayoutPicker = ({ active, onChange }) => (
 );
 
 const PnfWorkspace = () => {
-  const [layout, setLayout] = useState("1");
+  const [layout, setLayout] = useState("4");
   const cellCount = LAYOUTS.find((l) => l.key === layout)?.cells || 1;
+
+  // Default opens with real NIFTY spot/future/ATM CE/ATM PE (the user's
+  // "our usual rule" weekly-expiry resolver), not four empty plot forms.
+  // The four legs are handed to their cells one at a time, ~4s apart --
+  // firing all four option/chart requests at once empirically trips
+  // Dhan's rate limit ("Chart data is rate-limited right now"), so this
+  // paces auto-plot the same way a human clicking through tabs would.
+  const [defaultLegs, setDefaultLegs] = useState([null, null, null, null]);
+
+  useEffect(() => {
+    let cancelled = false;
+    axios
+      .get(`${API}/pnf/workspace/nifty-default`, authHeaders())
+      .then(({ data }) => {
+        if (cancelled) return;
+        DEFAULT_LEG_ORDER.forEach((key, i) => {
+          setTimeout(() => {
+            if (cancelled) return;
+            setDefaultLegs((prev) => {
+              const next = [...prev];
+              next[i] = toInitialInstrument(data[key]);
+              return next;
+            });
+          }, i * 4000);
+        });
+      })
+      .catch(() => {}); // Cells fall back to their own empty plot form.
+    return () => { cancelled = true; };
+  }, []);
 
   return (
     <div className="h-[100dvh] w-screen overflow-hidden bg-[#060B14] text-white flex flex-col">
@@ -85,7 +130,7 @@ const PnfWorkspace = () => {
             }`}
             data-testid={`pnf-cell-${i}`}
           >
-            <PnfChart embedded />
+            <PnfChart embedded initialInstrument={defaultLegs[i]} />
           </div>
         ))}
       </div>

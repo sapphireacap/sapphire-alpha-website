@@ -7,7 +7,7 @@ import { toast } from "sonner";
 import {
   Loader2, Search, Crosshair, TrendingUp, TrendingDown, Minus,
   MousePointer2, Activity, RotateCcw, Pencil, Ruler, Type, Eraser, Radio,
-  Layers, X, Zap, Target, SeparatorVertical, ChevronRight, ChevronLeft,
+  X, Zap, Target, SeparatorVertical,
 } from "lucide-react";
 import { EmptyState } from "./QuantLab";
 import { TRADER_TOKEN_KEY } from "../Auth";
@@ -147,12 +147,109 @@ const BIAS_STYLE = {
 };
 
 /* --------------------------------------------------------------------- */
+/* Commentary panel                                                       */
+/* --------------------------------------------------------------------- */
+// Standard book-level P&F formation names, not a Definedge secret — the
+// same engine ("Trading The Markets The Point & Figure Way", the source
+// pnf_engine.py is validated against) implements exactly these four.
+// Picking the MOST RECENT occurrence of each in the chart's own real
+// pattern list, rather than inventing a value: a name with no match
+// simply means that formation isn't currently present, shown as "—".
+const COMMENTARY_PATTERNS = [
+  { key: "dbs", label: "Double Bottom Sell", name: "double_bottom_sell" },
+  { key: "hp", label: "High Pole", name: "high_pole" },
+  { key: "dtb", label: "Double Top Buy", name: "double_top_buy" },
+  { key: "lp", label: "Low Pole", name: "low_pole" },
+];
+
+const latestPatternOf = (patterns, name) => {
+  const matches = (patterns || []).filter((p) => p.name === name);
+  return matches.length ? matches.reduce((best, p) => (p.index > best.index ? p : best)) : null;
+};
+
+const StatRow = ({ label, value }) => (
+  <div className="flex items-center justify-between py-0.5">
+    <span className="text-[11px] text-slate-500">{label}</span>
+    <span className="text-[11px] font-mono-ui text-white">{value}</span>
+  </div>
+);
+
+// Right-side info panel — position matches the reference platform's own
+// TradePoint window (confirmed with the user: right, not left). Two
+// states: whole-chart stats by default, or one column's own stats while
+// hovering it -- Column Reversal / Continuation / the four named
+// formations stay whole-chart concepts either way, since "what would the
+// NEXT print do" only means something for the presently open column, not
+// an arbitrary column in the chart's history.
+const CommentaryPanel = ({ data, hoverCol }) => {
+  if (!data) return null;
+  const { columns, summary, patterns, params } = data;
+  if (!columns?.length) return null;
+
+  const last = columns[columns.length - 1];
+  const prev = columns.length > 1 ? columns[columns.length - 2] : null;
+
+  const scoped = hoverCol || last;
+  const hi = hoverCol
+    ? scoped.top_price
+    : columns.reduce((m, c) => Math.max(m, c.top_price), -Infinity);
+  const lo = hoverCol
+    ? scoped.bottom_price
+    : columns.reduce((m, c) => Math.min(m, c.bottom_price), Infinity);
+  const hiCol = hoverCol ? scoped : columns.reduce((m, c) => (c.top_price > m.top_price ? c : m));
+  const loCol = hoverCol ? scoped : columns.reduce((m, c) => (c.bottom_price < m.bottom_price ? c : m));
+
+  // "Current Leg %" — this column's own move so far, box_count x box size,
+  // signed by direction. Only meaningful in percentage-box mode; an
+  // absolute box_value chart has no natural "%" to show here.
+  const legPct = params?.box_pct != null
+    ? scoped.box_count * params.box_pct * (scoped.direction === "X" ? 1 : -1)
+    : null;
+
+  // What this column reversed away from -- the previous column's own
+  // extreme, on its own end date. Real and computable; deliberately not
+  // labelled as "yesterday's close" or similar, since it's a P&F leg
+  // boundary, not a calendar-day price.
+  const priorLeg = prev ? (prev.direction === "X" ? prev.top_price : prev.bottom_price) : null;
+
+  return (
+    <div
+      className="hidden md:flex flex-col w-[240px] shrink-0 border-l border-white/10 bg-[#0B1220] px-3.5 py-3 overflow-y-auto"
+      data-testid="pnf-commentary-panel"
+    >
+      <StatRow label="Hi" value={fmtNum(hi)} />
+      <StatRow label="Lo" value={fmtNum(lo)} />
+      <StatRow label="Hi Date" value={hiCol?.start_label ? hiCol.start_label.slice(0, 10) : "—"} />
+      <StatRow label="Lo Date" value={loCol?.start_label ? loCol.start_label.slice(0, 10) : "—"} />
+      <StatRow label="Boxes" value={scoped.box_count} />
+      <StatRow label="Mid" value={fmtNum((hi + lo) / 2)} />
+      {!hoverCol && (
+        <>
+          <StatRow label="Leg %" value={legPct == null ? "—" : `${legPct > 0 ? "+" : ""}${legPct.toFixed(2)}%`} />
+          <StatRow label="Prior Leg" value={priorLeg == null ? "—" : fmtNum(priorLeg)} />
+        </>
+      )}
+
+      <div className="mt-4 pt-3 border-t border-white/10">
+        <p className="font-mono-ui text-[10px] uppercase tracking-[0.18em] text-slate-500 mb-2">Commentary</p>
+        <StatRow label="Column Reversal" value={fmtNum(summary?.reversal_price)} />
+        <StatRow label="Continuation" value={fmtNum(summary?.continuation_price)} />
+        {COMMENTARY_PATTERNS.map(({ key, label, name }) => {
+          const p = latestPatternOf(patterns, name);
+          return <StatRow key={key} label={label} value={p?.trigger_price != null ? fmtNum(p.trigger_price) : "—"} />;
+        })}
+      </div>
+    </div>
+  );
+};
+
+/* --------------------------------------------------------------------- */
 /* The chart itself                                                       */
 /* --------------------------------------------------------------------- */
 
 const PnfGrid = forwardRef(({
-  data, resetKey, showTrendLines, showMa, showSmartTrend, highlight, onHoverColumn,
-  exitlineLevels, showSessionDividers, patterns, showPatternLines,
+  data, resetKey, showTrendLines, showMa, showSmartTrend, onHoverColumn,
+  exitlineLevels, showSessionDividers,
 }, ref) => {
   const { columns, grid, trend_lines: lines, meta, indicators } = data;
   const frameRef = useRef(null);
@@ -577,38 +674,6 @@ const PnfGrid = forwardRef(({
     });
   }, [showSessionDividers, columns, colX]);
 
-  // Identified formations, drawn on the chart rather than only listed in
-  // the side panel. Each is a horizontal segment at the level the pattern
-  // qualified on, spanning the columns that form it (start_index..index) —
-  // the same shape the reference platform draws, and the level that
-  // actually matters, since it is what a breach would trigger against.
-  const patternLines = useMemo(() => {
-    if (!showPatternLines || !patterns?.length) return [];
-    return patterns
-      .filter((p) => p.trigger_level != null)
-      .map((p) => {
-        const start = Math.min(p.start_index, p.index);
-        const end = Math.max(p.start_index, p.index);
-        // The TOP edge of the trigger box, not its middle: the level a
-        // formation qualifies on IS a column's high, so the line has to
-        // touch that high the way the reference platform draws it. Centring
-        // it in the row left it floating half a box below the X it belongs
-        // to, which read as a near-miss rather than a level.
-        const y = PAD_T + rowOf(p.trigger_level) * ROW_H;
-        return {
-          key: `${p.name}-${p.index}`,
-          x1: colX(start),
-          // +COL_W so the line covers the full width of its last column
-          // rather than stopping at that column's left edge.
-          x2: colX(end) + COL_W,
-          y,
-          bias: p.bias,
-          active: p.active !== false,
-          label: p.label,
-        };
-      });
-  }, [showPatternLines, patterns, colX, rowOf]);
-
   return (
     <div
       ref={frameRef}
@@ -683,12 +748,10 @@ const PnfGrid = forwardRef(({
         {columns.map((col) => {
           const x = colX(col.index);
           const isX = col.direction === "X";
-          const dim = highlight && !(col.index >= highlight.start_index && col.index <= highlight.index);
           const stroke = isX ? "#34D399" : "#F87171";
           return (
             <g
               key={col.index}
-              opacity={dim ? 0.22 : 1}
               onMouseEnter={() => onHoverColumn?.(col)}
               onMouseLeave={() => onHoverColumn?.(null)}
               style={{ cursor: "crosshair" }}
@@ -712,21 +775,6 @@ const PnfGrid = forwardRef(({
           );
         })}
 
-        {/* highlighted pattern bracket */}
-        {highlight && (() => {
-          const a = colX(Math.max(highlight.start_index, meta.render_offset));
-          const b = colX(highlight.index) + COL_W;
-          if (b < PAD_L) return null;
-          const tone = highlight.bias === "bearish" ? "#F87171" : highlight.bias === "bullish" ? "#34D399" : "#94A3B8";
-          return (
-            <rect
-              x={a} y={PAD_T} width={Math.max(b - a, COL_W)} height={contentH - PAD_T * 2}
-              fill={tone} fillOpacity="0.07" stroke={tone} strokeOpacity="0.5" strokeWidth="1" rx="3"
-              vectorEffect="non-scaling-stroke"
-            />
-          );
-        })()}
-
         {/* Intraday session dividers — new-day boundaries within the
             column series (see findSessionBoundaries). */}
         {sessionDividers.map((b) => (
@@ -740,23 +788,6 @@ const PnfGrid = forwardRef(({
 
         {/* Exitline levels + LTP — full-width horizontal lines at each
             level's true fractional price row (not snapped to a box). */}
-        {/* Identified formations — a segment at the level each qualified
-            on, spanning the columns that form it. Bullish green, bearish
-            red, matching the bias dots in the side panel; a negated
-            formation is dimmed rather than hidden, since it still explains
-            what the chart did. */}
-        {patternLines.map((pl) => (
-          <line
-            key={`pattern-${pl.key}`}
-            x1={pl.x1} y1={pl.y} x2={pl.x2} y2={pl.y}
-            stroke={pl.bias === "bearish" ? "#F87171" : pl.bias === "bullish" ? "#34D399" : "#94A3B8"}
-            strokeWidth={highlight && highlight.index === pl.index ? 2.5 : 1.5}
-            opacity={pl.active ? 0.85 : 0.35}
-            strokeDasharray={pl.active ? undefined : "4 3"}
-            vectorEffect="non-scaling-stroke"
-          />
-        ))}
-
         {/* Per-session ladders when we have them: each level is drawn only
             across its own day's columns, so the ladder STEPS at the session
             divider instead of one flat line spanning days it never applied
@@ -938,7 +969,6 @@ const ToolRail = ({
   showSmartTrend, setShowSmartTrend, onReset,
   showExitline, onToggleExitline, exitlineDisabled, exitlineLoading,
   showSessionDividers, onToggleSessionDividers, sessionDividersDisabled,
-  showPatternLines, onTogglePatternLines,
 }) => (
   <div className="hidden lg:flex flex-col items-center gap-1 w-12 shrink-0 border-r border-white/10 bg-[#0B1220] py-3">
     <RailButton icon={MousePointer2} active title="Cursor" onClick={() => {}} />
@@ -963,12 +993,6 @@ const ToolRail = ({
       title="Session Dividers"
       disabledReason="Session Dividers — intraday only"
       onClick={onToggleSessionDividers}
-    />
-    <RailButton
-      icon={Layers}
-      active={showPatternLines}
-      title="Formation Lines"
-      onClick={onTogglePatternLines}
     />
     <div className="w-6 h-px bg-white/10 my-1.5" />
     <RailButton icon={Pencil} disabled title="Draw Trendline" />
@@ -995,7 +1019,12 @@ const compactField = "bg-white/5 border border-white/10 rounded-md px-2.5 py-1.5
 // formations panel collapsed -- a quarter-screen cell has far less room
 // than a full page, and four charts each opening at full chrome would
 // leave almost nothing for the actual grid.
-const PnfChart = ({ embedded = false, defaultPanelsOpen = !embedded } = {}) => {
+// `initialInstrument`: {segment, symbol, expiry, strike, optionType, label}
+// -- when set, this cell auto-plots that instrument on mount instead of
+// waiting for the user to search+select+click Plot. What the multi-chart
+// workspace uses to open pre-populated with real instruments (spot,
+// future, ATM CE/PE) rather than four empty plot forms.
+const PnfChart = ({ embedded = false, initialInstrument = null } = {}) => {
   const [segment, setSegment] = useState("NSE");
   const [symbols, setSymbols] = useState([]);
   const [query, setQuery] = useState("");
@@ -1011,25 +1040,13 @@ const PnfChart = ({ embedded = false, defaultPanelsOpen = !embedded } = {}) => {
   const [showTrendLines, setShowTrendLines] = useState(true);
   const [showMa, setShowMa] = useState(true);
   const [showSmartTrend, setShowSmartTrend] = useState(true);
-  const [onlyMajor, setOnlyMajor] = useState(true);
-  const [onlyActive, setOnlyActive] = useState(true);
   const [live, setLive] = useState(false);
-  const [showPatterns, setShowPatterns] = useState(false);
-  // Desktop panel visibility, separate from `showPatterns` (which only
-  // drives the mobile bottom-sheet). On xl+ the panel used to be
-  // permanently on screen with no way to hide it -- this is what makes it
-  // collapsible there too.
-  const [patternsPanelOpen, setPatternsPanelOpen] = useState(defaultPanelsOpen);
 
   // Exitline overlay + intraday session dividers — see exitlineOverlay.js.
   const [showExitline, setShowExitline] = useState(false);
   const [exitlineData, setExitlineData] = useState(null);
   const [exitlineLoading, setExitlineLoading] = useState(false);
   const [showSessionDividers, setShowSessionDividers] = useState(false);
-  // On by default: the formations are the point of a P&F chart, and
-  // listing them in a side panel while leaving the chart bare made the
-  // reading harder than it needed to be.
-  const [showPatternLines, setShowPatternLines] = useState(true);
   // The instrument a successful Plot actually charted -- Exitline levels
   // are fetched for THIS, not for whatever the selectors currently say,
   // so changing the segment/symbol dropdowns without hitting Plot again
@@ -1039,7 +1056,6 @@ const PnfChart = ({ embedded = false, defaultPanelsOpen = !embedded } = {}) => {
   const [data, setData] = useState(null);
   const [plotCount, setPlotCount] = useState(0);
   const [loading, setLoading] = useState(false);
-  const [highlight, setHighlight] = useState(null);
   const [hoverCol, setHoverCol] = useState(null);
   const gridRef = useRef(null);
 
@@ -1086,23 +1102,35 @@ const PnfChart = ({ embedded = false, defaultPanelsOpen = !embedded } = {}) => {
   // `silent` skips the loading spinner/camera reset — used by the live
   // auto-refresh poll below so a background update doesn't yank focus
   // away from wherever the user has panned to, or flicker the Plot button.
-  const fetchChart = useCallback(async ({ silent = false } = {}) => {
-    if (!symbol) return;
-    if (!silent) { setLoading(true); setHighlight(null); }
+  // `override` lets a caller plot an instrument that hasn't been set into
+  // form state yet (or ever will be) -- what the auto-plot effect below
+  // uses, rather than juggling setSegment/setSymbol/etc and hoping this
+  // callback's closure has caught up before firing. Falls back to current
+  // form state field by field, so every existing manual-plot call site is
+  // unchanged.
+  const fetchChart = useCallback(async ({ silent = false, override = null } = {}) => {
+    const p = {
+      symbol: override?.symbol ?? symbol, segment: override?.segment ?? segment,
+      interval: override?.interval ?? interval, boxPct: override?.boxPct ?? boxPct,
+      expiry: override?.expiry ?? expiry, strike: override?.strike ?? strike,
+      optionType: override?.optionType ?? optionType,
+    };
+    if (!p.symbol) return;
+    if (!silent) { setLoading(true); }
     try {
       let d;
-      if (segment === "CRYPTO") {
-        const bars = await fetchCryptoBars(symbol, interval);
-        ({ data: d } = await axios.post(`${API}/pnf/chart/crypto`, { symbol, bars }, {
-          params: { interval, box_pct: boxPct },
+      if (p.segment === "CRYPTO") {
+        const bars = await fetchCryptoBars(p.symbol, p.interval);
+        ({ data: d } = await axios.post(`${API}/pnf/chart/crypto`, { symbol: p.symbol, bars }, {
+          params: { interval: p.interval, box_pct: p.boxPct },
           ...authHeaders(),
         }));
       } else {
         ({ data: d } = await axios.get(`${API}/pnf/chart`, {
           params: {
-            symbol, segment, interval, box_pct: boxPct,
-            ...(segment === "FUT" || segment === "OPT" ? { expiry } : {}),
-            ...(segment === "OPT" ? { strike, option_type: optionType } : {}),
+            symbol: p.symbol, segment: p.segment, interval: p.interval, box_pct: p.boxPct,
+            ...(p.segment === "FUT" || p.segment === "OPT" ? { expiry: p.expiry } : {}),
+            ...(p.segment === "OPT" ? { strike: p.strike, option_type: p.optionType } : {}),
           },
           ...authHeaders(),
         }));
@@ -1110,7 +1138,7 @@ const PnfChart = ({ embedded = false, defaultPanelsOpen = !embedded } = {}) => {
       setData(d);
       if (!silent) {
         setPlotCount((n) => n + 1);
-        setPlottedInstrument({ segment, symbol, expiry, strike, optionType });
+        setPlottedInstrument({ segment: p.segment, symbol: p.symbol, expiry: p.expiry, strike: p.strike, optionType: p.optionType });
       }
     } catch (e) {
       if (!silent) { toast.error(e?.response?.data?.detail || "Could not plot that chart."); setData(null); }
@@ -1118,6 +1146,30 @@ const PnfChart = ({ embedded = false, defaultPanelsOpen = !embedded } = {}) => {
       if (!silent) setLoading(false);
     }
   }, [symbol, segment, interval, boxPct, expiry, strike, optionType]);
+
+  // Auto-plot on mount when a workspace cell was opened with a resolved
+  // instrument. Sets the visible form fields too (segment/symbol/expiry/
+  // strike/optionType) so the toolbar reflects what's actually plotted --
+  // a user reaching for the search box shouldn't find it empty under a
+  // live chart.
+  useEffect(() => {
+    if (!initialInstrument) return;
+    setSegment(initialInstrument.segment);
+    setSymbol(initialInstrument.symbol);
+    if (initialInstrument.expiry) setExpiry(initialInstrument.expiry);
+    if (initialInstrument.strike != null) setStrike(initialInstrument.strike);
+    if (initialInstrument.optionType) setOptionType(initialInstrument.optionType);
+    fetchChart({
+      override: {
+        symbol: initialInstrument.symbol, segment: initialInstrument.segment,
+        expiry: initialInstrument.expiry, strike: initialInstrument.strike,
+        optionType: initialInstrument.optionType,
+      },
+    });
+    // Only ever fires once, off the instrument this cell was OPENED with --
+    // not on every keystroke fetchChart's own identity changes with.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialInstrument]);
 
   // Exitline fetch — keyed to whatever was actually plotted, not the live
   // selector state (see plottedInstrument above). Re-fetches whenever the
@@ -1166,14 +1218,6 @@ const PnfChart = ({ embedded = false, defaultPanelsOpen = !embedded } = {}) => {
   useEffect(() => {
     if (!canGoLive && live) setLive(false);
   }, [canGoLive, live]);
-
-  const visiblePatterns = useMemo(() => {
-    if (!data) return [];
-    return data.patterns
-      .filter((p) => (!onlyMajor || p.major) && (!onlyActive || p.active))
-      .sort((a, b) => b.index - a.index)
-      .slice(0, 120);
-  }, [data, onlyMajor, onlyActive]);
 
   const bias = data?.summary?.bias || "neutral";
   const BiasIcon = BIAS_STYLE[bias].Icon;
@@ -1234,21 +1278,6 @@ const PnfChart = ({ embedded = false, defaultPanelsOpen = !embedded } = {}) => {
             Plot
           </button>
 
-          {data && (
-            <button
-              onClick={() => setShowPatternLines((v) => !v)}
-              title={showPatternLines ? "Hide formation lines" : "Show formation lines"}
-              className={`h-[30px] px-3 rounded-md text-xs font-semibold transition-colors flex items-center gap-1.5 ${
-                showPatternLines
-                  ? "bg-emerald-500/15 text-emerald-300 border border-emerald-500/30"
-                  : "border border-white/10 text-slate-400 hover:text-white"
-              }`}
-              data-testid="pnf-toggle-formation-lines"
-            >
-              <Layers size={13} />
-              Formations
-            </button>
-          )}
 
           {canGoLive && data && (
             <button
@@ -1263,15 +1292,6 @@ const PnfChart = ({ embedded = false, defaultPanelsOpen = !embedded } = {}) => {
             </button>
           )}
 
-          {data && (
-            <button
-              onClick={() => setShowPatterns(true)}
-              className="xl:hidden h-[30px] px-3 rounded-md border border-white/10 text-slate-300 hover:text-white text-xs font-medium transition-colors flex items-center gap-1.5"
-            >
-              <Layers size={13} />
-              Formations ({visiblePatterns.length})
-            </button>
-          )}
         </div>
 
       </div>
@@ -1320,8 +1340,6 @@ const PnfChart = ({ embedded = false, defaultPanelsOpen = !embedded } = {}) => {
             exitlineDisabled={!EXITLINE_SEGMENTS.includes(segment)}
             exitlineLoading={exitlineLoading}
             showSessionDividers={showSessionDividers}
-            showPatternLines={showPatternLines}
-            onTogglePatternLines={() => setShowPatternLines((v) => !v)}
             onToggleSessionDividers={() => setShowSessionDividers((v) => !v)}
             sessionDividersDisabled={!isIntradayInterval(interval)}
           />
@@ -1335,12 +1353,9 @@ const PnfChart = ({ embedded = false, defaultPanelsOpen = !embedded } = {}) => {
                 showTrendLines={showTrendLines}
                 showMa={showMa}
                 showSmartTrend={showSmartTrend}
-                highlight={highlight}
                 onHoverColumn={setHoverCol}
                 exitlineLevels={showExitline ? exitlineData : null}
                 showSessionDividers={showSessionDividers && isIntradayInterval(interval)}
-                patterns={visiblePatterns}
-                showPatternLines={showPatternLines}
               />
             </div>
             <div className="shrink-0 mt-1.5 flex items-center justify-between text-[11px] text-slate-500 font-mono-ui">
@@ -1352,124 +1367,12 @@ const PnfChart = ({ embedded = false, defaultPanelsOpen = !embedded } = {}) => {
             </div>
           </div>
 
-          {/* Pattern panel — a permanent side column on desktop (xl:), a
-              slide-up bottom-sheet drawer on mobile so the chart itself
-              gets the full screen by default instead of always sharing
-              it with a stacked list. */}
-          {showPatterns && (
-            <div className="fixed inset-0 z-20 bg-black/60 xl:hidden" onClick={() => setShowPatterns(false)} />
-          )}
-          {/* Collapsed state on desktop: a slim reveal tab instead of the
-              panel, so it can be hidden when not in use rather than always
-              eating 320px of chart width. Mobile is unaffected -- it still
-              opens as a bottom sheet via the Formations toolbar button. */}
-          {!patternsPanelOpen && (
-            <button
-              onClick={() => setPatternsPanelOpen(true)}
-              title={`Show formations (${visiblePatterns.length})`}
-              className="hidden xl:flex flex-col items-center gap-2 w-9 shrink-0 border-l border-white/10 bg-white/[0.02] py-4 text-slate-500 hover:text-white hover:bg-white/[0.04] transition-colors"
-              data-testid="pnf-formations-panel-open"
-            >
-              <ChevronLeft size={14} />
-              <span className="[writing-mode:vertical-rl] font-mono-ui text-[10px] uppercase tracking-[0.18em]">
-                Formations
-              </span>
-              <span className="font-mono-ui text-[10px] text-slate-400">{visiblePatterns.length}</span>
-            </button>
-          )}
-          <div
-            className={`${showPatterns ? "flex" : "hidden"} ${patternsPanelOpen ? "xl:flex" : "xl:hidden"} flex-col fixed xl:static inset-x-0 bottom-0 xl:inset-auto z-30 xl:z-auto max-h-[75vh] xl:max-h-none w-full xl:w-[320px] shrink-0 rounded-t-2xl xl:rounded-none border-t xl:border-t-0 xl:border-l border-white/10 bg-[#0B1220] xl:bg-white/[0.02] p-4 overflow-y-auto`}
-          >
-            <div className="flex items-center justify-between mb-3">
-              <h2 className="font-mono-ui text-[10px] uppercase tracking-[0.18em] text-slate-500">
-                Formations ({visiblePatterns.length})
-              </h2>
-              <button
-                onClick={() => setPatternsPanelOpen(false)}
-                title="Hide panel"
-                className="hidden xl:block text-slate-500 hover:text-white p-1"
-                data-testid="pnf-formations-panel-close"
-              >
-                <ChevronRight size={16} />
-              </button>
-              <button onClick={() => setShowPatterns(false)} className="xl:hidden text-slate-500 hover:text-white p-1">
-                <X size={16} />
-              </button>
-            </div>
-            <div className="flex gap-3 mb-3">
-                <Toggle on={onlyMajor} set={setOnlyMajor} text="Major only" />
-                <Toggle on={onlyActive} set={setOnlyActive} text="Still valid" />
-              </div>
-              {visiblePatterns.length === 0 && (
-                <p className="text-xs text-slate-500">No formations match these filters.</p>
-              )}
-              <ul className="space-y-2">
-                {visiblePatterns.map((p, n) => (
-                  <li key={`${p.name}-${p.index}-${n}`}>
-                    <button
-                      onMouseEnter={() => setHighlight(p)}
-                      onMouseLeave={() => setHighlight(null)}
-                      className="w-full text-left rounded-md border border-white/10 hover:border-white/25 bg-white/[0.02] px-3 py-2 transition-colors"
-                    >
-                      <div className="flex items-center gap-2">
-                        <span className={`w-1.5 h-1.5 rounded-full ${BIAS_STYLE[p.bias].dot}`} />
-                        <span className="text-sm text-white">{p.label}</span>
-                        {!p.active && p.bias !== "neutral" && (
-                          <span className="ml-auto text-[10px] font-mono-ui uppercase tracking-wider text-amber-400/80">
-                            negated
-                          </span>
-                        )}
-                        {p.follow_through_index != null && (
-                          <span className="ml-auto text-[10px] font-mono-ui uppercase tracking-wider text-sky-300/80">
-                            follow-through
-                          </span>
-                        )}
-                      </div>
-                      <div className="mt-1 flex flex-wrap gap-x-3 gap-y-0.5 text-[11px] text-slate-400 font-mono-ui">
-                        <span>col {p.index}</span>
-                        {p.trigger_price != null && <span>trigger {fmtNum(p.trigger_price)}</span>}
-                        {p.failure_price != null && <span>fails {fmtNum(p.failure_price)}</span>}
-                      </div>
-                    </button>
-                  </li>
-                ))}
-              </ul>
-
-              {data.counts.length > 0 && (
-                <>
-                  <h2 className="font-mono-ui text-[10px] uppercase tracking-[0.18em] text-slate-500 mt-6 mb-2">
-                    Counts (projections)
-                  </h2>
-                  <ul className="space-y-1.5">
-                    {data.counts.slice(-6).reverse().map((c, n) => (
-                      <li key={n} className="text-[11px] font-mono-ui text-slate-400 flex justify-between">
-                        <span className={c.bias === "bullish" ? "text-emerald-300/80" : "text-rose-300/80"}>
-                          {c.bias === "bullish" ? "▲" : "▼"} col {c.column_index} · {c.meta.boxes} boxes
-                        </span>
-                        <span className="text-slate-300">{fmtNum(c.target_price)}</span>
-                      </li>
-                    ))}
-                  </ul>
-                </>
-              )}
-            </div>
-          </div>
+          <CommentaryPanel data={data} hoverCol={hoverCol} />
+        </div>
       )}
     </div>
   );
 };
 
-
-const Toggle = ({ on, set, text }) => (
-  <button
-    onClick={() => set(!on)}
-    className={`text-[11px] font-mono-ui uppercase tracking-wider px-2 py-1 rounded border transition-colors ${
-      on ? "border-sapphire-light/60 text-sapphire-light bg-sapphire-light/10"
-         : "border-white/10 text-slate-500 hover:text-slate-300"
-    }`}
-  >
-    {text}
-  </button>
-);
 
 export default PnfChart;
