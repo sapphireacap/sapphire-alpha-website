@@ -54,6 +54,21 @@ EXCHANGE_SEGMENT = {"EQUITY": "NSE_EQ", "INDEX": "IDX_I",
 
 _cache: dict = {}  # segment -> (date_str, {key: row})
 
+# Mongo-backed so a cold start doesn't re-pay the download. Measured on
+# this master: 3.33s to fetch 26.6MB + 0.80s to parse = ~4.2s before a
+# chart can even ask for bars, against 0.54s for the actual Dhan API call
+# and 0.02s for the P&F engine. On a free-tier instance that spins down
+# when idle, "cold" is the common case, not the rare one -- so persisting
+# the parsed index is worth far more here than any engine optimisation.
+MASTER_CACHE_COLLECTION = "dhan_master_cache"
+
+# A Mongo document is capped at 16MB. NSE (~23.5k equities+indices) is
+# comfortably inside it; the 79k-row derivatives block is not reliably so,
+# and a failed write there would be a silent cache miss on every request.
+# Those segments stay in-process only -- they are also charted far less
+# often, so the cold cost is paid rarely.
+MONGO_CACHEABLE = {"NSE"}
+
 
 class DhanMasterError(Exception):
     """Master download/parse problems -- safe to show a caller."""
@@ -63,12 +78,28 @@ def _norm(s) -> str:
     return (s or "").strip().upper()
 
 
-async def _load(segment: str) -> dict:
+async def _load(segment: str, also: set = None) -> dict:
     """{lookup_key: {security_id, exchange_segment, instrument, tradingsymbol,
-    expiry, strike, option_type}} for one segment class."""
-    wanted = SEGMENT_INSTRUMENTS.get(segment)
-    if not wanted:
+    expiry, strike, option_type}} for one segment class.
+
+    `also` builds additional segments' indexes from the SAME download and
+    parks them in the process cache. The 26.6MB fetch is by far the most
+    expensive step, so paying it once and slicing three ways beats paying
+    it per segment -- charting NSE then FUT used to download the whole
+    master twice."""
+    wanted_by_segment = {segment: SEGMENT_INSTRUMENTS.get(segment)}
+    if wanted_by_segment[segment] is None:
         raise DhanMasterError(f"Unknown segment '{segment}'. Known: {', '.join(SEGMENT_INSTRUMENTS)}.")
+    for extra in (also or set()):
+        if extra in SEGMENT_INSTRUMENTS and extra != segment:
+            wanted_by_segment[extra] = SEGMENT_INSTRUMENTS[extra]
+
+    # instrument name -> which segment(s) it belongs to, so the parse is a
+    # single pass rather than one pass per segment.
+    owner = {}
+    for seg, instruments in wanted_by_segment.items():
+        for i in instruments:
+            owner.setdefault(i, []).append(seg)
 
     try:
         async with httpx.AsyncClient(timeout=180, follow_redirects=True) as c:
@@ -77,10 +108,11 @@ async def _load(segment: str) -> dict:
     except httpx.HTTPError as e:
         raise DhanMasterError(f"Could not fetch the Dhan scrip master: {e}") from e
 
-    index: dict = {}
+    indexes = {seg: {} for seg in wanted_by_segment}
     for row in csv.DictReader(io.StringIO(r.text)):
         instrument = _norm(row.get("SEM_INSTRUMENT_NAME"))
-        if instrument not in wanted:
+        owners = owner.get(instrument)
+        if not owners:
             continue
         if _norm(row.get("SEM_EXM_EXCH_ID")) != "NSE":
             continue
@@ -110,44 +142,86 @@ async def _load(segment: str) -> dict:
         if not entry["security_id"]:
             continue
 
-        if segment == "NSE":
-            # Prefer a real EQUITY row over an INDEX row of the same name:
-            # "NIFTY" exists as both an index and as option underlyings, and
-            # a cash-segment chart wants the tradable instrument.
-            key = symbol
-            if key not in index or (instrument == "EQUITY" and index[key]["instrument"] != "EQUITY"):
-                index[key] = entry
-            # Index names are also reachable by their display name, since
-            # the selector shows "Nifty 50" rather than "NIFTY".
-            if instrument == "INDEX":
-                index.setdefault(_norm(entry["tradingsymbol"]), entry)
-        else:
-            index[(symbol, entry["expiry"], entry["strike"], entry["option_type"])] = entry
+        for seg in owners:
+            index = indexes[seg]
+            if seg == "NSE":
+                # Prefer a real EQUITY row over an INDEX row of the same
+                # name: "NIFTY" exists as both an index and as option
+                # underlyings, and a cash chart wants the tradable one.
+                if symbol not in index or (instrument == "EQUITY" and index[symbol]["instrument"] != "EQUITY"):
+                    index[symbol] = entry
+                # Indices are also reachable by display name, since the
+                # selector shows "Nifty 50" rather than "NIFTY".
+                if instrument == "INDEX":
+                    index.setdefault(_norm(entry["tradingsymbol"]), entry)
+            else:
+                index[(symbol, entry["expiry"], entry["strike"], entry["option_type"])] = entry
 
-    if not index:
+    today = date.today().isoformat()
+    for seg, index in indexes.items():
+        if index:
+            _cache[seg] = (today, index)
+            logger.info("Dhan master: cached %d %s instruments", len(index), seg)
+
+    if not indexes.get(segment):
         raise DhanMasterError(f"Dhan master returned no {segment} instruments.")
-    logger.info("Dhan master: cached %d %s instruments", len(index), segment)
-    return index
+    return indexes[segment]
 
 
-async def _index_for(segment: str) -> dict:
+async def _read_mongo(db, segment: str, today: str):
+    if db is None or segment not in MONGO_CACHEABLE:
+        return None
+    try:
+        doc = await db[MASTER_CACHE_COLLECTION].find_one({"segment": segment, "date": today}, {"_id": 0})
+    except Exception as e:  # noqa: BLE001 — a cache miss must never break a chart
+        logger.info("Dhan master: Mongo cache read failed (%s)", e)
+        return None
+    return (doc or {}).get("index") or None
+
+
+async def _write_mongo(db, segment: str, today: str, index: dict):
+    if db is None or segment not in MONGO_CACHEABLE:
+        return
+    try:
+        await db[MASTER_CACHE_COLLECTION].update_one(
+            {"segment": segment},
+            {"$set": {"segment": segment, "date": today, "index": index}},
+            upsert=True,
+        )
+    except Exception as e:  # noqa: BLE001 — best-effort; the process cache still works
+        logger.info("Dhan master: Mongo cache write failed (%s)", e)
+
+
+async def _index_for(segment: str, db=None) -> dict:
+    """Process cache -> Mongo -> download. The Mongo hop is what makes a
+    cold start cheap: re-reading a parsed index costs milliseconds against
+    ~4.2s to fetch and parse the master again, and on a free-tier instance
+    that spins down when idle, cold is the normal case."""
     today = date.today().isoformat()
     cached = _cache.get(segment)
     if cached and cached[0] == today:
         return cached[1]
-    index = await _load(segment)
-    _cache[segment] = (today, index)
+
+    from_mongo = await _read_mongo(db, segment, today)
+    if from_mongo:
+        _cache[segment] = (today, from_mongo)
+        logger.info("Dhan master: %s index served from Mongo (%d instruments)", segment, len(from_mongo))
+        return from_mongo
+
+    # One download, every segment indexed -- see _load's docstring.
+    index = await _load(segment, also=set(SEGMENT_INSTRUMENTS) - {segment})
+    await _write_mongo(db, segment, today, index)
     return index
 
 
 async def resolve(segment: str, symbol: str, expiry: str = None,
-                   strike: float = None, option_type: str = None) -> dict | None:
+                   strike: float = None, option_type: str = None, db=None) -> dict | None:
     """{security_id, exchange_segment, instrument, tradingsymbol} or None.
 
     Never raises on a miss -- callers turn that into a clean 404, same
     contract as exitline.resolve_instrument."""
     segment = _norm(segment)
-    index = await _index_for(segment)
+    index = await _index_for(segment, db)
     symbol = _norm(symbol)
 
     if segment == "NSE":
@@ -181,9 +255,9 @@ async def resolve(segment: str, symbol: str, expiry: str = None,
     return None
 
 
-async def search(segment: str, query: str = "", limit: int = 30) -> list:
+async def search(segment: str, query: str = "", limit: int = 30, db=None) -> list:
     """Symbol search for the charting selector."""
-    index = await _index_for(_norm(segment))
+    index = await _index_for(_norm(segment), db)
     q = _norm(query)
     out = []
     for key, v in index.items():

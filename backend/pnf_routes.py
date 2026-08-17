@@ -367,7 +367,7 @@ def create_pnf_router(db, definedge, get_current_subscriber) -> APIRouter:
         bar_source = "dhan"
         source = None
         try:
-            dhan_found = await dhan_master.resolve(segment, symbol, expiry, strike, option_type)
+            dhan_found = await dhan_master.resolve(segment, symbol, expiry, strike, option_type, db=db)
             if dhan_found:
                 found = {"segment": dhan_found["exchange_segment"], "token": dhan_found["security_id"],
                           "tradingsymbol": dhan_found["tradingsymbol"]}
