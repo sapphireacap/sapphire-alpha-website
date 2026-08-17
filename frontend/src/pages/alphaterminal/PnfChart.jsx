@@ -988,7 +988,10 @@ const RailButton = ({ icon: Icon, active, disabled, title, disabledReason, onCli
   </button>
 );
 
-const ToolRail = ({
+// Exported for PnfWorkspace's single shared rail — same reasoning as the
+// shared Plot controller: one rail driving whichever cell is active,
+// rather than four identical rails duplicated down the page.
+export const ToolRail = ({
   showTrendLines, setShowTrendLines, showMa, setShowMa,
   showSmartTrend, setShowSmartTrend, onReset,
   showExitline, onToggleExitline, exitlineDisabled, exitlineLoading,
@@ -1040,15 +1043,16 @@ const compactField = "bg-white/5 border border-white/10 rounded-md px-2.5 py-1.5
 // to be reused this way.
 //
 // `controlled`: hides this cell's own plot toolbar (segment/search/
-// instrument/expiry/strike/interval/box/Plot/Live) -- what the multi-chart
-// workspace uses when ONE shared controller drives all visible cells,
-// rather than each cell duplicating the full form. The imperative handle
-// below (plotInstrument/setLive) is how that shared controller actually
-// drives this specific cell once it's the one the user clicked into.
-// `onPlotted`/`onLiveChange` mirror this cell's own plotted-instrument and
-// live state back up to that controller, so its Live button and (when a
-// different cell becomes active) its fields can reflect reality.
-const PnfChart = forwardRef(({ embedded = false, controlled = false, onPlotted, onLiveChange } = {}, ref) => {
+// instrument/expiry/strike/interval/box/Plot/Live) AND its own left tool
+// rail -- what the multi-chart workspace uses when ONE shared controller
+// and ONE shared rail drive all visible cells, rather than each cell
+// duplicating both. The imperative handle below (plotInstrument/setLive/
+// setOverlay/resetView) is how those shared controls actually drive this
+// specific cell once it's the one the user clicked into.
+// `onPlotted`/`onLiveChange`/`onOverlayChange` mirror this cell's own
+// plotted-instrument, live, and overlay-toggle state back up, so the
+// shared Live button and shared rail reflect whichever cell is active.
+const PnfChart = forwardRef(({ embedded = false, controlled = false, onPlotted, onLiveChange, onOverlayChange } = {}, ref) => {
   const [segment, setSegment] = useState("NSE");
   const [symbols, setSymbols] = useState([]);
   const [query, setQuery] = useState("");
@@ -1182,6 +1186,9 @@ const PnfChart = forwardRef(({ embedded = false, controlled = false, onPlotted, 
   // `fetchChart`'s override (rather than relying on state having landed
   // before fetchChart's closure reads it), `setLive` drives this cell's
   // own live-refresh toggle from the controller's single Live button.
+  // `setOverlay`/`resetView` are the shared ToolRail's onto this cell's
+  // own trend-line/MA/smart-trend/exitline/session-divider toggles and
+  // camera reset -- same pattern as plotInstrument/setLive above.
   useImperativeHandle(ref, () => ({
     plotInstrument: (instrument) => {
       setSegment(instrument.segment);
@@ -1194,6 +1201,14 @@ const PnfChart = forwardRef(({ embedded = false, controlled = false, onPlotted, 
       fetchChart({ override: instrument });
     },
     setLive: (v) => setLive(v),
+    setOverlay: (key, value) => {
+      if (key === "trendLines") setShowTrendLines(value);
+      else if (key === "ma") setShowMa(value);
+      else if (key === "smartTrend") setShowSmartTrend(value);
+      else if (key === "exitline") setShowExitline(value);
+      else if (key === "sessionDividers") setShowSessionDividers(value);
+    },
+    resetView: () => gridRef.current?.resetView(),
   }), [fetchChart]);
 
   // Mirrors `live` up to the shared controller so its Live button reflects
@@ -1203,6 +1218,18 @@ const PnfChart = forwardRef(({ embedded = false, controlled = false, onPlotted, 
     onLiveChange?.(live);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [live]);
+
+  // Mirrors this cell's overlay toggles (+ the segment/interval-derived
+  // disabled states) up to the shared ToolRail, so it reflects whichever
+  // cell is currently active instead of a rail-wide guess.
+  useEffect(() => {
+    onOverlayChange?.({
+      trendLines: showTrendLines, ma: showMa, smartTrend: showSmartTrend,
+      exitline: showExitline, exitlineDisabled: !EXITLINE_SEGMENTS.includes(segment), exitlineLoading,
+      sessionDividers: showSessionDividers, sessionDividersDisabled: !isIntradayInterval(interval),
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [showTrendLines, showMa, showSmartTrend, showExitline, showSessionDividers, segment, interval, exitlineLoading]);
 
   // Exitline fetch — keyed to whatever was actually plotted, not the live
   // selector state (see plottedInstrument above). Re-fetches whenever the
@@ -1333,10 +1360,10 @@ const PnfChart = forwardRef(({ embedded = false, controlled = false, onPlotted, 
       </div>
       )}
 
-      {/* Compact instrument/stat readout — replaces the old 6-tile summary
-          strip with a single dense line, TradingView-style, so the chart
-          itself gets almost the whole viewport instead of being crowded
-          out by chrome above it. */}
+      {/* Compact instrument/stat readout — just identity + price + bias;
+          everything else here (bull/bear standing, Cont./Rev., cols/bars/
+          date-range) either duplicated the Commentary panel or was pure
+          clutter, so it's gone rather than hidden. */}
       {data && (
         <div className="shrink-0 flex flex-wrap items-center gap-x-4 gap-y-1 px-3 sm:px-4 py-2 border-b border-white/5 bg-[#080D16] text-[11px] font-mono-ui text-slate-400">
           <span className="text-white font-semibold text-xs">{data.instrument.tradingsymbol}</span>
@@ -1345,9 +1372,6 @@ const PnfChart = forwardRef(({ embedded = false, controlled = false, onPlotted, 
           <span className={`inline-flex items-center gap-1 ${BIAS_STYLE[bias].text}`}>
             <BiasIcon size={12} />{bias[0].toUpperCase() + bias.slice(1)}
           </span>
-          <span>{data.summary.active_bullish} bull · {data.summary.active_bearish} bear standing</span>
-          <span>Cont. {fmtNum(data.summary.continuation_price)}</span>
-          <span>Rev. {fmtNum(data.summary.reversal_price)}</span>
           {live && (
             <span className="inline-flex items-center gap-1.5 text-emerald-400">
               <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" /> Live
@@ -1358,14 +1382,11 @@ const PnfChart = forwardRef(({ embedded = false, controlled = false, onPlotted, 
           <button
             type="button"
             onClick={() => setShowCommentarySheet(true)}
-            className="md:hidden inline-flex items-center gap-1 text-sapphire-light"
+            className="md:hidden inline-flex items-center gap-1 text-sapphire-light ml-auto"
             data-testid="pnf-commentary-sheet-open"
           >
             <Info size={12} /> Commentary
           </button>
-          <span className="ml-auto hidden sm:inline text-slate-500">
-            {data.meta.total_columns} cols · {data.meta.bars} bars · {data.meta.first_label} → {data.meta.last_label}
-          </span>
         </div>
       )}
 
@@ -1377,6 +1398,10 @@ const PnfChart = forwardRef(({ embedded = false, controlled = false, onPlotted, 
 
       {data && (
         <div className="flex-1 flex min-h-0">
+          {/* Skipped when `controlled` -- the workspace's single shared
+              rail (see the exported ToolRail) drives whichever cell is
+              active instead of one rail per cell. */}
+          {!controlled && (
           <ToolRail
             showTrendLines={showTrendLines} setShowTrendLines={setShowTrendLines}
             showMa={showMa} setShowMa={setShowMa}
@@ -1390,6 +1415,7 @@ const PnfChart = forwardRef(({ embedded = false, controlled = false, onPlotted, 
             onToggleSessionDividers={() => setShowSessionDividers((v) => !v)}
             sessionDividersDisabled={!isIntradayInterval(interval)}
           />
+          )}
 
           <div className="flex-1 min-w-0 min-h-0 flex flex-col p-3 sm:p-4">
             <div className="flex-1 min-h-0">
@@ -1404,15 +1430,6 @@ const PnfChart = forwardRef(({ embedded = false, controlled = false, onPlotted, 
                 exitlineLevels={showExitline ? exitlineData : null}
                 showSessionDividers={showSessionDividers && isIntradayInterval(interval)}
               />
-            </div>
-            {/* Mouse-gesture hint + hover readout — hover has no meaning on
-                a touch screen, so the whole line is desktop-only. */}
-            <div className="hidden sm:flex shrink-0 mt-1.5 items-center justify-between text-[11px] text-slate-500 font-mono-ui">
-              <span>
-                {hoverCol
-                  ? <>Col {hoverCol.index} · {hoverCol.direction} × {hoverCol.box_count} · {fmtNum(hoverCol.bottom_price)} – {fmtNum(hoverCol.top_price)}{hoverCol.start_label && <> · {hoverCol.start_label} → {hoverCol.end_label}</>}</>
-                  : "scroll to zoom · drag to pan · drag/scroll price axis to scale (double-click axis to auto-fit again) · double-click chart to reset"}
-              </span>
             </div>
           </div>
 

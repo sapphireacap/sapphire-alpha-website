@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import axios from "axios";
 import { toast } from "sonner";
 import { LayoutGrid, Rows2, Square, Search, Crosshair, Loader2, Radio } from "lucide-react";
-import PnfChart, { SEGMENTS, INTERVALS, BOX_SIZES } from "./PnfChart";
+import PnfChart, { SEGMENTS, INTERVALS, BOX_SIZES, ToolRail } from "./PnfChart";
 import { TRADER_TOKEN_KEY } from "../Auth";
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
@@ -10,12 +10,13 @@ const authHeaders = () => ({ headers: { Authorization: `Bearer ${localStorage.ge
 
 /*
   Multi-chart layout for P&F Studio — TradingView-style 1/2/4 grid, driven
-  by ONE shared controller rather than each cell carrying its own full
-  plot form. Click a cell to make it active (highlighted border), build
-  the instrument in the top bar, hit Plot — it lands in whichever cell you
-  clicked. Each cell still keeps its OWN tool rail (trend lines/MA/smart
-  trend/exitline/session dividers) and Commentary panel, since those are
-  per-chart display toggles, not part of "what to plot".
+  by ONE shared plot controller and ONE shared tool rail rather than each
+  cell carrying its own full form and its own rail. Click a cell to make
+  it active (highlighted border) — the controller's Plot lands there, the
+  rail's toggles (trend lines/MA/smart trend/exitline/session dividers)
+  apply there, and its Live button reflects its state. Each cell still
+  keeps its OWN Commentary panel, since that's a per-chart readout, not a
+  control.
 
   All four cells stay MOUNTED at all times; layout only changes which are
   VISIBLE (via CSS) and how the grid divides — switching from 4-up back to
@@ -74,6 +75,15 @@ const LayoutPicker = ({ active, onChange }) => (
 
 const compactField = "bg-white/5 border border-white/10 rounded-md px-2.5 py-1.5 text-xs text-white outline-none focus:border-sapphire-light transition-colors [color-scheme:dark]";
 
+// Mirrors PnfChart's own overlay defaults (trend lines/MA/smart trend on,
+// exitline/session dividers off) so a freshly-mounted cell's rail state
+// matches what that cell will actually report the moment it has data.
+const DEFAULT_OVERLAYS = {
+  trendLines: true, ma: true, smartTrend: true,
+  exitline: false, exitlineDisabled: true, exitlineLoading: false,
+  sessionDividers: false, sessionDividersDisabled: true,
+};
+
 const PnfWorkspace = () => {
   const [layout, setLayout] = useState("1");
   const cellCount = LAYOUTS.find((l) => l.key === layout)?.cells || 1;
@@ -85,6 +95,12 @@ const PnfWorkspace = () => {
   // Live button only ever appears once that cell actually has a chart.
   const [liveByCell, setLiveByCell] = useState([false, false, false, false]);
   const [plottedByCell, setPlottedByCell] = useState([false, false, false, false]);
+  // Mirrors each cell's own overlay-toggle state so the shared ToolRail
+  // reflects whichever cell is currently active (see PnfChart's
+  // onOverlayChange).
+  const [overlaysByCell, setOverlaysByCell] = useState([
+    DEFAULT_OVERLAYS, DEFAULT_OVERLAYS, DEFAULT_OVERLAYS, DEFAULT_OVERLAYS,
+  ]);
 
   // The shared controller's own form state — plots into whichever cell is
   // active, same fields PnfChart's own (now-hidden-when-embedded) toolbar
@@ -145,9 +161,23 @@ const PnfWorkspace = () => {
   const onCellLiveChange = useCallback((i, v) => {
     setLiveByCell((prev) => { const next = [...prev]; next[i] = v; return next; });
   }, []);
+  const onCellOverlayChange = useCallback((i, overlays) => {
+    setOverlaysByCell((prev) => { const next = [...prev]; next[i] = overlays; return next; });
+  }, []);
 
   const activeHasData = plottedByCell[activeCell];
   const activeLive = liveByCell[activeCell];
+  const activeOverlays = overlaysByCell[activeCell];
+
+  // Mimics React's own setState signature (plain value OR an updater
+  // function) so the shared ToolRail — which calls e.g.
+  // `setShowTrendLines((v) => !v)` internally — can drive the active
+  // cell's imperative setOverlay without knowing it's not real state.
+  const makeOverlaySetter = (key) => (updater) => {
+    const current = overlaysByCell[activeCell]?.[key] ?? false;
+    const next = typeof updater === "function" ? updater(current) : updater;
+    cellRefs[activeCell].current?.setOverlay(key, next);
+  };
 
   return (
     <div className="h-[100dvh] w-screen overflow-hidden bg-[#060B14] text-white flex flex-col">
@@ -223,47 +253,68 @@ const PnfWorkspace = () => {
         </div>
       </div>
 
-      {/* Below `sm`: a scrollable vertical stack, each cell a real fraction
-          of the viewport tall. At `sm`+: the actual 1/2/4 grid, no scroll
-          needed since the grid divides the available height evenly. */}
-      <div
-        className={`flex-1 min-h-0 flex flex-col sm:grid overflow-y-auto sm:overflow-hidden ${GRID_CLASS[cellCount]}`}
-        data-testid="pnf-workspace-grid"
-      >
-        {[0, 1, 2, 3].map((i) => {
-          const borderParts = [];
-          // Mobile stack: a divider under every visible cell but the last.
-          if (i < cellCount - 1) borderParts.push("border-b border-white/10 sm:border-b-0");
-          // sm+ grid: right border on the left column, bottom border on the top row.
-          if (cellCount > 1 && i % 2 === 0) borderParts.push("sm:border-r sm:border-white/10");
-          if (cellCount > 2 && i < 2) borderParts.push("sm:border-b sm:border-white/10");
-          return (
-            <div
-              key={`pnf-cell-${i}`}
-              onClick={() => setActiveCell(i)}
-              // Cells beyond the current layout's count stay mounted (see
-              // module docstring) but are removed from layout AND painting,
-              // so a hidden chart costs no space and no compositing.
-              // `min-h-[70vh] sm:min-h-0 shrink-0` gives every stacked
-              // mobile cell a genuinely usable height instead of letting
-              // flex divide the viewport into slivers.
-              className={`min-w-0 min-h-[70vh] sm:min-h-0 shrink-0 sm:shrink overflow-hidden transition-shadow ${
-                i < cellCount ? "block" : "hidden"
-              } ${borderParts.join(" ")} ${
-                activeCell === i && cellCount > 1 ? "ring-1 ring-inset ring-sapphire-light/60" : ""
-              }`}
-              data-testid={`pnf-cell-${i}`}
-            >
-              <PnfChart
-                ref={cellRefs[i]}
-                embedded
-                controlled
-                onPlotted={() => onCellPlotted(i)}
-                onLiveChange={(v) => onCellLiveChange(i, v)}
-              />
-            </div>
-          );
-        })}
+      {/* ONE tool rail for every cell, same reasoning as the shared Plot
+          controller above — it drives whichever cell is active rather
+          than each cell carrying its own identical rail. */}
+      <div className="flex-1 min-h-0 flex">
+        <ToolRail
+          showTrendLines={activeOverlays.trendLines} setShowTrendLines={makeOverlaySetter("trendLines")}
+          showMa={activeOverlays.ma} setShowMa={makeOverlaySetter("ma")}
+          showSmartTrend={activeOverlays.smartTrend} setShowSmartTrend={makeOverlaySetter("smartTrend")}
+          onReset={() => cellRefs[activeCell].current?.resetView()}
+          showExitline={activeOverlays.exitline}
+          onToggleExitline={() => makeOverlaySetter("exitline")((v) => !v)}
+          exitlineDisabled={activeOverlays.exitlineDisabled}
+          exitlineLoading={activeOverlays.exitlineLoading}
+          showSessionDividers={activeOverlays.sessionDividers}
+          onToggleSessionDividers={() => makeOverlaySetter("sessionDividers")((v) => !v)}
+          sessionDividersDisabled={activeOverlays.sessionDividersDisabled}
+        />
+
+        {/* Below `sm`: a scrollable vertical stack, each cell a real
+            fraction of the viewport tall. At `sm`+: the actual 1/2/4 grid,
+            no scroll needed since the grid divides the available height
+            evenly. */}
+        <div
+          className={`flex-1 min-h-0 flex flex-col sm:grid overflow-y-auto sm:overflow-hidden ${GRID_CLASS[cellCount]}`}
+          data-testid="pnf-workspace-grid"
+        >
+          {[0, 1, 2, 3].map((i) => {
+            const borderParts = [];
+            // Mobile stack: a divider under every visible cell but the last.
+            if (i < cellCount - 1) borderParts.push("border-b border-white/10 sm:border-b-0");
+            // sm+ grid: right border on the left column, bottom border on the top row.
+            if (cellCount > 1 && i % 2 === 0) borderParts.push("sm:border-r sm:border-white/10");
+            if (cellCount > 2 && i < 2) borderParts.push("sm:border-b sm:border-white/10");
+            return (
+              <div
+                key={`pnf-cell-${i}`}
+                onClick={() => setActiveCell(i)}
+                // Cells beyond the current layout's count stay mounted (see
+                // module docstring) but are removed from layout AND painting,
+                // so a hidden chart costs no space and no compositing.
+                // `min-h-[70vh] sm:min-h-0 shrink-0` gives every stacked
+                // mobile cell a genuinely usable height instead of letting
+                // flex divide the viewport into slivers.
+                className={`min-w-0 min-h-[70vh] sm:min-h-0 shrink-0 sm:shrink overflow-hidden transition-shadow ${
+                  i < cellCount ? "block" : "hidden"
+                } ${borderParts.join(" ")} ${
+                  activeCell === i && cellCount > 1 ? "ring-1 ring-inset ring-sapphire-light/60" : ""
+                }`}
+                data-testid={`pnf-cell-${i}`}
+              >
+                <PnfChart
+                  ref={cellRefs[i]}
+                  embedded
+                  controlled
+                  onPlotted={() => onCellPlotted(i)}
+                  onLiveChange={(v) => onCellLiveChange(i, v)}
+                  onOverlayChange={(overlays) => onCellOverlayChange(i, overlays)}
+                />
+              </div>
+            );
+          })}
+        </div>
       </div>
     </div>
   );
