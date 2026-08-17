@@ -31,3 +31,14 @@ services:
         sync: false
       - key: CRON_SECRET
         sync: false
+      # Dhan — the IV / option-chain / Greeks source (Definedge has no
+      # Greeks or IV endpoint at all). Declared here so production is
+      # documented as needing them; the values themselves are set in the
+      # Render dashboard, same as every other sync:false key above.
+      # Note these are separate from Definedge's: Dhan access tokens are
+      # time-limited and need regenerating when they lapse, which shows up
+      # as HTTP 401 DH-901 on every endpoint, /v2/profile included.
+      - key: DHAN_ACCESS_TOKEN
+        sync: false
+      - key: DHAN_CLIENT_ID
+        sync: false
