@@ -94,9 +94,36 @@ def configured() -> bool:
     return all(os.environ.get(k) for k in ("DHAN_CLIENT_ID", "DHAN_PIN", "DHAN_TOTP_SECRET"))
 
 
+def _normalise_secret(raw: str) -> str:
+    """Base32 seeds are copied by hand off a QR screen, so they arrive with
+    spaces, hyphens, lowercase, or a stray extra character on the end. Fix
+    what is unambiguously fixable and leave the rest to fail loudly.
+
+    The length check is the load-bearing part. A base32 string's length is
+    always 0, 2, 4, 5 or 7 mod 8 — never 1, 3 or 6. A real 33-character
+    paste (32 correct characters plus one trailing digit) hit exactly this
+    and pyotp rejected the whole thing as "Incorrect padding", which says
+    nothing about what to fix. Trimming to the longest valid prefix
+    recovers it, and the WARNING says which character was dropped so a
+    genuinely wrong seed still gets noticed rather than silently mangled."""
+    s = "".join((raw or "").split()).replace("-", "").upper().rstrip("=")
+    if not s:
+        return s
+    remainder = len(s) % 8
+    if remainder in (1, 3, 6):
+        trimmed = s[: len(s) - (remainder if remainder != 1 else 1)] if remainder != 1 else s[:-1]
+        logger.warning(
+            "DHAN_TOTP_SECRET is %d characters, which is not a valid base32 length — "
+            "using the first %d. Remove the trailing character(s) from the env var.",
+            len(s), len(trimmed),
+        )
+        s = trimmed
+    return s
+
+
 def _current_totp() -> str:
     import pyotp
-    secret = (os.environ.get("DHAN_TOTP_SECRET") or "").strip().replace(" ", "")
+    secret = _normalise_secret(os.environ.get("DHAN_TOTP_SECRET"))
     if not secret:
         raise DhanAuthError("DHAN_TOTP_SECRET is not configured.")
     try:
@@ -104,7 +131,7 @@ def _current_totp() -> str:
     except Exception as e:  # noqa: BLE001 — almost always a non-base32 seed
         raise DhanAuthError(
             "Could not generate a TOTP code — DHAN_TOTP_SECRET must be the base32 "
-            "enrolment seed, not the rotating 6-digit code."
+            "enrolment seed shown next to the QR at setup, not the rotating 6-digit code."
         ) from e
 
 
@@ -142,6 +169,12 @@ async def login() -> dict:
 
     token = data.get("accessToken")
     if not token:
+        # Dhan rate-limits token generation to once every 2 minutes and
+        # reports it as a 200 with {"status": "error"} and no accessToken,
+        # not as a 429 (observed live, 2026-08-17). Callers should never
+        # hit this in normal use — get_access_token() serves a cached token
+        # until REFRESH_MARGIN before expiry — but force=True twice in a
+        # row will, so the message is passed through rather than flattened.
         raise DhanAuthError(f"Dhan auth returned no accessToken: {json.dumps(data)[:300]}")
 
     embedded = _decode_client_id(token)
