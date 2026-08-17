@@ -152,7 +152,7 @@ const BIAS_STYLE = {
 
 const PnfGrid = forwardRef(({
   data, resetKey, showTrendLines, showMa, showSmartTrend, highlight, onHoverColumn,
-  exitlineLevels, showSessionDividers,
+  exitlineLevels, showSessionDividers, patterns, showPatternLines,
 }, ref) => {
   const { columns, grid, trend_lines: lines, meta, indicators } = data;
   const frameRef = useRef(null);
@@ -490,6 +490,54 @@ const PnfGrid = forwardRef(({
   // its true fractional row (see priceToFractionalLevel), plus its label
   // for the price-axis pane below. Levels with no price (should not
   // happen — the backend always returns all 11) are simply skipped.
+  // Each SESSION has its own level ladder, computed from that session's own
+  // previous-day H/L/C — so a level is not one price across the whole
+  // chart, it steps at every day boundary. Drawing a single flat line for
+  // the active session was wrong the moment the chart showed more than one
+  // day: it painted today's levels across yesterday's columns.
+  //
+  // Only applies intraday, and only when the backend actually returned a
+  // per-session ladder; otherwise this falls back to the single-ladder
+  // behaviour, which is correct for a daily/weekly/monthly chart where one
+  // column IS one or more days.
+  const sessionLevelSegments = useMemo(() => {
+    const sessions = exitlineLevels?.sessions;
+    if (!sessions?.length || !showSessionDividers) return null;
+
+    // date -> [first column x, last column x]. A column that spans a
+    // boundary belongs to the day it STARTED in, matching how the divider
+    // is placed through it.
+    const spanByDate = new Map();
+    columns.forEach((c, i) => {
+      const d = (c.start_label || "").slice(0, 10);
+      if (!d) return;
+      const x1 = colX(i);
+      const x2 = colX(i) + COL_W;
+      const cur = spanByDate.get(d);
+      spanByDate.set(d, cur ? [Math.min(cur[0], x1), Math.max(cur[1], x2)] : [x1, x2]);
+    });
+    if (spanByDate.size < 2) return null;
+
+    const out = [];
+    for (const session of sessions) {
+      const span = spanByDate.get(session.date);
+      if (!span || !session.levels) continue;
+      for (const k of EXITLINE_VISIBLE_LEVELS) {
+        const price = session.levels[k];
+        if (price == null) continue;
+        const lvl = priceToFractionalLevel(price, grid.levels);
+        if (lvl == null) continue;
+        out.push({
+          key: `${session.date}-${k}`, levelKey: k, price,
+          x1: span[0], x2: span[1],
+          y: PAD_T + (grid.max_level - lvl) * ROW_H,
+          color: EXITLINE_LEVEL_COLORS[k], label: EXITLINE_DISPLAY_LABELS[k],
+        });
+      }
+    }
+    return out.length ? out : null;
+  }, [exitlineLevels, showSessionDividers, columns, colX, grid.levels, grid.max_level]);
+
   const exitlineLines = useMemo(() => {
     if (!exitlineLevels?.levels) return [];
     const out = EXITLINE_VISIBLE_LEVELS.map((k) => {
@@ -508,12 +556,53 @@ const PnfGrid = forwardRef(({
     return out;
   }, [exitlineLevels, grid.levels, grid.max_level]);
 
-  // Session dividers — a vertical line at the left edge of the first
-  // column of each new calendar day, intraday only (see findSessionBoundaries).
+  // Session dividers. Drawn THROUGH the column the day actually changes
+  // in, not in the gap before it — a P&F column is a price move, not a
+  // clock, so a column that was still printing when the session rolled
+  // genuinely spans both days and the divider belongs inside it. Matches
+  // how the reference platform draws it.
   const sessionDividers = useMemo(() => {
     if (!showSessionDividers) return [];
-    return findSessionBoundaries(columns).map((b) => ({ ...b, x: colX(b.index) }));
+    return findSessionBoundaries(columns).map((b) => {
+      const prev = columns[b.index - 1];
+      const prevEndDate = prev?.end_label ? prev.end_label.slice(0, 10) : null;
+      // The previous column was still open on the new day, so the boundary
+      // sits inside IT — draw through its middle. Otherwise the day change
+      // fell cleanly between two columns, so the gap is correct.
+      const spansBoundary = prevEndDate && prevEndDate === b.date;
+      return {
+        ...b,
+        x: spansBoundary ? colX(b.index - 1) + COL_W / 2 : colX(b.index),
+      };
+    });
   }, [showSessionDividers, columns, colX]);
+
+  // Identified formations, drawn on the chart rather than only listed in
+  // the side panel. Each is a horizontal segment at the level the pattern
+  // qualified on, spanning the columns that form it (start_index..index) —
+  // the same shape the reference platform draws, and the level that
+  // actually matters, since it is what a breach would trigger against.
+  const patternLines = useMemo(() => {
+    if (!showPatternLines || !patterns?.length) return [];
+    return patterns
+      .filter((p) => p.trigger_level != null)
+      .map((p) => {
+        const start = Math.min(p.start_index, p.index);
+        const end = Math.max(p.start_index, p.index);
+        const y = PAD_T + rowOf(p.trigger_level) * ROW_H + ROW_H / 2;
+        return {
+          key: `${p.name}-${p.index}`,
+          x1: colX(start),
+          // +COL_W so the line covers the full width of its last column
+          // rather than stopping at that column's left edge.
+          x2: colX(end) + COL_W,
+          y,
+          bias: p.bias,
+          active: p.active !== false,
+          label: p.label,
+        };
+      });
+  }, [showPatternLines, patterns, colX, rowOf]);
 
   return (
     <div
@@ -646,13 +735,56 @@ const PnfGrid = forwardRef(({
 
         {/* Exitline levels + LTP — full-width horizontal lines at each
             level's true fractional price row (not snapped to a box). */}
-        {exitlineLines.map((ln) => (
+        {/* Identified formations — a segment at the level each qualified
+            on, spanning the columns that form it. Bullish green, bearish
+            red, matching the bias dots in the side panel; a negated
+            formation is dimmed rather than hidden, since it still explains
+            what the chart did. */}
+        {patternLines.map((pl) => (
+          <line
+            key={`pattern-${pl.key}`}
+            x1={pl.x1} y1={pl.y} x2={pl.x2} y2={pl.y}
+            stroke={pl.bias === "bearish" ? "#F87171" : pl.bias === "bullish" ? "#34D399" : "#94A3B8"}
+            strokeWidth={highlight && highlight.index === pl.index ? 2.5 : 1.5}
+            opacity={pl.active ? 0.85 : 0.35}
+            strokeDasharray={pl.active ? undefined : "4 3"}
+            vectorEffect="non-scaling-stroke"
+          />
+        ))}
+
+        {/* Per-session ladders when we have them: each level is drawn only
+            across its own day's columns, so the ladder STEPS at the session
+            divider instead of one flat line spanning days it never applied
+            to. Falls back to full-width lines on a daily/weekly/monthly
+            chart, where a single ladder is the correct reading. */}
+        {sessionLevelSegments
+          ? sessionLevelSegments.map((seg) => (
+              <line
+                key={`exitline-seg-${seg.key}`}
+                x1={seg.x1} y1={seg.y} x2={seg.x2} y2={seg.y}
+                stroke={seg.color} strokeWidth={1.25}
+                opacity={0.8}
+                vectorEffect="non-scaling-stroke"
+              />
+            ))
+          : exitlineLines.filter((ln) => ln.key !== "LTP").map((ln) => (
+              <line
+                key={`exitline-${ln.key}`}
+                x1={0} y1={ln.y} x2={plotW} y2={ln.y}
+                stroke={ln.color} strokeWidth={1.25}
+                strokeDasharray="5 3"
+                opacity={0.75}
+                vectorEffect="non-scaling-stroke"
+              />
+            ))}
+        {/* The live price line always spans the full width — it is one
+            number now, not a per-session level. */}
+        {exitlineLines.filter((ln) => ln.key === "LTP").map((ln) => (
           <line
             key={`exitline-${ln.key}`}
             x1={0} y1={ln.y} x2={plotW} y2={ln.y}
-            stroke={ln.color} strokeWidth={ln.key === "LTP" ? 1.5 : 1.25}
-            strokeDasharray={ln.key === "LTP" ? undefined : "5 3"}
-            opacity={ln.key === "LTP" ? 0.9 : 0.75}
+            stroke={ln.color} strokeWidth={1.5}
+            opacity={0.9}
             vectorEffect="non-scaling-stroke"
           />
         ))}
@@ -801,6 +933,7 @@ const ToolRail = ({
   showSmartTrend, setShowSmartTrend, onReset,
   showExitline, onToggleExitline, exitlineDisabled, exitlineLoading,
   showSessionDividers, onToggleSessionDividers, sessionDividersDisabled,
+  showPatternLines, onTogglePatternLines,
 }) => (
   <div className="hidden lg:flex flex-col items-center gap-1 w-12 shrink-0 border-r border-white/10 bg-[#0B1220] py-3">
     <RailButton icon={MousePointer2} active title="Cursor" onClick={() => {}} />
@@ -825,6 +958,12 @@ const ToolRail = ({
       title="Session Dividers"
       disabledReason="Session Dividers — intraday only"
       onClick={onToggleSessionDividers}
+    />
+    <RailButton
+      icon={Layers}
+      active={showPatternLines}
+      title="Formation Lines"
+      onClick={onTogglePatternLines}
     />
     <div className="w-6 h-px bg-white/10 my-1.5" />
     <RailButton icon={Pencil} disabled title="Draw Trendline" />
@@ -866,6 +1005,10 @@ const PnfChart = () => {
   const [exitlineData, setExitlineData] = useState(null);
   const [exitlineLoading, setExitlineLoading] = useState(false);
   const [showSessionDividers, setShowSessionDividers] = useState(false);
+  // On by default: the formations are the point of a P&F chart, and
+  // listing them in a side panel while leaving the chart bare made the
+  // reading harder than it needed to be.
+  const [showPatternLines, setShowPatternLines] = useState(true);
   // The instrument a successful Plot actually charted -- Exitline levels
   // are fetched for THIS, not for whatever the selectors currently say,
   // so changing the segment/symbol dropdowns without hitting Plot again
@@ -1140,6 +1283,8 @@ const PnfChart = () => {
             exitlineDisabled={!EXITLINE_SEGMENTS.includes(segment)}
             exitlineLoading={exitlineLoading}
             showSessionDividers={showSessionDividers}
+            showPatternLines={showPatternLines}
+            onTogglePatternLines={() => setShowPatternLines((v) => !v)}
             onToggleSessionDividers={() => setShowSessionDividers((v) => !v)}
             sessionDividersDisabled={!isIntradayInterval(interval)}
           />
@@ -1157,6 +1302,8 @@ const PnfChart = () => {
                 onHoverColumn={setHoverCol}
                 exitlineLevels={showExitline ? exitlineData : null}
                 showSessionDividers={showSessionDividers && isIntradayInterval(interval)}
+                patterns={visiblePatterns}
+                showPatternLines={showPatternLines}
               />
             </div>
             <div className="shrink-0 mt-1.5 flex items-center justify-between text-[11px] text-slate-500 font-mono-ui">
