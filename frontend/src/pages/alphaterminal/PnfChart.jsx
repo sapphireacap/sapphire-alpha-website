@@ -61,10 +61,6 @@ const LIVE_REFRESH_MS = {
 // underlying instruments and the UI has to say so.
 const DAILY_PLUS_INTERVALS = ["daily", "weekly", "monthly"];
 
-// The only two selectors under "US" that are index proxies rather than
-// real, tradable instruments — see alpaca_client.py's module docstring.
-// Every other US symbol is an individual S&P 500 equity, the real thing.
-const US_INDEX_KEYS = ["NDX", "SPX"];
 
 // Crypto bars are fetched straight from the browser, not proxied through
 // the backend -- Binance's public klines API sends a wildcard CORS header
@@ -1098,25 +1094,6 @@ const PnfChart = () => {
           )}
         </div>
 
-        {segment === "US" && US_INDEX_KEYS.includes(symbol) && (
-          <p className="text-[11px] text-slate-500 mt-2 max-w-3xl">
-            {DAILY_PLUS_INTERVALS.includes(interval)
-              ? "Nasdaq 100 and S&P 500 are plotted from the real index (daily/weekly/monthly)."
-              : "Intraday plots from each index's most liquid tracking ETF (QQQ / SPY), live — a different underlying from the daily/weekly/monthly index chart above."}
-          </p>
-        )}
-        {segment === "COMMODITY" && (
-          <p className="text-[11px] text-slate-500 mt-2 max-w-3xl">
-            {DAILY_PLUS_INTERVALS.includes(interval)
-              ? "Gold is plotted from COMEX futures at daily/weekly/monthly — a close proxy for spot XAUUSD, not spot itself."
-              : "Intraday plots spot XAUUSD, live — the actual spot market, not the COMEX futures proxy used on the daily/weekly/monthly chart."}
-          </p>
-        )}
-        {segment === "CRYPTO" && (
-          <p className="text-[11px] text-slate-500 mt-2 max-w-3xl">
-            Spot USDT pairs, live and intraday included — these markets trade 24/7, so there's no session close to wait on.
-          </p>
-        )}
       </div>
 
       {/* Compact instrument/stat readout — replaces the old 6-tile summary
