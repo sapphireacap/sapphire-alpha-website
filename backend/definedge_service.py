@@ -254,8 +254,22 @@ class DefinedgeService:
         if r.status_code != 200:
             raise DefinedgeError(f"OTP init failed ({r.status_code}): {r.text[:200]}")
         data = r.json()
+        # Definedge reports a rejected api_token/api_secret as an "error"
+        # key inside a 200 OK body, not a non-200 status -- confirmed live,
+        # 2026-08-19: {"error": "Invalid Credential", "error_description":
+        # "You have 3 attempts left."} came back with status 200. Missing
+        # this check meant a bad credential fell straight through to the
+        # `return` below with a fabricated "OTP sent." message and no real
+        # otp_token -- the auto-login flow then failed 90s later on a
+        # completely misleading "no OTP email arrived" timeout instead of
+        # surfacing the actual credential rejection immediately.
+        if "error" in data:
+            detail = data.get("error_description") or data.get("error")
+            raise DefinedgeError(f"OTP init rejected: {detail}")
         self._otp_token = data.get("otp_token")
-        return {"message": data.get("message", "OTP sent."), "otp_token": self._otp_token, "otp_token_present": bool(self._otp_token)}
+        if not self._otp_token:
+            raise DefinedgeError(f"OTP init response carried no otp_token: {list(data.keys())}")
+        return {"message": data.get("message", "OTP sent."), "otp_token": self._otp_token, "otp_token_present": True}
 
     async def verify_otp(self, otp: str, otp_token: str = None):
         token = otp_token or self._otp_token
@@ -270,6 +284,9 @@ class DefinedgeService:
         if r.status_code != 200:
             raise DefinedgeError(f"OTP verify failed ({r.status_code}): {r.text[:200]}")
         data = r.json()
+        if "error" in data:
+            detail = data.get("error_description") or data.get("error")
+            raise DefinedgeError(f"OTP verify rejected: {detail}")
         session_key = data.get("api_session_key") or data.get("access_token") or data.get("susertoken")
         if not session_key:
             raise DefinedgeError(f"No session key in response: {list(data.keys())}")
