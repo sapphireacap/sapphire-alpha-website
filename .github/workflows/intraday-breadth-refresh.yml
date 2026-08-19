@@ -1,0 +1,51 @@
+name: Intraday Breadth — auto refresh
+
+# Recomputes today's Nifty 50 intraday X% breadth series throughout the
+# trading session. /admin/refresh already existed for exactly this
+# (intraday_breadth.py's own docstring says "re-run every few minutes
+# through the session (see the cron)") but had NOTHING scheduling it
+# anywhere in this repo -- no GitHub Actions workflow, no render.yaml
+# cron. Confirmed live, 2026-08-19: the cached series was sitting 9 days
+# stale (last refresh 2026-08-10) with no indication anything was wrong;
+# manually triggering /admin/refresh-now worked perfectly (50/50 symbols
+# resolved in ~35s), proving the refresh logic itself was never broken --
+# this cron simply never existed. Same root cause and same fix as
+# index-vector-auto-refresh.yml's staleness bug.
+#
+# Needs a live Definedge session -- this cron correctly no-ops (empty
+# `directions_by_symbol`, cached series left as-is) until that morning's
+# OTP login has run (see definedge-otp-auto-login.yml); it only fixes
+# staleness DURING a session that's already been logged into.
+#
+# Per this repo's established convention (see index-vector-auto-refresh.yml
+# and market-dashboard-refresh.yml), the schedule trigger stays disabled
+# here -- GitHub Actions' own scheduler has gone silent on this repo before
+# (the 2026-08-06/07 outage) with no self-recovery. The actual recurring
+# schedule belongs on cron-job.org: POST this same URL with the same
+# X-Cron-Key header, every 5 minutes, 03:45-10:00 UTC (09:15-15:30 IST),
+# weekdays only. workflow_dispatch stays as a manual fallback.
+on:
+  workflow_dispatch: {}
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Call intraday-breadth/admin/refresh
+        run: |
+          status=$(curl -s -o response.json -w "%{http_code}" -X POST \
+            "https://sapphire-alpha-backend.onrender.com/api/terminal/intraday-breadth/admin/refresh?group=nifty-50" \
+            -H "X-Cron-Key: ${{ secrets.CRON_SECRET }}")
+          echo "HTTP status: $status"
+          cat response.json
+          echo
+          if [ "$status" != "200" ]; then
+            echo "::error::intraday-breadth/admin/refresh failed with status $status"
+            exit 1
+          fi
+          if python3 -c "import json,sys; d=json.load(open('response.json')); sys.exit(1 if 'skipped' in d else 0)"; then
+            :
+          else
+            echo "::error::refresh was skipped (group not enabled, or a similar gate) -- see response.json above."
+            exit 1
+          fi
