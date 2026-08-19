@@ -41,10 +41,19 @@ const isSessionLive = () => {
   return minuteOfDay >= 9 * 60 + 15 && minuteOfDay <= 15 * 60 + 30;
 };
 
+// The headline strip polls its own dedicated fast route rather than
+// waiting on the minute-scale snapshot below -- that snapshot's refresh
+// cadence lives on an external cron (see market-dashboard-refresh.yml)
+// this page has no visibility into, so the top ticker used to sit stale
+// for however long that cron was actually firing. 5s is fast enough to
+// read as live while staying well clear of the backend's own 4s cache.
+const LIVE_HEADLINE_POLL_MS = 5000;
+
 const MarketDashboardTool = () => {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
+  const [liveHeadline, setLiveHeadline] = useState(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -74,8 +83,27 @@ const MarketDashboardTool = () => {
     return () => { cancelled = true; clearInterval(id); };
   }, []);
 
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadHeadline = () => {
+      axios.get(`${API}/terminal/market-dashboard/live-headline`)
+        .then(({ data: d }) => { if (!cancelled && d?.headline?.length) setLiveHeadline(d.headline); })
+        .catch(() => {}); // Keep the last good headline rather than blanking the strip.
+    };
+
+    loadHeadline();
+    const id = setInterval(() => {
+      if (!isSessionLive()) return;
+      loadHeadline();
+    }, LIVE_HEADLINE_POLL_MS);
+
+    return () => { cancelled = true; clearInterval(id); };
+  }, []);
+
   const indices = data?.indices;
   const live = isSessionLive();
+  const headlineRows = liveHeadline || indices?.headline;
 
   if (loading) {
     return (
@@ -97,7 +125,7 @@ const MarketDashboardTool = () => {
       <HeaderBar live={live} />
       <TickerBar />
 
-      {indices?.headline?.length ? <IndexStrip rows={indices.headline} /> : (
+      {headlineRows?.length ? <IndexStrip rows={headlineRows} /> : (
         <div className="p-6 text-center term-grey text-[11px]">Index levels unavailable.</div>
       )}
 

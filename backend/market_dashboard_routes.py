@@ -12,6 +12,7 @@ blank because one upstream source hiccuped.
 """
 import asyncio
 import logging
+import time
 from datetime import datetime, timezone, timedelta
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request
@@ -23,6 +24,13 @@ import yahoo_finance_client as yf
 logger = logging.getLogger(__name__)
 
 IST = timezone(timedelta(hours=5, minutes=30))
+
+# Protects NSE's unofficial endpoint from being hit once per open browser
+# tab -- every visitor polling /live-headline collapses onto one upstream
+# call per this window (same pattern as exitline_routes.py's LTP_CACHE_TTL
+# and definedge_service.py's SPOT_CACHE_TTL).
+LIVE_HEADLINE_CACHE_TTL = 4.0  # seconds
+_live_headline_cache = {"at": 0.0, "data": None}
 
 SNAPSHOT_COLLECTION = "market_dashboard_snapshot"
 AD_HISTORY_COLLECTION = "market_dashboard_ad_history"
@@ -131,6 +139,37 @@ def create_market_dashboard_router(db, get_current_admin, cron_secret: str) -> A
         if not doc:
             raise HTTPException(status_code=404, detail="Market Dashboard hasn't been computed yet — trigger a refresh.")
         return doc
+
+    @router.get("/live-headline")
+    async def live_headline():
+        """Just the 5 headline index rows (NIFTY 50/BANK/500/MIDCAP 150/
+        SMALLCAP 250), fetched fresh from NSE on every call (short server
+        cache below) rather than read from the periodically-refreshed
+        snapshot doc -- that snapshot's own refresh cadence lives on an
+        external cron (cron-job.org, see market-dashboard-refresh.yml),
+        which the frontend has no visibility into and shouldn't have to
+        trust for something as visible as the top ticker strip. This route
+        gives that strip its own fast, independent polling loop.
+
+        Falls back to the last good read on any NSE hiccup (never a 5xx
+        for a transient upstream blip) so a flaky poll doesn't blank the
+        strip -- same "keep the last known value" discipline as
+        /terminal/spot."""
+        now = time.monotonic()
+        cached = _live_headline_cache["data"]
+        if cached and now - _live_headline_cache["at"] < LIVE_HEADLINE_CACHE_TTL:
+            return cached
+        try:
+            payload = await mdc.fetch_all_indices()
+            shaped = mde.shape_all_indices(payload)
+            out = {"headline": shaped["headline"], "as_of": shaped["as_of"]}
+        except mdc.MarketDashboardError as e:
+            if cached:
+                return cached
+            raise HTTPException(status_code=502, detail=f"Live index levels unavailable: {e}")
+        _live_headline_cache["at"] = now
+        _live_headline_cache["data"] = out
+        return out
 
     @router.get("/advance-decline-intraday")
     async def advance_decline_intraday():
