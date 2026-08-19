@@ -504,7 +504,7 @@ const SignInRequiredNotice = ({ loading }) => (
         <>
           <p className="font-mono-ui text-[11px] uppercase tracking-[0.28em] text-slate-600 mb-3">Sign In Required</p>
           <p className="text-sm font-light text-slate-500 max-w-sm mx-auto mb-6">
-            This module is available to account holders. Index Vector and Exitline stay open to everyone.
+            This module is available to account holders.
           </p>
           <Link
             to="/auth"
