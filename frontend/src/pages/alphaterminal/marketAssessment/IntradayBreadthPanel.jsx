@@ -1,12 +1,24 @@
 import { useState, useEffect, useMemo } from "react";
 import axios from "axios";
-import { Maximize2, X } from "lucide-react";
+import { Maximize2, X, Info } from "lucide-react";
 import {
   ResponsiveContainer, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ReferenceLine,
 } from "recharts";
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 const AVERAGE_WINDOW = 15; // points, not minutes -- refresh cadence is ~5min but each refresh recomputes full per-minute resolution
+
+// Same explanation the reference platform surfaces from its own "i" icon
+// on this chart -- describing the real, shared X-Percent method (Prashant
+// Shah, Ch. 10; see breadth_engine.py), not anything proprietary to it.
+const BREADTH_DESCRIPTION =
+  "This section shows the intraday chart of X% breadth indicator on the Nifty 50 universe. " +
+  "X% breadth indicator calculates the number of stocks in the column of X in the given timeframe. " +
+  "If more stocks are in column X, it is bullish. Based on 0.15% box-value of one-minute Nifty 50 " +
+  "and Nifty 500 stocks, this chart shows the number of stocks in the column X. Rising indicator " +
+  "shows that more stocks in the Nifty 50 and Nifty 500 universe are in the bullish column (X). " +
+  "Falling indicator shows that more stocks in the Nifty 50 and Nifty 500 universe are in the " +
+  "bearish column (O).";
 
 const GROUPS = [
   { key: "nifty-50", label: "Nifty 50" },
@@ -122,7 +134,11 @@ const IntradayBreadthPanel = () => {
         title="Click to expand"
         data-testid="mkt-breadth-expand-trigger"
       >
-        <span className="flex items-center gap-2">INTRADAY X% BREADTH <Maximize2 size={11} className="term-grey" /></span>
+        <span className="flex items-center gap-2">
+          INTRADAY X% BREADTH
+          <Info size={12} className="term-grey" title={BREADTH_DESCRIPTION} data-testid="mkt-breadth-info" />
+          <Maximize2 size={11} className="term-grey" />
+        </span>
         <GroupToggle group={group} setGroup={setGroup} />
       </button>
 
@@ -142,6 +158,7 @@ const IntradayBreadthPanel = () => {
           <div className="flex items-center justify-between px-4 py-3 term-panel-head shrink-0">
             <span className="flex items-center gap-3 text-[13px]">
               INTRADAY X% BREADTH
+              <Info size={13} className="term-grey" title={BREADTH_DESCRIPTION} />
               <GroupToggle group={group} setGroup={setGroup} />
             </span>
             <button type="button" onClick={() => setExpanded(false)} className="term-grey hover:text-white transition-colors" data-testid="mkt-breadth-close">
