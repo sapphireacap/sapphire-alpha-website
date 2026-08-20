@@ -7,51 +7,86 @@ import { INDEX_LABELS, isNseSessionLive } from "../AlphaTerminal";
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 const EASE = [0.16, 1, 0.3, 1];
 
+// Scoped to this page only -- Inter for UI text, IBM Plex Mono for every
+// number, per the design system given for this redesign. Neither
+// overrides the site's own font-sans/font-mono tokens (Archivo /
+// JetBrains Mono), which every other page keeps using unchanged.
+const F_UI = "'Inter', sans-serif";
+const F_MONO = "'IBM Plex Mono', monospace";
+
 /* --------------------------------------------------------------------- */
-/* Shared tokens                                                          */
+/* Design tokens                                                          */
 /* --------------------------------------------------------------------- */
-// One color per model state, applied uniformly across a card (monogram,
-// index subtitle, bias dial, bias text, spot marker) -- the card's color
-// is the model's OWN current read, not a fixed identity per index. Same
-// three-state convention already used elsewhere on the site (see
-// AlphaTerminal.jsx's BIAS_STYLE): amber for Neutral, emerald for
-// Bullish, red for Bearish.
-const BIAS_TONE = {
-  Bullish: { text: "text-emerald-400", ring: "border-emerald-400/40", bar: "#34D399", Icon: TrendingUp },
-  Bearish: { text: "text-red-400", ring: "border-red-400/40", bar: "#F87171", Icon: TrendingDown },
-  Neutral: { text: "text-amber-300", ring: "border-amber-300/40", bar: "#FCD34D", Icon: Minus },
+const T = {
+  bg: "#080F1D",
+  bg2: "#0A1221",
+  card: "#0D1728",
+  cardElevated: "#101C2F",
+  textPrimary: "#F1F5F9",
+  textSecondary: "#94A3B8",
+  textMuted: "#64748B",
+  microLabel: "#7F93AD",
+  sapphire: "#1677FF",
+  sapphireBright: "#3B8CFF",
+  sapphireDeep: "#0B4FB3",
+  bullish: "#16C784",
+  bullishBright: "#22D995",
+  bullishBg: "#06271D",
+  bearish: "#EF5350",
+  bearishBg: "#2A1115",
+  neutral: "#CBD5E1",
+  neutralBg: "#182235",
+  borderPrimary: "#1E3048",
+  borderSecondary: "#17263A",
+  borderHover: "#29415F",
 };
 
-const fmtNum = (v) => (v == null ? "—" : Math.round(v).toLocaleString("en-IN"));
+const GLOW_SAPPHIRE = "0 0 30px rgba(22, 119, 255, 0.08)";
+const GLOW_BULLISH = "0 0 30px rgba(22, 199, 132, 0.06)";
+
+// One color per model state, applied uniformly across a card (monogram,
+// index subtitle, bias dial, bias text, spot marker) -- Neutral is its
+// own distinct tone (a light slate), not the sapphire brand accent, so a
+// Neutral read never reads as "the model leans bullish-ish."
+const BIAS_TONE = {
+  Bullish: { color: T.bullish, bg: T.bullishBg, Icon: TrendingUp },
+  Bearish: { color: T.bearish, bg: T.bearishBg, Icon: TrendingDown },
+  Neutral: { color: T.neutral, bg: T.neutralBg, Icon: Minus },
+};
+
+const microLabel = { fontFamily: F_UI, fontSize: 11, fontWeight: 500, letterSpacing: "0.12em", textTransform: "uppercase", color: T.microLabel };
+const mono = (size = 14, weight = 500, color = T.textPrimary) => ({ fontFamily: F_MONO, fontSize: size, fontWeight: weight, color });
+const ui = (size = 14, weight = 400, color = T.textPrimary) => ({ fontFamily: F_UI, fontSize: size, fontWeight: weight, color });
+
+const fmtNum = (v) => (v == null ? "-" : Math.round(v).toLocaleString("en-IN"));
 
 /* --------------------------------------------------------------------- */
 /* Hero                                                                   */
 /* --------------------------------------------------------------------- */
 // Faint abstract line/node geometry sitting behind the hero's right side --
 // deliberately not a real chart of any real series, just texture that reads
-// as "quantitative" without claiming to plot anything.
+// as quantitative without claiming to plot anything.
 const HeroTexture = () => (
-  <svg
-    className="pointer-events-none absolute right-0 top-0 h-full w-full opacity-[0.16]"
-    viewBox="0 0 800 260"
-    fill="none"
-    aria-hidden="true"
-  >
-    <path d="M420 150 L520 110 L590 130 L680 70 L760 90" stroke="#437EEB" strokeWidth="1" />
-    <path d="M460 190 L540 170 L610 185 L700 140 L780 155" stroke="#437EEB" strokeWidth="1" opacity="0.6" />
+  <svg className="pointer-events-none absolute right-0 top-0 h-full w-full opacity-[0.14]" viewBox="0 0 800 260" fill="none" aria-hidden="true">
+    <path d="M420 150 L520 110 L590 130 L680 70 L760 90" stroke={T.sapphireBright} strokeWidth="1" />
+    <path d="M460 190 L540 170 L610 185 L700 140 L780 155" stroke={T.sapphireBright} strokeWidth="1" opacity="0.6" />
     {[[420, 150], [520, 110], [590, 130], [680, 70], [760, 90], [540, 170], [610, 185], [700, 140]].map(([cx, cy], i) => (
-      <circle key={i} cx={cx} cy={cy} r="2.5" fill="#437EEB" />
+      <circle key={i} cx={cx} cy={cy} r="2.5" fill={T.sapphireBright} />
     ))}
     {Array.from({ length: 9 }).map((_, col) =>
       Array.from({ length: 5 }).map((_, row) => (
-        <circle key={`${col}-${row}`} cx={420 + col * 42} cy={20 + row * 42} r="1" fill="#7C93B8" opacity="0.5" />
+        <circle key={`${col}-${row}`} cx={420 + col * 42} cy={20 + row * 42} r="1" fill={T.textMuted} opacity="0.5" />
       ))
     )}
   </svg>
 );
 
 export const VectorHero = ({ title, description }) => (
-  <div className="relative overflow-hidden rounded-2xl border border-white/10 bg-[#080C16] px-6 py-8 md:px-10 md:py-10" data-testid="vector-hero">
+  <div
+    className="relative overflow-hidden rounded-2xl px-6 py-8 md:px-10 md:py-10"
+    style={{ background: T.bg2, border: `1px solid ${T.borderPrimary}` }}
+    data-testid="vector-hero"
+  >
     <HeroTexture />
     <div className="relative flex flex-col lg:flex-row lg:items-start lg:justify-between gap-8">
       <div className="max-w-xl">
@@ -59,7 +94,8 @@ export const VectorHero = ({ title, description }) => (
           initial={{ opacity: 0, y: 10 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.5, ease: EASE }}
-          className="font-mono-ui text-[11px] uppercase tracking-[0.24em] text-sapphire-light mb-3"
+          className="mb-3"
+          style={{ ...microLabel, color: T.sapphireBright }}
         >
           Multi-Factor Confirmation Model
         </motion.p>
@@ -67,7 +103,8 @@ export const VectorHero = ({ title, description }) => (
           initial={{ opacity: 0, y: 14 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.6, ease: EASE, delay: 0.05 }}
-          className="font-sans font-black tracking-tight text-5xl md:text-6xl leading-[0.95] bg-gradient-to-r from-white to-sapphire-light bg-clip-text text-transparent"
+          className="leading-[0.95] bg-gradient-to-r from-white to-[#3B8CFF] bg-clip-text text-transparent"
+          style={{ fontFamily: F_UI, fontWeight: 700, letterSpacing: "-0.02em", fontSize: "clamp(40px, 6vw, 60px)" }}
           data-testid="vector-hero-title"
         >
           {title}
@@ -76,7 +113,8 @@ export const VectorHero = ({ title, description }) => (
           initial={{ opacity: 0, y: 12 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.6, ease: EASE, delay: 0.1 }}
-          className="mt-4 text-sm md:text-base text-slate-400 font-light leading-relaxed"
+          className="mt-4 leading-relaxed"
+          style={ui(15, 400, T.textSecondary)}
         >
           {description}
           <br />
@@ -88,21 +126,25 @@ export const VectorHero = ({ title, description }) => (
         initial={{ opacity: 0, y: -10 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.6, ease: EASE, delay: 0.15 }}
-        className="relative shrink-0 rounded-xl border border-white/10 bg-white/[0.03] px-5 py-4 max-w-xs"
+        className="relative shrink-0 rounded-xl px-5 py-4 max-w-xs"
+        style={{ background: T.cardElevated, border: `1px solid ${T.borderPrimary}`, boxShadow: GLOW_SAPPHIRE }}
         data-testid="vector-hero-status"
       >
         <div className="flex items-start gap-3">
-          <span className="mt-0.5 inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-sapphire-light/30 bg-sapphire/15 text-sapphire-light">
+          <span
+            className="mt-0.5 inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg"
+            style={{ border: `1px solid ${T.sapphireDeep}`, background: "rgba(22,119,255,0.12)", color: T.sapphireBright }}
+          >
             <RefreshCw size={14} />
           </span>
           <div>
             <div className="flex items-center gap-2">
-              <p className="text-sm font-semibold text-white">Model Update</p>
-              <span className="inline-flex items-center gap-1 font-mono-ui text-[10px] uppercase tracking-wider text-emerald-400">
-                <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" /> Live
+              <p style={ui(14, 600, T.textPrimary)}>Model Update</p>
+              <span className="inline-flex items-center gap-1" style={{ ...microLabel, color: T.bullish, letterSpacing: "0.08em" }}>
+                <span className="h-1.5 w-1.5 rounded-full animate-pulse" style={{ background: T.bullish }} /> Live
               </span>
             </div>
-            <p className="text-xs font-light text-slate-500 leading-relaxed mt-1">
+            <p className="mt-1 leading-relaxed" style={ui(12, 400, T.textMuted)}>
               Continuous assessment across price, volatility and options market structure.
             </p>
           </div>
@@ -116,10 +158,13 @@ export const VectorHero = ({ title, description }) => (
 /* Directional bias dial                                                  */
 /* --------------------------------------------------------------------- */
 const BiasDial = ({ bias, tone }) => {
-  const Icon = bias === "Bullish" ? TrendingUp : bias === "Bearish" ? TrendingDown : Minus;
+  const Icon = tone.Icon;
   return (
-    <span className={`relative inline-flex h-14 w-14 shrink-0 items-center justify-center rounded-full border-2 border-dashed ${tone.ring}`}>
-      <Icon size={20} className={tone.text} />
+    <span
+      className="relative inline-flex h-14 w-14 shrink-0 items-center justify-center rounded-full"
+      style={{ border: `2px dashed ${tone.color}66` }}
+    >
+      <Icon size={20} color={tone.color} />
     </span>
   );
 };
@@ -135,7 +180,7 @@ const BIAS_READOUT = {
 /* --------------------------------------------------------------------- */
 // Builds the bar's numeric domain and per-side state from ONLY what the
 // model actually returned -- an unreachable or already-aligned side never
-// gets a invented number, it gets an honest label and a muted zone instead.
+// gets an invented number, it gets an honest label and a muted zone instead.
 const buildSpectrum = (flip, spot) => {
   const bearish = flip?.bearish;
   const bullish = flip?.bullish;
@@ -160,7 +205,7 @@ const buildSpectrum = (flip, spot) => {
   const domainHi = rightVal + span * 0.08;
   const pct = (v) => ((v - domainLo) / (domainHi - domainLo)) * 100;
 
-  return { left, right, spotPct: pct(spot), leftPct: pct(leftVal), rightPct: pct(rightVal) };
+  return { left, right, spotPct: pct(spot) };
 };
 
 const ThresholdSpectrum = ({ flip, spot, tone }) => {
@@ -169,30 +214,30 @@ const ThresholdSpectrum = ({ flip, spot, tone }) => {
 
   return (
     <div className="mt-4" data-testid="threshold-spectrum">
-      <div className="relative h-1.5 rounded-full overflow-hidden bg-white/[0.06]">
-        <div className="absolute inset-y-0 left-0 w-1/2 bg-gradient-to-r from-red-500/50 to-transparent" />
-        <div className="absolute inset-y-0 right-0 w-1/2 bg-gradient-to-l from-emerald-500/50 to-transparent" />
+      <div className="relative h-1.5 rounded-full overflow-hidden" style={{ background: T.borderSecondary }}>
+        <div className="absolute inset-y-0 left-0 w-1/2" style={{ background: `linear-gradient(to right, ${T.bearish}80, transparent)` }} />
+        <div className="absolute inset-y-0 right-0 w-1/2" style={{ background: `linear-gradient(to left, ${T.bullish}80, transparent)` }} />
         <motion.span
-          className="absolute top-1/2 h-3 w-3 -translate-y-1/2 -translate-x-1/2 rounded-full border-2 border-void"
-          style={{ backgroundColor: tone.bar }}
+          className="absolute top-1/2 h-3 w-3 -translate-y-1/2 -translate-x-1/2 rounded-full"
+          style={{ backgroundColor: tone.color, border: `2px solid ${T.bg}` }}
           initial={{ left: "50%" }}
           animate={{ left: `${Math.min(96, Math.max(4, spotPct))}%` }}
           transition={{ duration: 0.6, ease: EASE }}
         />
       </div>
-      <div className="mt-2.5 flex items-start justify-between gap-3 font-mono-ui text-[10px] uppercase tracking-wider">
+      <div className="mt-2.5 flex items-start justify-between gap-3">
         <div>
-          <p className="text-red-400/80">Bearish</p>
-          <p className="text-slate-300 normal-case tracking-normal mt-0.5">
+          <p style={{ ...microLabel, letterSpacing: "0.08em", color: `${T.bearish}CC` }}>Bearish</p>
+          <p className="mt-0.5" style={mono(12, 500, T.textSecondary)}>
             {left.kind === "level" ? `< ${fmtNum(left.value)}` : left.kind === "aligned" ? "Aligned" : "Not reachable now"}
           </p>
         </div>
         <div className="text-center">
-          <p className="text-slate-500">Neutral Zone</p>
+          <p style={{ ...microLabel, letterSpacing: "0.08em" }}>Neutral Zone</p>
         </div>
         <div className="text-right">
-          <p className="text-emerald-400/80">Bullish</p>
-          <p className="text-slate-300 normal-case tracking-normal mt-0.5">
+          <p style={{ ...microLabel, letterSpacing: "0.08em", color: `${T.bullish}CC` }}>Bullish</p>
+          <p className="mt-0.5" style={mono(12, 500, T.textSecondary)}>
             {right.kind === "level" ? `> ${fmtNum(right.value)}` : right.kind === "aligned" ? "Aligned" : "Not reachable now"}
           </p>
         </div>
@@ -232,26 +277,33 @@ export const IndexIntelligenceCard = ({ signal, index }) => {
   const bearishLine = s.flip?.bearish?.reachable && !s.flip.bearish.already_aligned && s.flip.bearish.flip_level != null;
 
   return (
-    <div className="rounded-2xl border border-white/10 bg-[#0A0D18] overflow-hidden" data-testid={`index-intelligence-card-${index}`}>
+    <div
+      className="rounded-2xl overflow-hidden"
+      style={{ background: T.card, border: `1px solid ${T.borderPrimary}` }}
+      data-testid={`index-intelligence-card-${index}`}
+    >
       {/* Header: identity + spot */}
       <div className="flex items-start justify-between gap-4 px-6 pt-6">
         <div className="flex items-center gap-3">
-          <span className={`inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full border ${tone.ring} ${tone.text} font-mono-ui font-bold`}>
+          <span
+            className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full font-bold"
+            style={{ border: `1px solid ${tone.color}66`, color: tone.color, fontFamily: F_MONO }}
+          >
             {label[0]}
           </span>
           <div>
-            <p className="text-xl font-black text-white tracking-tight leading-none">{label}</p>
-            <p className={`font-mono-ui text-[10px] uppercase tracking-[0.18em] mt-1 ${tone.text}`}>
+            <p style={{ ...ui(28, 600, T.textPrimary), letterSpacing: "-0.01em", lineHeight: 1 }}>{label}</p>
+            <p className="mt-1" style={{ ...microLabel, letterSpacing: "0.1em", color: tone.color }}>
               NSE {label === "NIFTY" ? "NIFTY 50" : label}
             </p>
           </div>
         </div>
         {displaySpot != null && (
           <div className="text-right shrink-0">
-            <p className="font-mono-ui text-[10px] uppercase tracking-[0.18em] text-slate-500">Spot Price</p>
-            <p className="font-mono-ui text-xl font-bold text-white mt-0.5">{fmtNum(numericSpot)}</p>
+            <p style={microLabel}>Spot Price</p>
+            <p className="mt-0.5" style={mono(24, 600, T.textPrimary)}>{fmtNum(numericSpot)}</p>
             {liveSpot?.change && (
-              <p className={`font-mono-ui text-xs mt-0.5 ${changeNegative ? "text-red-400" : "text-emerald-400"}`}>
+              <p className="mt-0.5" style={mono(12, 500, changeNegative ? T.bearish : T.bullish)}>
                 {liveSpot.change} ({liveSpot.change_pct}%)
               </p>
             )}
@@ -261,35 +313,39 @@ export const IndexIntelligenceCard = ({ signal, index }) => {
 
       {/* Directional bias */}
       <div className="px-6 pt-6 pb-5">
-        <p className="font-mono-ui text-[10px] uppercase tracking-[0.24em] text-slate-500 mb-3">Directional Bias</p>
+        <p className="mb-3" style={microLabel}>Directional Bias</p>
         <div className="flex items-center gap-4">
           <BiasDial bias={bias} tone={tone} />
-          <p className={`font-sans font-black text-4xl tracking-tight ${tone.text}`} data-testid={`vector-bias-${index}`}>
+          <p style={{ fontFamily: F_UI, fontWeight: 600, fontSize: 42, letterSpacing: "-0.01em", color: tone.color }} data-testid={`vector-bias-${index}`}>
             {bias.toUpperCase()}
           </p>
         </div>
-        <div className="mt-3 inline-flex items-center gap-1.5 rounded-full border border-white/10 px-3 py-1 font-mono-ui text-[10px] text-slate-400" title={s.note || undefined}>
-          {BIAS_READOUT[bias] || BIAS_READOUT.Neutral}
-          <Info size={10} className="text-slate-600" />
+        <div
+          className="mt-3 inline-flex items-center gap-1.5 rounded-full px-3 py-1"
+          style={{ border: `1px solid ${T.borderPrimary}` }}
+          title={s.note || undefined}
+        >
+          <span style={mono(11, 400, T.textSecondary)}>{BIAS_READOUT[bias] || BIAS_READOUT.Neutral}</span>
+          <Info size={10} color={T.textMuted} />
         </div>
-        <p className="font-mono-ui text-[10px] uppercase tracking-[0.18em] text-slate-600 mt-4">
+        <p className="mt-4" style={{ ...microLabel, color: T.textMuted, letterSpacing: "0.1em" }}>
           Trade Confirmation Engine &middot; Not Financial Advice
         </p>
       </div>
 
       {/* Model readout */}
       {(bullishLine || bearishLine) && (
-        <div className="px-6 py-5 border-t border-white/10">
-          <p className="font-mono-ui text-[10px] uppercase tracking-[0.24em] text-slate-500 mb-2">Model Readout</p>
+        <div className="px-6 py-5" style={{ borderTop: `1px solid ${T.borderSecondary}` }}>
+          <p className="mb-2" style={microLabel}>Model Readout</p>
           <div className="space-y-1">
             {bullishLine && (
-              <p className="text-sm text-slate-300">
-                Would need {label} at <span className="text-emerald-400 font-semibold font-mono-ui">{fmtNum(s.flip.bullish.flip_level)}</span> to turn Bullish
+              <p style={ui(14, 400, T.textSecondary)}>
+                Would need {label} at <span style={mono(14, 600, T.bullish)}>{fmtNum(s.flip.bullish.flip_level)}</span> to turn Bullish
               </p>
             )}
             {bearishLine && (
-              <p className="text-sm text-slate-300">
-                Would need {label} at <span className="text-red-400 font-semibold font-mono-ui">{fmtNum(s.flip.bearish.flip_level)}</span> to turn Bearish
+              <p style={ui(14, 400, T.textSecondary)}>
+                Would need {label} at <span style={mono(14, 600, T.bearish)}>{fmtNum(s.flip.bearish.flip_level)}</span> to turn Bearish
               </p>
             )}
           </div>
@@ -298,12 +354,12 @@ export const IndexIntelligenceCard = ({ signal, index }) => {
       )}
 
       {/* Footer */}
-      <div className="flex items-center justify-between gap-3 px-6 py-4 border-t border-white/10">
-        <p className="font-mono-ui text-[10px] text-slate-600">
+      <div className="flex items-center justify-between gap-3 px-6 py-4" style={{ borderTop: `1px solid ${T.borderSecondary}` }}>
+        <p style={mono(11, 400, T.textMuted)}>
           {s.updated_label ? `Last updated: ${s.updated_label}` : "Awaiting first read"}
         </p>
-        <span className="inline-flex items-center gap-1.5 font-mono-ui text-[10px] uppercase tracking-wider text-emerald-400">
-          <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" /> Live Data
+        <span className="inline-flex items-center gap-1.5" style={{ ...microLabel, letterSpacing: "0.08em", color: T.bullish }}>
+          <span className="h-1.5 w-1.5 rounded-full animate-pulse" style={{ background: T.bullish }} /> Live Data
         </span>
       </div>
     </div>
@@ -321,15 +377,22 @@ const FEATURES = [
 ];
 
 export const IntelligenceFeatureStrip = () => (
-  <div className="mt-6 rounded-2xl border border-white/10 bg-[#0A0D18] px-6 py-6 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6" data-testid="vector-feature-strip">
+  <div
+    className="mt-6 rounded-2xl px-6 py-6 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6"
+    style={{ background: T.card, border: `1px solid ${T.borderPrimary}` }}
+    data-testid="vector-feature-strip"
+  >
     {FEATURES.map(({ icon: Icon, title, description }) => (
       <div key={title} className="flex items-start gap-3">
-        <span className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-white/10 bg-white/[0.03] text-sapphire-light">
+        <span
+          className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg"
+          style={{ border: `1px solid ${T.borderPrimary}`, background: T.cardElevated, color: T.sapphireBright, boxShadow: GLOW_BULLISH }}
+        >
           <Icon size={16} />
         </span>
         <span>
-          <span className="block text-sm font-semibold text-white">{title}</span>
-          <span className="block text-xs font-light text-slate-500 mt-1 leading-relaxed">{description}</span>
+          <span className="block" style={ui(14, 600, T.textPrimary)}>{title}</span>
+          <span className="block mt-1 leading-relaxed" style={ui(12, 400, T.textMuted)}>{description}</span>
         </span>
       </div>
     ))}

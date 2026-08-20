@@ -442,7 +442,11 @@ export default function ModuleDetail() {
           mobile as India/US Relative Strength data bleeding together. The
           key forces a full unmount/remount of everything below on every
           slug change, so each module always starts clean. */}
-      <main key={module.slug} className="relative bg-void min-h-screen">
+      <main
+        key={module.slug}
+        className="relative bg-void min-h-screen"
+        style={module.kind === "vector" ? { backgroundColor: "#080F1D" } : undefined}
+      >
         <Header module={module} />
         <div className="container-x">
           {!module.live ? (
@@ -462,6 +466,11 @@ export default function ModuleDetail() {
                  "mm-exitline", "mm-breadth", "mm-relative-strength", "mm-momentum-investing",
                  "mm-momentum-leaders", "mm-sharpe", "mm-ewma", "mm-gamma-pulse",
                  "mm-index-vector", "mm-peter-tingle", "mm-unavailable", "crypto-dashboard",
+                 // Index Vector's own track record is admin-only now (see
+                 // Admin.jsx's IndexTrackRecordPanel) -- this section had
+                 // nothing to show a public visitor but an empty "still
+                 // accumulating" placeholder, so it's dropped here too.
+                 "vector",
                 ].includes(module.kind) && (
                 <HistoricalPerformance module={module} />
               )}
