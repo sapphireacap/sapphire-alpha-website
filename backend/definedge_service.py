@@ -975,7 +975,7 @@ class DefinedgeService:
         # never break because a flip-level solve failed.
         try:
             signal["flip"] = await self._compute_flip_summary(
-                segment, spot, atm, tokens,
+                index_key, segment, spot, atm, tokens,
                 monthly_up_state, monthly_down_state, monthly_atm_ce_state, monthly_atm_pe_state,
                 weekly_up_state, weekly_down_state,
             )
@@ -1016,7 +1016,7 @@ class DefinedgeService:
 
         return signal
 
-    async def _compute_flip_summary(self, segment: str, spot: float, atm: int, tokens: dict,
+    async def _compute_flip_summary(self, index_key: str, segment: str, spot: float, atm: int, tokens: dict,
                                      monthly_up_state: dict, monthly_down_state: dict,
                                      monthly_atm_ce_state: dict, monthly_atm_pe_state: dict,
                                      weekly_up_state: dict = None, weekly_down_state: dict = None) -> dict:
