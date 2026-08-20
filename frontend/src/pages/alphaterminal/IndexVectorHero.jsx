@@ -3,45 +3,10 @@ import axios from "axios";
 import { motion } from "framer-motion";
 import { RefreshCw, Minus, TrendingUp, TrendingDown, Info } from "lucide-react";
 import { INDEX_LABELS, isNseSessionLive } from "../AlphaTerminal";
+import { T, F_UI, F_MONO, GLOW_SAPPHIRE, microLabel, mono, ui } from "./quantDesignTokens";
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 const EASE = [0.16, 1, 0.3, 1];
-
-// Scoped to this page only -- Inter for UI text, IBM Plex Mono for every
-// number, per the design system given for this redesign. Neither
-// overrides the site's own font-sans/font-mono tokens (Archivo /
-// JetBrains Mono), which every other page keeps using unchanged.
-const F_UI = "'Inter', sans-serif";
-const F_MONO = "'IBM Plex Mono', monospace";
-
-/* --------------------------------------------------------------------- */
-/* Design tokens                                                          */
-/* --------------------------------------------------------------------- */
-const T = {
-  bg: "#080F1D",
-  bg2: "#0A1221",
-  card: "#0D1728",
-  cardElevated: "#101C2F",
-  textPrimary: "#F1F5F9",
-  textSecondary: "#94A3B8",
-  textMuted: "#64748B",
-  microLabel: "#7F93AD",
-  sapphire: "#1677FF",
-  sapphireBright: "#3B8CFF",
-  sapphireDeep: "#0B4FB3",
-  bullish: "#16C784",
-  bullishBright: "#22D995",
-  bullishBg: "#06271D",
-  bearish: "#EF5350",
-  bearishBg: "#2A1115",
-  neutral: "#CBD5E1",
-  neutralBg: "#182235",
-  borderPrimary: "#1E3048",
-  borderSecondary: "#17263A",
-  borderHover: "#29415F",
-};
-
-const GLOW_SAPPHIRE = "0 0 30px rgba(22, 119, 255, 0.08)";
 
 // One color per model state, applied uniformly across a card (monogram,
 // index subtitle, bias dial, bias text, spot marker) -- Neutral is its
@@ -52,10 +17,6 @@ const BIAS_TONE = {
   Bearish: { color: T.bearish, bg: T.bearishBg, Icon: TrendingDown },
   Neutral: { color: T.neutral, bg: T.neutralBg, Icon: Minus },
 };
-
-const microLabel = { fontFamily: F_UI, fontSize: 11, fontWeight: 500, letterSpacing: "0.12em", textTransform: "uppercase", color: T.microLabel };
-const mono = (size = 14, weight = 500, color = T.textPrimary) => ({ fontFamily: F_MONO, fontSize: size, fontWeight: weight, color });
-const ui = (size = 14, weight = 400, color = T.textPrimary) => ({ fontFamily: F_UI, fontSize: size, fontWeight: weight, color });
 
 const fmtNum = (v) => (v == null ? "-" : Math.round(v).toLocaleString("en-IN"));
 

@@ -1,11 +1,13 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useMemo } from "react";
 import axios from "axios";
 import { toast } from "sonner";
-import { Loader2, Crosshair } from "lucide-react";
+import { Loader2, RefreshCw, TrendingUp, TrendingDown, Minus, Search } from "lucide-react";
 import { createChart, CandlestickSeries, LineSeries, LineType, ColorType } from "lightweight-charts";
 import SessionDividers, { useSessionDividers } from "./ChartSessionDividers";
 import { useLivePrice, useLiveCandle } from "../../lib/useLivePrice";
-import { field, selectCls, label, LoadingParticles, EmptyState } from "./QuantLab";
+import { LoadingParticles, EmptyState } from "./QuantLab";
+import { isNseSessionLive } from "../AlphaTerminal";
+import { T, F_UI, F_MONO, GLOW_SAPPHIRE, microLabel, mono, ui } from "./quantDesignTokens";
 
 const POLL_MS = 30000; // keep the LTP marker live while results are showing
 
@@ -21,6 +23,13 @@ const fmtDate = (iso) => {
   if (!iso) return "—";
   const [y, m, d] = iso.split("-");
   return `${d}/${m}/${y}`;
+};
+
+const fmtDateLong = (iso) => {
+  if (!iso) return "—";
+  const [y, m, d] = iso.split("-");
+  const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+  return `${d} ${MONTHS[Number(m) - 1]} ${y.slice(2)}`;
 };
 
 const fmtNum = (v) => (v == null ? "—" : Number(v).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
@@ -44,32 +53,41 @@ const formatIstHm = (time) => {
 // full H5-H4-H3-Pivot-L3-L4-L5 ladder.
 const VISIBLE_LEVELS = ["H5", "H4", "H3", "Pivot", "L3", "L4", "L5"];
 
-// The CHART draws every level except Pivot/PZ (2026-08-12, by request:
-// "completely remove the pz name and line from the chart"). Scoped to the
-// chart deliberately -- VISIBLE_LEVELS still drives the Sapphire Levels
-// ladder table below it, which continues to list PZ and its price.
-const CHART_LEVELS = VISIBLE_LEVELS.filter((k) => k !== "Pivot");
+// The CHART draws Pivot/PZ and H4/H3 excluded -- Pivot dropped 2026-08-12
+// ("completely remove the pz name and line from the chart"), H4/H3 (S4/S3)
+// dropped 2026-08-20 by explicit request, keeping only the outer S5 and the
+// full V3/V4/V5 support ladder on the candles themselves. Scoped to the
+// chart deliberately -- VISIBLE_LEVELS still drives the live levels panel
+// below it, which continues to list every level including S4/S3/PZ.
+const CHART_LEVELS = ["H5", "L3", "L4", "L5"];
 
-// Matches the reference: all H-levels red (resistance overhead), Pivot
-// cyan, all L-levels green (support below) — not a per-level gradient.
+// Matches the reference: all H-levels (S-series, resistance overhead) red,
+// Pivot cyan, all L-levels (V-series, support below) green.
 const LEVEL_COLORS = {
-  H5: "#F87171", H4: "#F87171", H3: "#F87171",
+  H5: T.bearish, H4: T.bearish, H3: T.bearish,
   Pivot: "#22D3EE",
-  L3: "#34D399", L4: "#34D399", L5: "#34D399",
+  L3: T.bullish, L4: T.bullish, L5: T.bullish,
 };
 
 // "Sapphire Levels" branding — internal keys (H5/H4/H3/Pivot/L3/L4/L5/LTP)
 // stay as-is everywhere else (backend field names, color/row-style
 // lookups); only the DISPLAYED label changes, so a generic H/L/Pivot
 // naming convention isn't shown to users.
-const DISPLAY_LABELS = { H5: "S5", H4: "S4", H3: "S3", Pivot: "PZ", L3: "V3", L4: "V4", L5: "V5" };
-
-// Full names paired with each code in the ladder table, matching the
-// "Sapphire Levels" reference card (Sentinel/Vault/Pivot Zone/Price Nexus).
+const DISPLAY_LABELS = { H5: "S5", H4: "S4", H3: "S3", Pivot: "P", L3: "V3", L4: "V4", L5: "V5" };
 const FULL_NAMES = {
   H5: "Sentinel 5", H4: "Sentinel 4", H3: "Sentinel 3",
   Pivot: "Pivot Zone",
   L3: "Vault 3", L4: "Vault 4", L5: "Vault 5",
+};
+
+// Backend bias values are Long/Short/Neutral (see exitline.py's
+// classify_and_suggest) -- displayed as Bullish/Bearish/Neutral to match
+// the rest of the terminal's vocabulary. Internal value is untouched.
+const BIAS_DISPLAY = { Long: "Bullish", Short: "Bearish", Neutral: "Neutral" };
+const BIAS_TONE = {
+  Bullish: { color: T.bullish, Icon: TrendingUp },
+  Bearish: { color: T.bearish, Icon: TrendingDown },
+  Neutral: { color: T.neutral, Icon: Minus },
 };
 
 // How many bars of the PREVIOUS session to keep on screen at open, so the
@@ -90,6 +108,11 @@ const INTERVALS = [
   { key: 30, label: "30m" },
   { key: 60, label: "1h" },
 ];
+
+const fieldStyle = {
+  background: T.cardElevated, border: `1px solid ${T.borderPrimary}`, borderRadius: 8,
+  padding: "8px 10px", fontFamily: F_UI, fontSize: 13, color: T.textPrimary, colorScheme: "dark",
+};
 
 // TradingView's own open-source charting engine (not their embeddable
 // tradingview.com widget — that only supports custom price-line overlays
@@ -119,7 +142,7 @@ const buildLevelSeriesData = (chart, sessionsByDate, key) => {
 
 // No `ltp` prop: the chart no longer draws a live-price ("PX") line at
 // all (2026-08-12, by request), so it has nothing to do with the live
-// price. The Ladder below still takes `ltp` and still shows it.
+// price. The levels panel below still takes `ltp` and still shows it.
 const TVChart = ({ chart, sessions, interval, onIntervalChange, fetchGen, market, symbol }) => {
   const containerRef = useRef(null);
   const chartRef = useRef(null);
@@ -130,14 +153,14 @@ const TVChart = ({ chart, sessions, interval, onIntervalChange, fetchGen, market
   useEffect(() => {
     if (!containerRef.current) return undefined;
     const tvChart = createChart(containerRef.current, {
-      layout: { background: { type: ColorType.Solid, color: "transparent" }, textColor: "#94A3B8" },
+      layout: { background: { type: ColorType.Solid, color: "transparent" }, textColor: T.textSecondary },
       grid: { vertLines: { visible: false }, horzLines: { visible: false } },
       localization: { timeFormatter: formatIstHm },
       timeScale: {
-        timeVisible: true, secondsVisible: false, borderColor: "rgba(255,255,255,0.1)",
+        timeVisible: true, secondsVisible: false, borderColor: T.borderPrimary,
         tickMarkFormatter: formatIstHm,
       },
-      rightPriceScale: { borderColor: "rgba(255,255,255,0.1)" },
+      rightPriceScale: { borderColor: T.borderPrimary },
       handleScale: {
         mouseWheel: true, pinch: true,
         axisPressedMouseMove: { time: true, price: true },
@@ -151,13 +174,13 @@ const TVChart = ({ chart, sessions, interval, onIntervalChange, fetchGen, market
       autoSize: true,
     });
     const series = tvChart.addSeries(CandlestickSeries, {
-      upColor: "#34D399", downColor: "#F87171", borderVisible: false,
-      wickUpColor: "#34D399", wickDownColor: "#F87171",
+      upColor: T.bullish, downColor: T.bearish, borderVisible: false,
+      wickUpColor: T.bullish, wickDownColor: T.bearish,
       // Both off so the chart carries NO live-price marker at all: the
       // explicit "PX" price line these originally deduplicated against was
       // removed 2026-08-12 by request, and re-enabling either of these
       // would just put an equivalent line/label straight back. The live
-      // price is still shown in the Sapphire Levels ladder below.
+      // price is still shown in the live levels panel below.
       priceLineVisible: false,
       lastValueVisible: false,
     });
@@ -214,10 +237,10 @@ const TVChart = ({ chart, sessions, interval, onIntervalChange, fetchGen, market
       let lineSeries = levelSeriesRef.current[k];
       if (!lineSeries) {
         lineSeries = tvChart.addSeries(LineSeries, {
-          color: LEVEL_COLORS[k] || "#64748B", lineWidth: 1, lineType: LineType.WithSteps,
+          color: LEVEL_COLORS[k] || T.textMuted, lineWidth: 1, lineType: LineType.WithSteps,
           // No `title` (2026-08-12, by request) -- the price-axis tag now
-          // shows only the value, not the S5/S4/V3/... name. The ladder
-          // table below still names every level, and the lines stay
+          // shows only the value, not the S5/S4/V3/... name. The levels
+          // panel below still names every level, and the lines stay
           // colour-coded (red above / green below), so nothing is lost.
           lastValueVisible: true, priceLineVisible: false, crosshairMarkerVisible: false,
           // Levels are DRAWN but excluded from the price autoscale (that's
@@ -287,21 +310,20 @@ const TVChart = ({ chart, sessions, interval, onIntervalChange, fetchGen, market
   const isEmpty = !chart || chart.length === 0;
 
   return (
-    <div className="glass rounded-2xl border border-white/10 p-4 md:p-6 mb-6" data-testid="exitline-chart">
+    <div className="rounded-2xl p-4 md:p-6" style={{ background: T.card, border: `1px solid ${T.borderPrimary}` }} data-testid="exitline-chart">
       <div className="flex flex-wrap items-center justify-between gap-3 mb-3">
-        <p className="font-mono-ui text-[10px] uppercase tracking-[0.18em] text-slate-500">
-          Last {sessions?.length || 30} Sessions <span className="text-slate-600 normal-case tracking-normal">· scroll to view history</span>
+        <p style={{ ...microLabel, letterSpacing: "0.1em" }}>
+          Last {sessions?.length || 30} Sessions <span style={{ color: T.textMuted, textTransform: "none", letterSpacing: "normal" }}>&middot; scroll to view history</span>
         </p>
-        <div className="flex items-center gap-1 rounded-md border border-white/10 p-0.5" data-testid="exitline-interval-selector">
+        <div className="flex items-center gap-1 rounded-md p-0.5" style={{ border: `1px solid ${T.borderPrimary}` }} data-testid="exitline-interval-selector">
           {INTERVALS.map((iv) => (
             <button
               key={iv.key}
               type="button"
               onClick={() => onIntervalChange(iv.key)}
               data-testid={`exitline-interval-${iv.key}`}
-              className={`font-mono-ui text-[10px] uppercase tracking-wider px-2.5 py-1 rounded transition-colors ${
-                interval === iv.key ? "bg-sapphire-light/20 text-sapphire-light" : "text-slate-500 hover:text-slate-300"
-              }`}
+              className="px-2.5 py-1 rounded transition-colors"
+              style={{ ...mono(11, 500, interval === iv.key ? T.sapphireBright : T.textMuted), background: interval === iv.key ? "rgba(22,119,255,0.14)" : "transparent" }}
             >
               {iv.label}
             </button>
@@ -311,7 +333,7 @@ const TVChart = ({ chart, sessions, interval, onIntervalChange, fetchGen, market
       <div className="relative h-96">
         {isEmpty && (
           <div className="absolute inset-0 flex items-center justify-center z-10" data-testid="exitline-chart-empty">
-            <p className="text-xs text-slate-500">No intraday bars yet for this session.</p>
+            <p style={ui(12, 400, T.textMuted)}>No intraday bars yet for this session.</p>
           </div>
         )}
         {/* App-wide Lenis smooth-scroll (SmoothScroll.jsx) reads wheel deltas on its own listener and animates the page regardless of preventDefault() elsewhere — data-lenis-prevent-wheel/data-lenis-prevent are both real Lenis opt-out attributes (confirmed against Lenis's own source, 2026-08-10); using the general one here. */}
@@ -322,23 +344,148 @@ const TVChart = ({ chart, sessions, interval, onIntervalChange, fetchGen, market
   );
 };
 
-const Ladder = ({ levels, ltp }) => {
+/* --------------------------------------------------------------------- */
+/* Instrument header — symbol identity, live price, session status        */
+/* --------------------------------------------------------------------- */
+const InstrumentHeader = ({ result, live, lastFetchedAt }) => {
+  const sessionLive = isNseSessionLive();
+  const changeNegative = live?.change < 0;
+  const displayPrice = live?.price ?? result.ltp;
+  const [, force] = useState(0);
+  // Re-render once a minute so "Last updated" keeps counting up in words
+  // without a per-second timer (this is a coarse label, not a stopwatch).
+  useEffect(() => {
+    const id = setInterval(() => force((n) => n + 1), 60000);
+    return () => clearInterval(id);
+  }, []);
+  const updatedLabel = lastFetchedAt
+    ? new Date(lastFetchedAt).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit", hour12: true, timeZone: "Asia/Kolkata" }).toUpperCase() + " IST"
+    : "—";
+
+  return (
+    <div
+      className="flex flex-wrap items-center justify-between gap-4 rounded-2xl px-5 py-4 mb-4"
+      style={{ background: T.bg2, border: `1px solid ${T.borderPrimary}` }}
+      data-testid="exitline-instrument-header"
+    >
+      <div>
+        <p style={{ ...ui(20, 600, T.textPrimary), letterSpacing: "-0.01em" }}>{result.tradingsymbol}</p>
+        <p className="mt-0.5" style={ui(12, 400, T.textSecondary)}>
+          {result.symbol} &middot; {SEGMENTS.find((s) => s.key === result.segment)?.label || result.segment}
+          {result.expiry && <> &middot; {fmtDate(result.expiry)}</>}
+        </p>
+      </div>
+      {displayPrice != null && (
+        <div>
+          <p style={microLabel}>Last Price</p>
+          <p style={mono(24, 600, T.textPrimary)}>&#8377;{fmtNum(displayPrice)}</p>
+          {live?.change != null && (
+            <p style={mono(12, 500, changeNegative ? T.bearish : T.bullish)}>
+              {changeNegative ? "" : "+"}{fmtNum(live.change)} ({live.changePct != null ? `${changeNegative ? "" : "+"}${live.changePct.toFixed(2)}%` : "—"})
+            </p>
+          )}
+        </div>
+      )}
+      <div>
+        <p style={microLabel}>Market Status</p>
+        <p className="mt-0.5 flex items-center gap-1.5" style={ui(14, 600, sessionLive ? T.bullish : T.textMuted)}>
+          {sessionLive ? "Live" : "Closed"}
+          <span className="h-1.5 w-1.5 rounded-full" style={{ background: sessionLive ? T.bullish : T.textMuted }} />
+        </p>
+        <p className="mt-0.5" style={ui(11, 400, T.textMuted)}>{sessionLive ? "Market Open" : "Market Closed"}</p>
+      </div>
+      <div className="flex items-center gap-3">
+        <div className="text-right">
+          <p style={microLabel}>Last Updated</p>
+          <p className="mt-0.5" style={mono(12, 500, T.textSecondary)}>{updatedLabel}</p>
+        </div>
+        <RefreshCw size={14} color={T.textMuted} />
+      </div>
+    </div>
+  );
+};
+
+/* --------------------------------------------------------------------- */
+/* Market structure — real position of price within the S3..V3 ladder     */
+/* --------------------------------------------------------------------- */
+const MarketStructure = ({ levels, ltp }) => {
+  // Position along the full S5..V5 ladder -- purely a real, derived
+  // number (where LTP actually sits between the widest real levels), not
+  // a fabricated sentiment score.
+  const hi = levels.H5, lo = levels.L5;
+  const pct = hi > lo ? Math.min(100, Math.max(0, ((ltp - lo) / (hi - lo)) * 100)) : 50;
+
+  const nearestResistance = ["H3", "H4", "H5"]
+    .map((k) => ({ key: k, value: levels[k] }))
+    .filter((l) => l.value > ltp)
+    .sort((a, b) => a.value - b.value)[0];
+  const nearestSupport = ["L3", "L4", "L5"]
+    .map((k) => ({ key: k, value: levels[k] }))
+    .filter((l) => l.value < ltp)
+    .sort((a, b) => b.value - a.value)[0];
+
+  return (
+    <div className="rounded-2xl p-5 mb-4" style={{ background: T.card, border: `1px solid ${T.borderPrimary}` }} data-testid="exitline-market-structure">
+      <p className="mb-4" style={microLabel}>Market Structure</p>
+      <div className="grid grid-cols-1 md:grid-cols-[1.4fr_auto_auto] gap-6 items-center">
+        <div>
+          <div className="relative h-1.5 rounded-full overflow-hidden" style={{ background: `linear-gradient(to right, ${T.bearish}, ${T.borderSecondary}, ${T.bullish})` }}>
+            <span
+              className="absolute top-1/2 h-3 w-3 -translate-y-1/2 -translate-x-1/2 rounded-full"
+              style={{ left: `${pct}%`, backgroundColor: T.textPrimary, border: `2px solid ${T.bg}` }}
+            />
+          </div>
+          <div className="mt-2 flex items-center justify-between">
+            <span style={{ ...ui(11, 600, T.bearish), textTransform: "uppercase", letterSpacing: "0.08em" }}>Bearish</span>
+            <span style={{ ...ui(11, 500, T.textMuted), textTransform: "uppercase", letterSpacing: "0.08em" }}>Neutral</span>
+            <span style={{ ...ui(11, 600, T.bullish), textTransform: "uppercase", letterSpacing: "0.08em" }}>Bullish</span>
+          </div>
+        </div>
+        {nearestResistance && (
+          <div>
+            <p style={microLabel}>Nearest Resistance</p>
+            <p className="mt-1 flex items-baseline gap-2">
+              <span style={ui(13, 700, T.bearish)}>{DISPLAY_LABELS[nearestResistance.key]}</span>
+              <span style={mono(15, 600, T.textPrimary)}>&#8377;{fmtNum(nearestResistance.value)}</span>
+              <span style={mono(11, 500, T.bearish)}>{(((nearestResistance.value - ltp) / ltp) * 100).toFixed(2)}%</span>
+            </p>
+          </div>
+        )}
+        {nearestSupport && (
+          <div>
+            <p style={microLabel}>Nearest Support</p>
+            <p className="mt-1 flex items-baseline gap-2">
+              <span style={ui(13, 700, T.bullish)}>{DISPLAY_LABELS[nearestSupport.key]}</span>
+              <span style={mono(15, 600, T.textPrimary)}>&#8377;{fmtNum(nearestSupport.value)}</span>
+              <span style={mono(11, 500, T.bearish)}>{(((nearestSupport.value - ltp) / ltp) * 100).toFixed(2)}%</span>
+            </p>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
+
+/* --------------------------------------------------------------------- */
+/* Live levels panel                                                      */
+/* --------------------------------------------------------------------- */
+const LiveLevelsPanel = ({ levels, ltp }) => {
   const rows = [
     ...VISIBLE_LEVELS.map((k) => ({ key: k, value: levels[k], isLtp: false })),
     { key: "LTP", value: ltp, isLtp: true },
   ].sort((a, b) => b.value - a.value);
 
   return (
-    <div className="glass rounded-2xl border border-white/10 overflow-hidden" data-testid="exitline-ladder">
-      <div className="px-5 py-3 border-b border-white/10">
-        <p className="font-mono-ui text-[10px] uppercase tracking-[0.24em] text-slate-400">Sapphire Levels™</p>
+    <div className="rounded-2xl overflow-hidden h-full" style={{ background: T.card, border: `1px solid ${T.borderPrimary}` }} data-testid="exitline-ladder">
+      <div className="px-5 py-3.5" style={{ borderBottom: `1px solid ${T.borderSecondary}` }}>
+        <p style={microLabel}>Live Levels</p>
       </div>
       <div className="overflow-x-auto">
-        <table className="w-full min-w-[520px]" style={{ fontVariantNumeric: "tabular-nums" }}>
+        <table className="w-full" style={{ fontVariantNumeric: "tabular-nums" }}>
           <thead>
-            <tr className="border-b border-white/10">
-              {[["Level", "left"], ["Price", "right"], ["Distance from PX", "right"], ["% Away", "right"]].map(([h, align]) => (
-                <th key={h} className={`px-5 py-3 font-mono-ui text-[10px] uppercase tracking-[0.18em] text-slate-500 font-semibold whitespace-nowrap text-${align}`}>{h}</th>
+            <tr style={{ borderBottom: `1px solid ${T.borderSecondary}` }}>
+              {[["Level", "left"], ["Price", "right"], ["Distance", "right"], ["%", "right"]].map(([h, align]) => (
+                <th key={h} className={`px-5 py-2.5 whitespace-nowrap text-${align}`} style={microLabel}>{h}</th>
               ))}
             </tr>
           </thead>
@@ -346,27 +493,30 @@ const Ladder = ({ levels, ltp }) => {
             {rows.map((r) => {
               const distance = r.isLtp ? null : r.value - ltp;
               const distPct = r.isLtp ? null : (distance / ltp) * 100;
-              const distTone = distance == null ? "text-slate-600" : distance > 0 ? "text-emerald-400" : "text-red-400";
+              const distTone = distance == null ? T.textMuted : distance > 0 ? T.bearish : T.bullish;
+              const levelColor = r.isLtp ? T.sapphireBright : r.key.startsWith("H") ? T.bearish : r.key === "Pivot" ? "#22D3EE" : T.bullish;
               return (
                 <tr
                   key={r.key}
                   data-testid={r.isLtp ? "exitline-ltp-row" : `exitline-level-${r.key}`}
-                  className={`border-b border-white/[0.05] last:border-0 ${r.isLtp ? "bg-sapphire-light/15" : ""}`}
+                  style={{ borderBottom: `1px solid ${T.borderSecondary}`, background: r.isLtp ? "rgba(22,119,255,0.10)" : "transparent" }}
                 >
                   <td className="px-5 py-3 whitespace-nowrap">
-                    <span className={`block font-mono-ui text-xs uppercase tracking-[0.14em] ${r.isLtp ? "text-sapphire-light font-bold" : r.key.startsWith("H") ? "text-emerald-400/80" : r.key.startsWith("L") ? "text-red-400/80" : "text-white"}`}>
-                      {r.isLtp ? "◆ PX (Live)" : (DISPLAY_LABELS[r.key] || r.key)}
+                    <span style={{ ...ui(13, 600, levelColor) }}>
+                      {r.isLtp ? "Price (Live)" : DISPLAY_LABELS[r.key] || r.key}
                     </span>
-                    <span className="block text-[11px] text-slate-500 mt-0.5">
-                      {r.isLtp ? "Price Nexus" : (FULL_NAMES[r.key] || "")}
+                    <span className="block mt-0.5" style={ui(10, 400, T.textMuted)}>
+                      {r.isLtp ? "Market Price" : FULL_NAMES[r.key] || ""}
                     </span>
                   </td>
-                  <td className={`px-5 py-3 text-right font-mono-ui text-sm whitespace-nowrap ${r.isLtp ? "text-white font-bold" : "text-slate-300"}`}>₹{fmtNum(r.value)}</td>
-                  <td className={`px-5 py-3 text-right font-mono-ui text-sm whitespace-nowrap ${distTone}`}>
-                    {distance == null ? "—" : `${distance >= 0 ? "+" : "−"}₹${fmtNum(Math.abs(distance))}`}
+                  <td className="px-5 py-3 text-right whitespace-nowrap" style={mono(13, r.isLtp ? 700 : 500, r.isLtp ? T.textPrimary : T.textSecondary)}>
+                    &#8377;{fmtNum(r.value)}
                   </td>
-                  <td className={`px-5 py-3 text-right font-mono-ui text-sm whitespace-nowrap ${distTone}`}>
-                    {distPct == null ? "—" : `${distPct >= 0 ? "+" : "−"}${Math.abs(distPct).toFixed(2)}%`}
+                  <td className="px-5 py-3 text-right whitespace-nowrap" style={mono(12, 500, distTone)}>
+                    {distance == null ? "—" : `${distance >= 0 ? "+" : "-"}${fmtNum(Math.abs(distance))}`}
+                  </td>
+                  <td className="px-5 py-3 text-right whitespace-nowrap" style={mono(12, 500, distTone)}>
+                    {distPct == null ? "—" : `${distPct >= 0 ? "+" : "-"}${Math.abs(distPct).toFixed(2)}%`}
                   </td>
                 </tr>
               );
@@ -374,23 +524,146 @@ const Ladder = ({ levels, ltp }) => {
           </tbody>
         </table>
       </div>
+      <div className="flex items-center gap-4 px-5 py-3" style={{ borderTop: `1px solid ${T.borderSecondary}` }}>
+        <span className="inline-flex items-center gap-1.5" style={ui(10, 400, T.textMuted)}>
+          <span className="h-2 w-2 rounded-full" style={{ background: T.bearish }} /> Resistance Levels
+        </span>
+        <span className="inline-flex items-center gap-1.5" style={ui(10, 400, T.textMuted)}>
+          <span className="h-2 w-2 rounded-full" style={{ background: T.bullish }} /> Support Levels
+        </span>
+      </div>
     </div>
   );
 };
 
-const ExitlineResults = ({ result, interval, onIntervalChange, instrument }) => (
-  <div data-testid="exitline-results">
-    <div className="mb-4">
-      <p className="text-xl font-bold text-white">{result.tradingsymbol}</p>
-    </div>
+/* --------------------------------------------------------------------- */
+/* Session history — aggregated from the real intraday chart bars, not    */
+/* invented: each date's own High/Low/Close comes straight off whatever   */
+/* candles were actually returned for that date.                         */
+/* --------------------------------------------------------------------- */
+const useSessionHistoryRows = (chart) => useMemo(() => {
+  if (!chart || chart.length === 0) return [];
+  const byDate = new Map();
+  for (const b of chart) {
+    if (!b.date) continue;
+    const cur = byDate.get(b.date);
+    if (!cur) {
+      byDate.set(b.date, { date: b.date, high: b.high, low: b.low, close: b.close });
+    } else {
+      cur.high = Math.max(cur.high, b.high);
+      cur.low = Math.min(cur.low, b.low);
+      cur.close = b.close; // bars arrive in ascending time order, so the last write is the session's real close
+    }
+  }
+  return [...byDate.values()].sort((a, b) => (a.date < b.date ? 1 : -1)).slice(0, 10);
+}, [chart]);
 
-    <TVChart chart={result.chart} sessions={result.sessions} interval={interval} onIntervalChange={onIntervalChange} fetchGen={result.__fetchGen} market="india" symbol={instrument} />
-
-    <div className="mb-6">
-      <Ladder levels={result.levels} ltp={result.ltp} />
+const SessionHistoryTable = ({ chart }) => {
+  const rows = useSessionHistoryRows(chart);
+  if (rows.length === 0) return null;
+  return (
+    <div className="rounded-2xl overflow-hidden mt-4" style={{ background: T.card, border: `1px solid ${T.borderPrimary}` }} data-testid="exitline-session-history">
+      <div className="px-5 py-3.5" style={{ borderBottom: `1px solid ${T.borderSecondary}` }}>
+        <p style={microLabel}>Session History</p>
+      </div>
+      <div className="overflow-x-auto">
+        <table className="w-full" style={{ fontVariantNumeric: "tabular-nums" }}>
+          <thead>
+            <tr style={{ borderBottom: `1px solid ${T.borderSecondary}` }}>
+              {[["Date", "left"], ["High", "right"], ["Low", "right"], ["Close", "right"], ["Range", "right"]].map(([h, align]) => (
+                <th key={h} className={`px-5 py-2.5 whitespace-nowrap text-${align}`} style={microLabel}>{h}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((r) => (
+              <tr key={r.date} data-testid={`exitline-session-row-${r.date}`} style={{ borderBottom: `1px solid ${T.borderSecondary}` }}>
+                <td className="px-5 py-2.5 whitespace-nowrap" style={ui(12, 400, T.textSecondary)}>{fmtDateLong(r.date)}</td>
+                <td className="px-5 py-2.5 text-right whitespace-nowrap" style={mono(12, 500, T.textSecondary)}>{fmtNum(r.high)}</td>
+                <td className="px-5 py-2.5 text-right whitespace-nowrap" style={mono(12, 500, T.textSecondary)}>{fmtNum(r.low)}</td>
+                <td className="px-5 py-2.5 text-right whitespace-nowrap" style={mono(12, 500, T.textPrimary)}>{fmtNum(r.close)}</td>
+                <td className="px-5 py-2.5 text-right whitespace-nowrap" style={mono(12, 500, T.textMuted)}>{fmtNum(r.high - r.low)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
     </div>
+  );
+};
+
+/* --------------------------------------------------------------------- */
+/* Stat tiles — Bias, Range (S3-P), Upside to S3, Downside to P           */
+/* --------------------------------------------------------------------- */
+const StatTile = ({ label: lbl, children }) => (
+  <div className="rounded-2xl p-5" style={{ background: T.card, border: `1px solid ${T.borderPrimary}` }}>
+    <p className="mb-2" style={microLabel}>{lbl}</p>
+    {children}
   </div>
 );
+
+const StatTiles = ({ result }) => {
+  const { levels, ltp, bias } = result;
+  const displayBias = BIAS_DISPLAY[bias] || "Neutral";
+  const tone = BIAS_TONE[displayBias] || BIAS_TONE.Neutral;
+  const Icon = tone.Icon;
+
+  const range = levels.H3 - levels.Pivot;
+  const upsideToS3 = levels.H3 - ltp;
+  const upsideToS3Pct = (upsideToS3 / ltp) * 100;
+  const downsideToP = levels.Pivot - ltp;
+  const downsideToPPct = (downsideToP / ltp) * 100;
+
+  return (
+    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mt-4" data-testid="exitline-stat-tiles">
+      <StatTile label="Bias">
+        <div className="flex items-center gap-2.5">
+          <span className="inline-flex h-8 w-8 items-center justify-center rounded-full" style={{ border: `2px dashed ${tone.color}66` }}>
+            <Icon size={15} color={tone.color} />
+          </span>
+          <span style={{ fontFamily: F_UI, fontWeight: 600, fontSize: 22, color: tone.color, letterSpacing: "-0.01em" }}>{displayBias.toUpperCase()}</span>
+        </div>
+        <p className="mt-2" style={ui(11, 400, T.textMuted)}>{result.reason || (result.commentary ?? "No clear directional edge")}</p>
+      </StatTile>
+      <StatTile label="Range (S3 - P)">
+        <p style={mono(22, 600, T.textPrimary)}>&#8377;{fmtNum(Math.abs(range))}</p>
+        <p className="mt-1" style={ui(11, 400, T.textMuted)}>{((Math.abs(range) / ltp) * 100).toFixed(2)}% of Price</p>
+      </StatTile>
+      <StatTile label="Upside to S3">
+        <p style={mono(22, 600, upsideToS3 >= 0 ? T.bullish : T.bearish)}>{upsideToS3 >= 0 ? "+" : "-"}&#8377;{fmtNum(Math.abs(upsideToS3))}</p>
+        <p className="mt-1" style={mono(11, 500, upsideToS3 >= 0 ? T.bullish : T.bearish)}>{upsideToS3Pct >= 0 ? "+" : ""}{upsideToS3Pct.toFixed(2)}%</p>
+      </StatTile>
+      <StatTile label="Downside to P">
+        <p style={mono(22, 600, downsideToP <= 0 ? T.bearish : T.bullish)}>{downsideToP >= 0 ? "+" : "-"}&#8377;{fmtNum(Math.abs(downsideToP))}</p>
+        <p className="mt-1" style={mono(11, 500, downsideToP <= 0 ? T.bearish : T.bullish)}>{downsideToPPct >= 0 ? "+" : ""}{downsideToPPct.toFixed(2)}%</p>
+      </StatTile>
+    </div>
+  );
+};
+
+const ExitlineResults = ({ result, interval, onIntervalChange, instrument, lastFetchedAt }) => {
+  const live = useLivePrice("india", instrument, { enabled: !!instrument });
+  return (
+    <div data-testid="exitline-results">
+      <InstrumentHeader result={result} live={live} lastFetchedAt={lastFetchedAt} />
+      <MarketStructure levels={result.levels} ltp={result.ltp} />
+
+      <div className="grid grid-cols-1 lg:grid-cols-[1.4fr_1fr] gap-4">
+        <div>
+          <TVChart chart={result.chart} sessions={result.sessions} interval={interval} onIntervalChange={onIntervalChange} fetchGen={result.__fetchGen} market="india" symbol={instrument} />
+          <SessionHistoryTable chart={result.chart} />
+        </div>
+        <LiveLevelsPanel levels={result.levels} ltp={result.ltp} />
+      </div>
+
+      {result.ltp != null && <StatTiles result={result} />}
+
+      <p className="mt-6 text-center" style={{ ...microLabel, color: T.textMuted }}>
+        Systematic Market Confirmation &middot; Rule-based Signals &middot; Not Investment Advice
+      </p>
+    </div>
+  );
+};
 
 const SymbolPicker = ({ segment, symbol, onSelect }) => {
   const [query, setQuery] = useState(symbol || "");
@@ -425,25 +698,31 @@ const SymbolPicker = ({ segment, symbol, onSelect }) => {
 
   return (
     <div className="relative">
-      <label className={label}>Scrip</label>
-      <input
-        value={query}
-        onChange={onChange}
-        onFocus={() => options.length > 0 && setOpen(true)}
-        onBlur={() => setTimeout(() => setOpen(false), 150)}
-        className={field}
-        placeholder="Search symbol… e.g. RELIANCE"
-        data-testid="exitline-symbol-input"
-        autoComplete="off"
-      />
+      <label className="block mb-1.5" style={microLabel}>Scrip</label>
+      <div className="relative">
+        <Search size={13} color={T.textMuted} className="absolute left-3 top-1/2 -translate-y-1/2" />
+        <input
+          value={query}
+          onChange={onChange}
+          onFocus={() => options.length > 0 && setOpen(true)}
+          onBlur={() => setTimeout(() => setOpen(false), 150)}
+          style={{ ...fieldStyle, paddingLeft: 30, width: "100%" }}
+          placeholder="Search symbol… e.g. RELIANCE"
+          data-testid="exitline-symbol-input"
+          autoComplete="off"
+        />
+      </div>
       {open && options.length > 0 && (
-        <div className="absolute z-20 mt-1 w-full max-h-56 overflow-y-auto glass rounded-md border border-white/10 shadow-xl" data-testid="exitline-symbol-dropdown">
+        <div className="absolute z-20 mt-1 w-full max-h-56 overflow-y-auto rounded-md shadow-xl" style={{ background: T.cardElevated, border: `1px solid ${T.borderPrimary}` }} data-testid="exitline-symbol-dropdown">
           {options.map((s) => (
             <button
               type="button"
               key={s}
               onClick={() => pick(s)}
-              className="block w-full text-left px-3 py-2 text-sm text-slate-200 hover:bg-white/10 transition-colors font-mono-ui"
+              className="block w-full text-left px-3 py-2 transition-colors"
+              style={mono(12, 400, T.textSecondary)}
+              onMouseEnter={(e) => { e.currentTarget.style.background = "rgba(255,255,255,0.06)"; }}
+              onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; }}
             >
               {s}
             </button>
@@ -465,6 +744,7 @@ const ExitlineTool = () => {
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState(null);
   const [chartInterval, setChartInterval] = useState(5);
+  const [lastFetchedAt, setLastFetchedAt] = useState(null);
   const genRef = useRef(0); // bumped on a real user-initiated fetch (submit/interval change), never on a silent poll — see TVChart's fitKey
   const paramsRef = useRef(null); // last-submitted query params, kept alive for the background poll
 
@@ -480,6 +760,7 @@ const ExitlineTool = () => {
     try {
       const { data } = await axios.get(`${API}/exitline/levels`, { params });
       setResult((prev) => ({ ...data, __fetchGen: gen !== undefined ? gen : prev?.__fetchGen }));
+      setLastFetchedAt(Date.now());
     } catch (err) {
       if (!silent) {
         toast.error(err?.response?.data?.detail || "Could not fetch levels. Please try again.");
@@ -564,15 +845,12 @@ const ExitlineTool = () => {
 
   return (
     <div data-testid="exitline-tool">
-      <form onSubmit={submit} className="glass rounded-2xl border border-white/10 p-5 md:p-6 mb-6">
-        <p className="font-mono-ui text-[10px] uppercase tracking-[0.24em] text-sapphire-light mb-4 pb-4 border-b border-white/10 flex items-center gap-2">
-          <Crosshair size={13} /> Exitline Levels
-        </p>
+      <form onSubmit={submit} className="rounded-2xl p-5 md:p-6 mb-6" style={{ background: T.card, border: `1px solid ${T.borderPrimary}` }}>
         <div className="grid grid-cols-2 md:grid-cols-5 gap-4 items-end">
           <div>
-            <label className={label}>Segment</label>
-            <select value={segment} onChange={changeSegment} style={{ colorScheme: "dark" }} className={selectCls} data-testid="exitline-segment">
-              {SEGMENTS.map((s) => <option key={s.key} value={s.key} className="bg-surface">{s.label}</option>)}
+            <label className="block mb-1.5" style={microLabel}>Segment</label>
+            <select value={segment} onChange={changeSegment} style={{ ...fieldStyle, width: "100%" }} data-testid="exitline-segment">
+              {SEGMENTS.map((s) => <option key={s.key} value={s.key} style={{ background: T.cardElevated }}>{s.label}</option>)}
             </select>
           </div>
 
@@ -580,10 +858,10 @@ const ExitlineTool = () => {
 
           {segment !== "NSE" && (
             <div>
-              <label className={label}>Expiry</label>
-              <select value={expiry} onChange={changeExpiry} style={{ colorScheme: "dark" }} className={selectCls} data-testid="exitline-expiry" disabled={!symbol}>
-                <option value="" className="bg-surface">Select…</option>
-                {expiryOptions.map((e) => <option key={e} value={e} className="bg-surface">{fmtDate(e)}</option>)}
+              <label className="block mb-1.5" style={microLabel}>Expiry</label>
+              <select value={expiry} onChange={changeExpiry} style={{ ...fieldStyle, width: "100%" }} data-testid="exitline-expiry" disabled={!symbol}>
+                <option value="" style={{ background: T.cardElevated }}>Select…</option>
+                {expiryOptions.map((e) => <option key={e} value={e} style={{ background: T.cardElevated }}>{fmtDate(e)}</option>)}
               </select>
             </div>
           )}
@@ -591,24 +869,30 @@ const ExitlineTool = () => {
           {segment === "OPT" && (
             <>
               <div>
-                <label className={label}>Strike</label>
-                <select value={strike} onChange={(e) => { setStrike(e.target.value); setResult(null); paramsRef.current = null; }} style={{ colorScheme: "dark" }} className={selectCls} data-testid="exitline-strike" disabled={!expiry}>
-                  <option value="" className="bg-surface">Select…</option>
-                  {strikeOptions.map((s) => <option key={s} value={s} className="bg-surface">{s}</option>)}
+                <label className="block mb-1.5" style={microLabel}>Strike</label>
+                <select value={strike} onChange={(e) => { setStrike(e.target.value); setResult(null); paramsRef.current = null; }} style={{ ...fieldStyle, width: "100%" }} data-testid="exitline-strike" disabled={!expiry}>
+                  <option value="" style={{ background: T.cardElevated }}>Select…</option>
+                  {strikeOptions.map((s) => <option key={s} value={s} style={{ background: T.cardElevated }}>{s}</option>)}
                 </select>
               </div>
               <div>
-                <label className={label}>Type</label>
-                <select value={optionType} onChange={(e) => { setOptionType(e.target.value); setResult(null); paramsRef.current = null; }} style={{ colorScheme: "dark" }} className={selectCls} data-testid="exitline-option-type">
-                  <option value="CE" className="bg-surface">CE</option>
-                  <option value="PE" className="bg-surface">PE</option>
+                <label className="block mb-1.5" style={microLabel}>Type</label>
+                <select value={optionType} onChange={(e) => { setOptionType(e.target.value); setResult(null); paramsRef.current = null; }} style={{ ...fieldStyle, width: "100%" }} data-testid="exitline-option-type">
+                  <option value="CE" style={{ background: T.cardElevated }}>CE</option>
+                  <option value="PE" style={{ background: T.cardElevated }}>PE</option>
                 </select>
               </div>
             </>
           )}
 
-          <button type="submit" disabled={loading || !canSubmit} className="btn-sapphire disabled:opacity-50 h-[42px]" data-testid="exitline-submit">
-            {loading ? <><Loader2 size={16} className="animate-spin" /> Fetching</> : "Get Levels"}
+          <button
+            type="submit"
+            disabled={loading || !canSubmit}
+            data-testid="exitline-submit"
+            className="h-[38px] rounded-lg flex items-center justify-center gap-1.5 disabled:opacity-50"
+            style={{ background: T.sapphire, ...ui(13, 600, "#FFFFFF") }}
+          >
+            {loading ? <><Loader2 size={15} className="animate-spin" /> Fetching</> : "Get Levels"}
           </button>
         </div>
       </form>
@@ -620,6 +904,7 @@ const ExitlineTool = () => {
           result={result}
           interval={chartInterval}
           onIntervalChange={changeInterval}
+          lastFetchedAt={lastFetchedAt}
           // The same instrument /levels resolved — /exitline/quote takes
           // these params and returns only the LTP. `interval` is dropped:
           // it doesn't identify the instrument, and leaving it in would
