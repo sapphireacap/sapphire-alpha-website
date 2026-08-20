@@ -40,21 +40,21 @@ export const MODULES = [
     live: true,
     icon: Compass,
     title: "Index Vector",
-    shortDescription: "Market regime confirmation model.",
-    // Displayed inside the module page, one compass per index, in this
-    // order (2-1 formation on the Current Reading grid — see ModuleDetail.jsx).
+    shortDescription: "A multi-factor confirmation model for major indices.",
+    // Displayed inside the module page, one card per index (see
+    // ModuleDetail.jsx / IndexVectorHero.jsx). FINNIFTY dropped 2026-08-20
+    // at the user's explicit direction -- NIFTY and BANKNIFTY only now.
     // Same P&F box%/reversal parameters and same all-legs-must-agree
-    // confluence rule for every index — only the underlying contracts
-    // differ. NIFTY still lists real weekly-cadence contracts; BANKNIFTY/
-    // FINNIFTY are monthly-only (confirmed live against Definedge's master
-    // data), so those two skip the weekly leg entirely rather than reading
-    // a fake one — see definedge_service.py's INDEX_CONFIG chart_mode for
-    // the backend side of this.
-    indices: ["NIFTY", "BANKNIFTY", "FINNIFTY"],
+    // confluence rule for both -- only the underlying contracts differ.
+    // NIFTY lists real weekly-cadence contracts; BANKNIFTY is monthly-only
+    // (confirmed live against Definedge's master data), so it skips the
+    // weekly leg entirely rather than reading a fake one -- see
+    // definedge_service.py's INDEX_CONFIG chart_mode for the backend side.
+    indices: ["NIFTY", "BANKNIFTY"],
     overview: {
-      purpose: "Confirms the near-term directional regime for NIFTY, BANKNIFTY, and FINNIFTY before you commit to a trade.",
+      purpose: "Confirms the near-term directional bias for NIFTY and BANKNIFTY before you commit to a trade.",
       whatItMeasures: "Aggregates signals across each index's options market structure into a single Bullish, Bearish, or Neutral read.",
-      interpret: "Use it as confirmation, not a standalone entry signal — an aligned bias supports a trade idea already in place; an opposing bias is a caution flag.",
+      interpret: "Use it as confirmation, not a standalone entry signal -- an aligned bias supports a trade idea already in place; an opposing bias is a caution flag.",
     },
   },
   {
@@ -413,9 +413,9 @@ const GENERIC_KIND = {
 // India's copy or shipping a wrong statement.
 const OVERVIEW_OVERRIDES = {
   "index-vector": {
-    purpose: "Confirms the near-term directional regime for this market's index instruments before you commit to a trade.",
-    whatItMeasures: "Aggregates signals across the index's options market structure into a single Bullish, Bearish, or Neutral read — two straddles either side of the money plus the at-the-money call and put, all four of which must agree.",
-    interpret: "Use it as confirmation, not a standalone entry signal — an aligned bias supports a trade idea already in place; an opposing bias is a caution flag.",
+    purpose: "Confirms the near-term directional bias for this market's index instruments before you commit to a trade.",
+    whatItMeasures: "Aggregates signals across the index's options market structure into a single Bullish, Bearish, or Neutral read: two straddles either side of the money plus the at-the-money call and put, all four of which must agree.",
+    interpret: "Use it as confirmation, not a standalone entry signal -- an aligned bias supports a trade idea already in place; an opposing bias is a caution flag.",
   },
   "peter-tingle": {
     purpose: "A spider-sense check on a single instrument — surfaces the technical and fundamental warning signs before you commit, in one place.",

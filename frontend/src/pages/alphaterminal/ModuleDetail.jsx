@@ -6,7 +6,7 @@ import { ArrowLeft, ChevronDown, ChevronRight, ExternalLink, Loader2 } from "luc
 import Navbar from "../../components/site/Navbar";
 import Footer from "../../components/site/Footer";
 import {
-  MomentumTable, StraddleCompass, openTradingViewChart,
+  MomentumTable, openTradingViewChart,
 } from "../AlphaTerminal";
 import { getModule, moduleRequiresAuth } from "./modules";
 import EwmaCrossoverTool from "./EwmaCrossover";
@@ -23,6 +23,7 @@ import { USMomentumLeadersTool, USMomentumInvestingTool } from "./USMomentum";
 import USMarketAssessmentTool from "./USMarketAssessment";
 import CryptoDashboard from "./CryptoDashboard";
 import { MMMomentumLeaders, MMIndexVector, MMUnavailable } from "./MultiMarketTools";
+import { VectorHero, IndexIntelligenceCard, IntelligenceFeatureStrip } from "./IndexVectorHero";
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 const EASE = [0.16, 1, 0.3, 1];
@@ -85,12 +86,16 @@ const Header = ({ module }) => (
         <span className="text-slate-300">{module.title}</span>
       </p>
 
-      <div>
-        <h1 className="font-display font-normal tracking-[-0.015em] text-white text-4xl md:text-5xl leading-[0.95]">{module.title}</h1>
-        {module.shortDescription && (
-          <p className="text-sm md:text-base text-slate-400 font-light mt-4 max-w-xl">{module.shortDescription}</p>
-        )}
-      </div>
+      {module.kind === "vector" ? (
+        <VectorHero title={module.title} description={module.shortDescription} />
+      ) : (
+        <div>
+          <h1 className="font-display font-normal tracking-[-0.015em] text-white text-4xl md:text-5xl leading-[0.95]">{module.title}</h1>
+          {module.shortDescription && (
+            <p className="text-sm md:text-base text-slate-400 font-light mt-4 max-w-xl">{module.shortDescription}</p>
+          )}
+        </div>
+      )}
     </div>
   </section>
 );
@@ -180,16 +185,19 @@ const ScannerDashboard = ({ scannerKey }) => {
 const LiveDashboard = ({ module, signals }) => (
   <Section no="01" testId="section-live-dashboard">
     {module.kind === "vector" && (
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4" data-testid="vector-index-grid">
-        {module.indices.map((idx, i) => {
-          const isLastOfOdd = i === module.indices.length - 1 && module.indices.length % 2 === 1;
-          return (
-            <div key={idx} className={isLastOfOdd ? "md:col-span-2" : ""}>
-              <StraddleCompass signal={signals[idx]} index={idx} />
-            </div>
-          );
-        })}
-      </div>
+      <>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4" data-testid="vector-index-grid">
+          {module.indices.map((idx, i) => {
+            const isLastOfOdd = i === module.indices.length - 1 && module.indices.length % 2 === 1;
+            return (
+              <div key={idx} className={isLastOfOdd ? "md:col-span-2" : ""}>
+                <IndexIntelligenceCard signal={signals[idx]} index={idx} />
+              </div>
+            );
+          })}
+        </div>
+        <IntelligenceFeatureStrip />
+      </>
     )}
     {module.kind === "scanner" && <ScannerDashboard scannerKey={module.scannerKey} />}
     {module.kind === "ewma" && <EwmaCrossoverTool />}
