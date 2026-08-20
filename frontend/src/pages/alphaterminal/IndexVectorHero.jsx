@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import axios from "axios";
 import { motion } from "framer-motion";
-import { RefreshCw, Minus, TrendingUp, TrendingDown, Info, Layers, Shield, Zap, Target } from "lucide-react";
+import { RefreshCw, Minus, TrendingUp, TrendingDown, Info } from "lucide-react";
 import { INDEX_LABELS, isNseSessionLive } from "../AlphaTerminal";
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
@@ -42,7 +42,6 @@ const T = {
 };
 
 const GLOW_SAPPHIRE = "0 0 30px rgba(22, 119, 255, 0.08)";
-const GLOW_BULLISH = "0 0 30px rgba(22, 199, 132, 0.06)";
 
 // One color per model state, applied uniformly across a card (monogram,
 // index subtitle, bias dial, bias text, spot marker) -- Neutral is its
@@ -81,7 +80,21 @@ const HeroTexture = () => (
   </svg>
 );
 
-export const VectorHero = ({ title, description }) => (
+// Re-checked periodically (not just once at mount) so a tab left open
+// across the market open/close boundary updates its own "Live" state
+// instead of freezing whatever was true when the page first loaded.
+const useSessionLive = () => {
+  const [live, setLive] = useState(isNseSessionLive());
+  useEffect(() => {
+    const id = setInterval(() => setLive(isNseSessionLive()), 30000);
+    return () => clearInterval(id);
+  }, []);
+  return live;
+};
+
+export const VectorHero = ({ title, description }) => {
+  const sessionLive = useSessionLive();
+  return (
   <div
     className="relative overflow-hidden rounded-2xl px-6 py-8 md:px-10 md:py-10"
     style={{ background: T.bg2, border: `1px solid ${T.borderPrimary}` }}
@@ -117,8 +130,6 @@ export const VectorHero = ({ title, description }) => (
           style={ui(15, 400, T.textSecondary)}
         >
           {description}
-          <br />
-          Unbiased. Systematic. Data-driven.
         </motion.p>
       </div>
 
@@ -140,8 +151,9 @@ export const VectorHero = ({ title, description }) => (
           <div>
             <div className="flex items-center gap-2">
               <p style={ui(14, 600, T.textPrimary)}>Model Update</p>
-              <span className="inline-flex items-center gap-1" style={{ ...microLabel, color: T.bullish, letterSpacing: "0.08em" }}>
-                <span className="h-1.5 w-1.5 rounded-full animate-pulse" style={{ background: T.bullish }} /> Live
+              <span className="inline-flex items-center gap-1" style={{ ...microLabel, color: sessionLive ? T.bullish : T.textMuted, letterSpacing: "0.08em" }}>
+                <span className={`h-1.5 w-1.5 rounded-full ${sessionLive ? "animate-pulse" : ""}`} style={{ background: sessionLive ? T.bullish : T.textMuted }} />
+                {sessionLive ? "Live" : "Market Closed"}
               </span>
             </div>
             <p className="mt-1 leading-relaxed" style={ui(12, 400, T.textMuted)}>
@@ -152,7 +164,8 @@ export const VectorHero = ({ title, description }) => (
       </motion.div>
     </div>
   </div>
-);
+  );
+};
 
 /* --------------------------------------------------------------------- */
 /* Directional bias dial                                                  */
@@ -254,6 +267,7 @@ export const IndexIntelligenceCard = ({ signal, index }) => {
   const bias = s.bias || "Neutral";
   const tone = BIAS_TONE[bias] || BIAS_TONE.Neutral;
   const label = INDEX_LABELS[index] || index;
+  const sessionLive = useSessionLive();
 
   const [liveSpot, setLiveSpot] = useState(null);
   useEffect(() => {
@@ -278,7 +292,7 @@ export const IndexIntelligenceCard = ({ signal, index }) => {
 
   return (
     <div
-      className="rounded-2xl overflow-hidden"
+      className="h-full flex flex-col rounded-2xl overflow-hidden"
       style={{ background: T.card, border: `1px solid ${T.borderPrimary}` }}
       data-testid={`index-intelligence-card-${index}`}
     >
@@ -329,14 +343,13 @@ export const IndexIntelligenceCard = ({ signal, index }) => {
           <Info size={10} color={T.textMuted} />
         </div>
         <p className="mt-4" style={{ ...microLabel, color: T.textMuted, letterSpacing: "0.1em" }}>
-          Trade Confirmation Engine &middot; Not Financial Advice
+          Trade Confirmation Engine
         </p>
       </div>
 
       {/* Model readout */}
       {(bullishLine || bearishLine) && (
         <div className="px-6 py-5" style={{ borderTop: `1px solid ${T.borderSecondary}` }}>
-          <p className="mb-2" style={microLabel}>Model Readout</p>
           <div className="space-y-1">
             {bullishLine && (
               <p style={ui(14, 400, T.textSecondary)}>
@@ -353,48 +366,19 @@ export const IndexIntelligenceCard = ({ signal, index }) => {
         </div>
       )}
 
-      {/* Footer */}
-      <div className="flex items-center justify-between gap-3 px-6 py-4" style={{ borderTop: `1px solid ${T.borderSecondary}` }}>
+      {/* Footer -- mt-auto so it always sits at the card's bottom edge even
+          when the sibling card has an extra Model Readout line (e.g. one
+          index reachable both ways, the other only one) */}
+      <div className="mt-auto flex items-center justify-between gap-3 px-6 py-4" style={{ borderTop: `1px solid ${T.borderSecondary}` }}>
         <p style={mono(11, 400, T.textMuted)}>
           {s.updated_label ? `Last updated: ${s.updated_label}` : "Awaiting first read"}
         </p>
-        <span className="inline-flex items-center gap-1.5" style={{ ...microLabel, letterSpacing: "0.08em", color: T.bullish }}>
-          <span className="h-1.5 w-1.5 rounded-full animate-pulse" style={{ background: T.bullish }} /> Live Data
+        <span className="inline-flex items-center gap-1.5" style={{ ...microLabel, letterSpacing: "0.08em", color: sessionLive ? T.bullish : T.textMuted }}>
+          <span className={`h-1.5 w-1.5 rounded-full ${sessionLive ? "animate-pulse" : ""}`} style={{ background: sessionLive ? T.bullish : T.textMuted }} />
+          {sessionLive ? "Live Data" : "Market Closed"}
         </span>
       </div>
     </div>
   );
 };
 
-/* --------------------------------------------------------------------- */
-/* Feature strip                                                          */
-/* --------------------------------------------------------------------- */
-const FEATURES = [
-  { icon: Layers, title: "Multi-Factor Engine", description: "Price, momentum, volatility, open interest and options market structure." },
-  { icon: Shield, title: "Unbiased Framework", description: "No predictions. Only probability and confirmation conditions." },
-  { icon: Zap, title: "Continuous Processing", description: "Live pricing refreshed throughout the trading session." },
-  { icon: Target, title: "Built for Traders", description: "Confirmation for active, disciplined market participants." },
-];
-
-export const IntelligenceFeatureStrip = () => (
-  <div
-    className="mt-6 rounded-2xl px-6 py-6 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6"
-    style={{ background: T.card, border: `1px solid ${T.borderPrimary}` }}
-    data-testid="vector-feature-strip"
-  >
-    {FEATURES.map(({ icon: Icon, title, description }) => (
-      <div key={title} className="flex items-start gap-3">
-        <span
-          className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg"
-          style={{ border: `1px solid ${T.borderPrimary}`, background: T.cardElevated, color: T.sapphireBright, boxShadow: GLOW_BULLISH }}
-        >
-          <Icon size={16} />
-        </span>
-        <span>
-          <span className="block" style={ui(14, 600, T.textPrimary)}>{title}</span>
-          <span className="block mt-1 leading-relaxed" style={ui(12, 400, T.textMuted)}>{description}</span>
-        </span>
-      </div>
-    ))}
-  </div>
-);

@@ -23,7 +23,7 @@ import { USMomentumLeadersTool, USMomentumInvestingTool } from "./USMomentum";
 import USMarketAssessmentTool from "./USMarketAssessment";
 import CryptoDashboard from "./CryptoDashboard";
 import { MMMomentumLeaders, MMIndexVector, MMUnavailable } from "./MultiMarketTools";
-import { VectorHero, IndexIntelligenceCard, IntelligenceFeatureStrip } from "./IndexVectorHero";
+import { VectorHero, IndexIntelligenceCard } from "./IndexVectorHero";
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 const EASE = [0.16, 1, 0.3, 1];
@@ -185,19 +185,16 @@ const ScannerDashboard = ({ scannerKey }) => {
 const LiveDashboard = ({ module, signals }) => (
   <Section no="01" testId="section-live-dashboard">
     {module.kind === "vector" && (
-      <>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4" data-testid="vector-index-grid">
-          {module.indices.map((idx, i) => {
-            const isLastOfOdd = i === module.indices.length - 1 && module.indices.length % 2 === 1;
-            return (
-              <div key={idx} className={isLastOfOdd ? "md:col-span-2" : ""}>
-                <IndexIntelligenceCard signal={signals[idx]} index={idx} />
-              </div>
-            );
-          })}
-        </div>
-        <IntelligenceFeatureStrip />
-      </>
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4" data-testid="vector-index-grid">
+        {module.indices.map((idx, i) => {
+          const isLastOfOdd = i === module.indices.length - 1 && module.indices.length % 2 === 1;
+          return (
+            <div key={idx} className={isLastOfOdd ? "md:col-span-2" : ""}>
+              <IndexIntelligenceCard signal={signals[idx]} index={idx} />
+            </div>
+          );
+        })}
+      </div>
     )}
     {module.kind === "scanner" && <ScannerDashboard scannerKey={module.scannerKey} />}
     {module.kind === "ewma" && <EwmaCrossoverTool />}
