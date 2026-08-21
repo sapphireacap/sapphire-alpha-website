@@ -64,7 +64,7 @@ export const MODULES = [
     live: true,
     icon: Crosshair,
     title: "Exitline",
-    shortDescription: "Intraday levels with a suggested SL and TP.",
+    shortDescription: "A systematic map of intraday price levels.",
     overview: {
       purpose: "Turns yesterday's high/low/close into an intraday level ladder against the live price, with a rule-based stop-loss and take-profit.",
       whatItMeasures: "Classifies the current price into a mean-reversion Trading Zone (S3–R3) or a trend-day Breakout Zone (beyond R4/S4), and derives SL/TP from that read.",
@@ -241,7 +241,7 @@ export const US_MODULES = [
     live: true,
     icon: Crosshair,
     title: "Exitline",
-    shortDescription: "Intraday levels with a suggested SL and TP.",
+    shortDescription: "A systematic map of intraday price levels.",
     overview: {
       purpose: "Same Camarilla level ladder and SL/TP logic as Exitline, for US equities.",
       whatItMeasures: "Classifies the current price into a mean-reversion Trading Zone or a trend-day Breakout Zone against yesterday's close, and derives SL/TP from that read.",

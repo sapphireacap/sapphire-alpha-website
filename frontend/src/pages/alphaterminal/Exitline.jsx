@@ -311,10 +311,7 @@ const TVChart = ({ chart, sessions, interval, onIntervalChange, fetchGen, market
 
   return (
     <div className="rounded-2xl p-4 md:p-6" style={{ background: T.card, border: `1px solid ${T.borderPrimary}` }} data-testid="exitline-chart">
-      <div className="flex flex-wrap items-center justify-between gap-3 mb-3">
-        <p style={{ ...microLabel, letterSpacing: "0.1em" }}>
-          Last {sessions?.length || 30} Sessions <span style={{ color: T.textMuted, textTransform: "none", letterSpacing: "normal" }}>&middot; scroll to view history</span>
-        </p>
+      <div className="flex flex-wrap items-center justify-end gap-3 mb-3">
         <div className="flex items-center gap-1 rounded-md p-0.5" style={{ border: `1px solid ${T.borderPrimary}` }} data-testid="exitline-interval-selector">
           {INTERVALS.map((iv) => (
             <button
@@ -409,6 +406,13 @@ const InstrumentHeader = ({ result, live, lastFetchedAt }) => {
 /* Market structure — real position of price within the S3..V3 ladder     */
 /* --------------------------------------------------------------------- */
 const MarketStructure = ({ levels, ltp }) => {
+  // ltp can be null (no live quote -- market closed, illiquid contract).
+  // Every computation below reads it, so this component simply renders
+  // nothing rather than let null coerce to 0 in the arithmetic (which is
+  // exactly what made supports look like resistances elsewhere on this
+  // page -- see LiveLevelsPanel's own guard for the full explanation).
+  if (ltp == null) return null;
+
   // Position along the full S5..V5 ladder -- purely a real, derived
   // number (where LTP actually sits between the widest real levels), not
   // a fabricated sentiment score.
@@ -477,60 +481,29 @@ const LiveLevelsPanel = ({ levels, ltp }) => {
 
   return (
     <div className="rounded-2xl overflow-hidden h-full" style={{ background: T.card, border: `1px solid ${T.borderPrimary}` }} data-testid="exitline-ladder">
-      <div className="px-5 py-3.5" style={{ borderBottom: `1px solid ${T.borderSecondary}` }}>
+      <div className="px-4 py-3" style={{ borderBottom: `1px solid ${T.borderSecondary}` }}>
         <p style={microLabel}>Live Levels</p>
       </div>
-      <div className="overflow-x-auto">
-        <table className="w-full" style={{ fontVariantNumeric: "tabular-nums" }}>
-          <thead>
-            <tr style={{ borderBottom: `1px solid ${T.borderSecondary}` }}>
-              {[["Level", "left"], ["Price", "right"], ["Distance", "right"], ["%", "right"]].map(([h, align]) => (
-                <th key={h} className={`px-5 py-2.5 whitespace-nowrap text-${align}`} style={microLabel}>{h}</th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map((r) => {
-              const distance = r.isLtp ? null : r.value - ltp;
-              const distPct = r.isLtp ? null : (distance / ltp) * 100;
-              const distTone = distance == null ? T.textMuted : distance > 0 ? T.bearish : T.bullish;
-              const levelColor = r.isLtp ? T.sapphireBright : r.key.startsWith("H") ? T.bearish : r.key === "Pivot" ? "#22D3EE" : T.bullish;
-              return (
-                <tr
-                  key={r.key}
-                  data-testid={r.isLtp ? "exitline-ltp-row" : `exitline-level-${r.key}`}
-                  style={{ borderBottom: `1px solid ${T.borderSecondary}`, background: r.isLtp ? "rgba(22,119,255,0.10)" : "transparent" }}
-                >
-                  <td className="px-5 py-3 whitespace-nowrap">
-                    <span style={{ ...ui(13, 600, levelColor) }}>
-                      {r.isLtp ? "Price (Live)" : DISPLAY_LABELS[r.key] || r.key}
-                    </span>
-                    <span className="block mt-0.5" style={ui(10, 400, T.textMuted)}>
-                      {r.isLtp ? "Market Price" : FULL_NAMES[r.key] || ""}
-                    </span>
-                  </td>
-                  <td className="px-5 py-3 text-right whitespace-nowrap" style={mono(13, r.isLtp ? 700 : 500, r.isLtp ? T.textPrimary : T.textSecondary)}>
-                    &#8377;{fmtNum(r.value)}
-                  </td>
-                  <td className="px-5 py-3 text-right whitespace-nowrap" style={mono(12, 500, distTone)}>
-                    {distance == null ? "—" : `${distance >= 0 ? "+" : "-"}${fmtNum(Math.abs(distance))}`}
-                  </td>
-                  <td className="px-5 py-3 text-right whitespace-nowrap" style={mono(12, 500, distTone)}>
-                    {distPct == null ? "—" : `${distPct >= 0 ? "+" : "-"}${Math.abs(distPct).toFixed(2)}%`}
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-      </div>
-      <div className="flex items-center gap-4 px-5 py-3" style={{ borderTop: `1px solid ${T.borderSecondary}` }}>
-        <span className="inline-flex items-center gap-1.5" style={ui(10, 400, T.textMuted)}>
-          <span className="h-2 w-2 rounded-full" style={{ background: T.bearish }} /> Resistance Levels
-        </span>
-        <span className="inline-flex items-center gap-1.5" style={ui(10, 400, T.textMuted)}>
-          <span className="h-2 w-2 rounded-full" style={{ background: T.bullish }} /> Support Levels
-        </span>
+      <div>
+        {rows.map((r) => {
+          const levelColor = r.isLtp ? T.sapphireBright : r.key.startsWith("H") ? T.bearish : r.key === "Pivot" ? "#22D3EE" : T.bullish;
+          return (
+            <div
+              key={r.key}
+              data-testid={r.isLtp ? "exitline-ltp-row" : `exitline-level-${r.key}`}
+              className="flex items-center justify-between px-4 py-2.5"
+              style={{ borderBottom: `1px solid ${T.borderSecondary}`, background: r.isLtp ? "rgba(22,119,255,0.10)" : "transparent" }}
+            >
+              <div>
+                <span style={ui(12, 600, levelColor)}>{r.isLtp ? "Price (Live)" : DISPLAY_LABELS[r.key] || r.key}</span>
+                <span className="block mt-0.5" style={ui(9, 400, T.textMuted)}>{r.isLtp ? "Market Price" : FULL_NAMES[r.key] || ""}</span>
+              </div>
+              <span style={mono(12, r.isLtp ? 700 : 500, r.isLtp ? T.textPrimary : T.textSecondary)}>
+                {r.value == null ? "—" : `₹${fmtNum(r.value)}`}
+              </span>
+            </div>
+          );
+        })}
       </div>
     </div>
   );
@@ -648,7 +621,7 @@ const ExitlineResults = ({ result, interval, onIntervalChange, instrument, lastF
       <InstrumentHeader result={result} live={live} lastFetchedAt={lastFetchedAt} />
       <MarketStructure levels={result.levels} ltp={result.ltp} />
 
-      <div className="grid grid-cols-1 lg:grid-cols-[1.4fr_1fr] gap-4">
+      <div className="grid grid-cols-1 lg:grid-cols-[1fr_220px] gap-4">
         <div>
           <TVChart chart={result.chart} sessions={result.sessions} interval={interval} onIntervalChange={onIntervalChange} fetchGen={result.__fetchGen} market="india" symbol={instrument} />
           <SessionHistoryTable chart={result.chart} />
@@ -657,10 +630,6 @@ const ExitlineResults = ({ result, interval, onIntervalChange, instrument, lastF
       </div>
 
       {result.ltp != null && <StatTiles result={result} />}
-
-      <p className="mt-6 text-center" style={{ ...microLabel, color: T.textMuted }}>
-        Systematic Market Confirmation &middot; Rule-based Signals &middot; Not Investment Advice
-      </p>
     </div>
   );
 };
