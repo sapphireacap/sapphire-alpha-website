@@ -1,5 +1,9 @@
 """Regression tests for options_analytics.py's pure compute functions."""
-from options_analytics import max_pain, put_call_ratio, atm_iv, iv_rank_and_percentile
+import random
+
+from options_analytics import (
+    max_pain, put_call_ratio, atm_iv, realized_vol_series, iv_rank_and_percentile,
+)
 
 
 def test_max_pain_picks_lowest_aggregate_payout():
@@ -58,3 +62,49 @@ def test_iv_rank_none_without_history():
     result = iv_rank_and_percentile(0.15, [])
     assert result["iv_rank"] is None
     assert result["iv_percentile"] is None
+
+
+def test_realized_vol_series_needs_window_plus_one_closes():
+    closes = [100.0] * 15  # fewer than window(20)+1 -> no readings possible
+    assert realized_vol_series(closes, window=20) == []
+
+
+def test_realized_vol_series_length_matches_available_days():
+    random.seed(7)
+    closes = [100.0]
+    for _ in range(60):
+        closes.append(closes[-1] * (1 + random.uniform(-0.01, 0.01)))
+    series = realized_vol_series(closes, window=20)
+    # one reading per day once `window` prior closes exist
+    assert len(series) == len(closes) - 20
+    assert all(v > 0 for v in series)
+
+
+def test_realized_vol_series_flags_a_choppier_window_as_higher_vol():
+    calm = [100.0]
+    for _ in range(30):
+        calm.append(calm[-1] * 1.001)  # smooth, steady drift
+    choppy = [100.0]
+    random.seed(3)
+    for _ in range(30):
+        choppy.append(choppy[-1] * (1 + random.choice([-0.03, 0.03])))  # wide daily swings
+
+    calm_vol = realized_vol_series(calm, window=20)[-1]
+    choppy_vol = realized_vol_series(choppy, window=20)[-1]
+    assert choppy_vol > calm_vol
+
+
+def test_iv_rank_against_realized_vol_history_end_to_end():
+    """The actual pipeline the route uses: build a realized-vol history
+    from closes, then rank a live IV reading against it."""
+    random.seed(11)
+    closes = [100.0]
+    for _ in range(300):
+        closes.append(closes[-1] * (1 + random.uniform(-0.01, 0.01)))
+    history = realized_vol_series(closes, window=20)
+    assert len(history) > 0
+
+    very_high_iv = max(history) + 0.5
+    result = iv_rank_and_percentile(very_high_iv, history)
+    assert result["iv_rank"] == 100.0
+    assert result["history_days"] == len(history)

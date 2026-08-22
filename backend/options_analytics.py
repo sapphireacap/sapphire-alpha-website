@@ -20,13 +20,18 @@ concepts, none requiring anything beyond OI and IV already available:
   direction are read as exhaustion, the same "extreme zone" logic already
   used for breadth indicators elsewhere on this site.
 
-  IV Rank / Percentile: where today's ATM implied volatility sits versus
-  its own trailing history. Rank is today's value's position between the
-  historical min and max (0-100 scale); percentile is the fraction of
-  historical days below today's value. Needs a stored history to be
-  meaningful — see options_analytics_routes.py's daily snapshot job.
+  IV Rank / Percentile: where today's live ATM implied volatility sits
+  versus a history — computed fully automatically, no stored snapshot
+  or manual step required. Since no vendor here exposes historical
+  implied vol (see realized_vol_series()'s docstring), the underlying's
+  own realized-volatility history stands in as that distribution. Rank
+  is today's value's position between the historical min and max
+  (0-100 scale); percentile is the fraction of historical readings
+  below today's value.
 """
 from __future__ import annotations
+
+import math
 
 from typing import Optional
 
@@ -83,6 +88,31 @@ def atm_iv(strikes: dict, spot: float) -> Optional[float]:
     if not ivs:
         return None
     return sum(ivs) / len(ivs)
+
+
+def realized_vol_series(daily_closes: list, window: int = 20) -> list:
+    """Rolling close-to-close log-return realized vol (annualized, x
+    sqrt(252)) — one value per day once `window` prior closes exist.
+    Same formula as blackbox_options_data.py's realized_vol() (built for
+    the Convexity Window/Gamma Backspread backtests), computed here as a
+    full historical series rather than a single trailing value: real
+    historical implied vol doesn't exist anywhere this codebase can reach
+    (neither Definedge nor Dhan expose it), so the underlying's own
+    realized-vol history stands in as the distribution IV Rank/Percentile
+    ranks today's live IV against — the same proxy already used and
+    justified elsewhere in this codebase, not a new assumption invented
+    for this module."""
+    out = []
+    for i in range(window, len(daily_closes)):
+        window_vals = daily_closes[i - window:i + 1]
+        log_returns = [math.log(window_vals[j] / window_vals[j - 1])
+                       for j in range(1, len(window_vals)) if window_vals[j - 1] > 0]
+        if len(log_returns) < 2:
+            continue
+        mean = sum(log_returns) / len(log_returns)
+        variance = sum((r - mean) ** 2 for r in log_returns) / (len(log_returns) - 1)
+        out.append(math.sqrt(variance) * math.sqrt(252))
+    return out
 
 
 def iv_rank_and_percentile(current_iv: float, history: list) -> dict:

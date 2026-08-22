@@ -1880,7 +1880,6 @@ async def on_startup():
         await db.quant_lab_sharpe_cache.create_index("symbol", unique=True)
         await db.quant_lab_momentum_cache.create_index("symbol", unique=True)
         await db.swing_reversal_cache.create_index("symbol", unique=True)
-        await db.options_iv_history.create_index([("index", 1), ("date", 1)], unique=True)
         await mt5c.ensure_indexes(db)
         await db.ipos.create_index("id", unique=True)
         # partialFilterExpression, not sparse=True: every IPO doc stores
@@ -1958,7 +1957,7 @@ multi_asset_returns_router = create_multi_asset_returns_router()
 options_trend_router = create_options_trend_router(db, definedge, get_current_admin, get_current_user, CRON_SECRET)
 market_dashboard_router = create_market_dashboard_router(db, get_current_admin, CRON_SECRET)
 swing_reversal_router = create_swing_reversal_router(db, definedge, get_current_admin, CRON_SECRET)
-options_analytics_router = create_options_analytics_router(db, get_current_admin, CRON_SECRET)
+options_analytics_router = create_options_analytics_router(db, definedge)
 
 app.include_router(api_router)
 app.include_router(ipo_router, prefix="/api")

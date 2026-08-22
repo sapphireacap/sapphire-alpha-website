@@ -93,11 +93,11 @@ const OptionsAnalyticsTool = () => {
               label="IV Rank / Percentile"
               value={result.iv_rank === null ? "—" : `${result.iv_rank} / ${result.iv_percentile}`}
               tone={ivTone(result.iv_rank)}
-              sub={result.history_days > 0 ? `${result.history_days} day${result.history_days === 1 ? "" : "s"} of history` : "Still accumulating history"}
+              sub={result.history_days > 0 ? `vs. ${result.history_days} realized-vol readings` : "Not enough underlying history yet"}
             />
           </div>
           <p className="text-[11px] font-light text-slate-600 mt-5 max-w-2xl">
-            Max Pain is the strike where option writers collectively owe the least at expiry — a gravitational tendency into expiry, not a guarantee. PCR and IV Rank/Percentile extremes indicate possible exhaustion, not a standalone reversal signal. Not investment advice.
+            Max Pain is the strike where option writers collectively owe the least at expiry — a gravitational tendency into expiry, not a guarantee. No vendor here publishes historical implied volatility, so IV Rank/Percentile benchmarks today's live IV against the underlying's own realized-volatility history instead — a standard proxy, not the same thing as ranking against real historical IV. PCR and IV Rank/Percentile extremes indicate possible exhaustion, not a standalone reversal signal. Not investment advice.
           </p>
         </div>
       )}
