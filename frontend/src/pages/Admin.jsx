@@ -1612,6 +1612,7 @@ const Dashboard = ({ onLogout }) => {
         <SignalPanel onAuthError={onLogout} />
         <IndexTrackRecordPanel onAuthError={onLogout} />
         <QuantLabPanel onAuthError={onLogout} />
+        <SwingReversalPanel onAuthError={onLogout} />
         <IpoPanel onAuthError={onLogout} />
         <BlackBoxPanel onAuthError={onLogout} />
         <MomentumTrackRecordPanel onAuthError={onLogout} />
