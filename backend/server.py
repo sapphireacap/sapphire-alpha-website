@@ -82,6 +82,7 @@ from options_trend_routes import create_options_trend_router
 from market_dashboard_routes import create_market_dashboard_router
 from swing_reversal_routes import create_swing_reversal_router
 from options_analytics_routes import create_options_analytics_router
+from intraday_momentum_routes import create_intraday_momentum_router
 if "stock_terminal" not in DISABLED_FEATURES:
     from stock_terminal_routes import create_stock_terminal_router
     from lattice_routes import create_lattice_router
@@ -1880,6 +1881,7 @@ async def on_startup():
         await db.quant_lab_sharpe_cache.create_index("symbol", unique=True)
         await db.quant_lab_momentum_cache.create_index("symbol", unique=True)
         await db.swing_reversal_cache.create_index("symbol", unique=True)
+        await db.intraday_momentum_cache.create_index("symbol", unique=True)
         await mt5c.ensure_indexes(db)
         await db.ipos.create_index("id", unique=True)
         # partialFilterExpression, not sparse=True: every IPO doc stores
@@ -1958,6 +1960,7 @@ options_trend_router = create_options_trend_router(db, definedge, get_current_ad
 market_dashboard_router = create_market_dashboard_router(db, get_current_admin, CRON_SECRET)
 swing_reversal_router = create_swing_reversal_router(db, definedge, get_current_admin, CRON_SECRET)
 options_analytics_router = create_options_analytics_router(db, definedge)
+intraday_momentum_router = create_intraday_momentum_router(db, definedge, get_current_admin, CRON_SECRET)
 
 app.include_router(api_router)
 app.include_router(ipo_router, prefix="/api")
@@ -1975,6 +1978,7 @@ app.include_router(options_trend_router, prefix="/api")
 app.include_router(market_dashboard_router, prefix="/api")
 app.include_router(swing_reversal_router, prefix="/api")
 app.include_router(options_analytics_router, prefix="/api")
+app.include_router(intraday_momentum_router, prefix="/api")
 
 # Paused features (see DISABLED_FEATURES above) -- router creation/mounting
 # skipped entirely, not just hidden, matching the skipped imports above.

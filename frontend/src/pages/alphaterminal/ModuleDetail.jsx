@@ -26,6 +26,7 @@ import { MMMomentumLeaders, MMIndexVector, MMUnavailable } from "./MultiMarketTo
 import { VectorHero, IndexIntelligenceCard } from "./IndexVectorHero";
 import SwingReversalTool from "./SwingReversal";
 import OptionsAnalyticsTool from "./OptionsAnalytics";
+import IntradayMomentumScannerTool from "./IntradayMomentumScanner";
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 const EASE = [0.16, 1, 0.3, 1];
@@ -209,6 +210,7 @@ const LiveDashboard = ({ module, signals }) => (
     {module.kind === "peter-tingle" && <PeterTingleTool />}
     {module.kind === "swing-reversal" && <SwingReversalTool />}
     {module.kind === "options-analytics" && <OptionsAnalyticsTool />}
+    {module.kind === "intraday-momentum-scanner" && <IntradayMomentumScannerTool />}
     {module.kind === "us-exitline" && <USExitlineTool />}
     {module.kind === "us-momentum-leaders" && <USMomentumLeadersTool />}
     {module.kind === "us-momentum-investing" && <USMomentumInvestingTool />}
@@ -475,6 +477,10 @@ export default function ModuleDetail() {
                  // PCR/IV Rank change every fetch) -- no track record to
                  // accumulate, same as the mm-* adapter-backed modules above.
                  "options-analytics",
+                 // Intraday Momentum Scanner is a live, re-runnable query
+                 // (results change with every filter change) -- no track
+                 // record to accumulate.
+                 "intraday-momentum-scanner",
                  // Index Vector's own track record is admin-only now (see
                  // Admin.jsx's IndexTrackRecordPanel) -- this section had
                  // nothing to show a public visitor but an empty "still

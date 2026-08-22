@@ -645,6 +645,80 @@ const SwingReversalPanel = ({ onAuthError }) => {
   );
 };
 
+// Always-on, same shape as SwingReversalPanel above — refreshes the raw
+// intraday closes/volume cache every symbol's scan filters compute off
+// live. Meant to be hit every 10-15 minutes during market hours via cron
+// (see intraday_momentum_routes.py's CACHE_STALE_SECONDS); this button is
+// for an on-demand top-up, not the primary refresh path.
+const IntradayMomentumScannerPanel = ({ onAuthError }) => {
+  const [status, setStatus] = useState(null);
+  const [starting, setStarting] = useState(false);
+
+  const loadStatus = useCallback(async () => {
+    try {
+      const { data } = await axios.get(`${API}/intraday-momentum/refresh-status`);
+      setStatus(data);
+    } catch {
+      // best-effort — leave last-known status showing
+    }
+  }, []);
+
+  useEffect(() => { loadStatus(); }, [loadStatus]);
+
+  useEffect(() => {
+    if (status?.status !== "running") return undefined;
+    const id = setInterval(loadStatus, 3000);
+    return () => clearInterval(id);
+  }, [status?.status, loadStatus]);
+
+  const refreshNow = async () => {
+    setStarting(true);
+    try {
+      await axios.post(`${API}/intraday-momentum/admin/refresh-now`, {}, authHeaders());
+      toast.success("Nifty 500 Intraday Momentum refresh started — takes a few minutes.");
+      await loadStatus();
+    } catch (err) {
+      if (err?.response?.status === 401) { onAuthError(); return; }
+      toast.error(errMsg(err, "Failed to start refresh."));
+    } finally {
+      setStarting(false);
+    }
+  };
+
+  const running = status?.status === "running";
+
+  return (
+    <div className="glass rounded-2xl p-6 md:p-8 mb-10" data-testid="admin-intraday-momentum-panel">
+      <div className="flex flex-wrap items-center justify-between gap-3 mb-2">
+        <h2 className="font-display text-xl font-bold text-white">Intraday Momentum Scanner</h2>
+        <button
+          onClick={refreshNow}
+          disabled={starting || running}
+          className="btn-ghost !px-4 !py-2 text-sm disabled:opacity-50"
+          data-testid="intraday-momentum-refresh-btn"
+        >
+          {running ? <><Loader2 size={16} className="animate-spin" /> Refreshing</> : <><RefreshCw size={15} /> Refresh Nifty 500 Cache</>}
+        </button>
+      </div>
+      <p className="text-sm text-slate-500 mb-4">
+        Recomputes each Nifty 500 constituent's raw intraday closes/volume (takes a few minutes) — the public scanner's
+        filters (period, EMA, retracement, relative momentum) all compute live off this cached series, so it needs to
+        stay fresh. Set up a cron hitting /api/intraday-momentum/admin/refresh every 10-15 minutes during market hours
+        for this to run automatically — this button is only for an on-demand top-up.
+      </p>
+      {status && (
+        <div className="text-xs text-slate-500 font-mono-ui" data-testid="intraday-momentum-status-line">
+          {status.status === "idle" && "No refresh has run yet."}
+          {running && `Running — ${status.done ?? 0}/${status.total ?? 0} processed (${status.failed ?? 0} failed).`}
+          {status.status === "done" && !running && (
+            <>Last refresh: {(status.total ?? 0) - (status.failed ?? 0)}/{status.total ?? 0} cached, {status.failed ?? 0} failed{status.completed_at ? ` — ${new Date(status.completed_at).toLocaleString("en-IN")}` : ""}.</>
+          )}
+        </div>
+      )}
+    </div>
+  );
+};
+
 /* ------------------------------ Black Box — Prism Alpha ------------------------------ */
 const StrategyReportAccordion = ({ strategy, onAuthError }) => {
   const [open, setOpen] = useState(false);
@@ -1613,6 +1687,7 @@ const Dashboard = ({ onLogout }) => {
         <IndexTrackRecordPanel onAuthError={onLogout} />
         <QuantLabPanel onAuthError={onLogout} />
         <SwingReversalPanel onAuthError={onLogout} />
+        <IntradayMomentumScannerPanel onAuthError={onLogout} />
         <IpoPanel onAuthError={onLogout} />
         <BlackBoxPanel onAuthError={onLogout} />
         <MomentumTrackRecordPanel onAuthError={onLogout} />

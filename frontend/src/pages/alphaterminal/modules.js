@@ -1,5 +1,5 @@
 import {
-  Compass, Crosshair, Activity, Radar, BarChart3, Sliders, TrendingUp, Target, Gauge, GitBranch, LayoutDashboard, Flame, ShieldAlert, LineChart, Repeat, Layers,
+  Compass, Crosshair, Activity, Radar, BarChart3, Sliders, TrendingUp, Target, Gauge, GitBranch, LayoutDashboard, Flame, ShieldAlert, LineChart, Repeat, Layers, Zap,
 } from "lucide-react";
 
 // Every research module shown on the Alpha Terminal directory and served at
@@ -233,6 +233,20 @@ export const MODULES = [
     },
   },
   {
+    slug: "intraday-momentum-scanner",
+    no: "15",
+    kind: "intraday-momentum-scanner",
+    live: true,
+    icon: Zap,
+    title: "Intraday Momentum Scanner",
+    shortDescription: "Ranks intraday momentum by VOLAR — risk-adjusted return over the selected period.",
+    overview: {
+      purpose: "Adapts Definedge's own published Momentum Investing Scanner methodology to intraday bars — a configurable scan, not a fixed daily ranking.",
+      whatItMeasures: "Return% and VOLAR (Return% divided by realized volatility over the same period) per stock, filterable by EMA trend, minimum volume, and maximum retracement from the period's high — with an optional relative-momentum mode scored off a ratio chart against a chosen denominator.",
+      interpret: "A higher VOLAR reflects a steadier intraday uptrend, not just a bigger move — treat the ranked list as a research starting point for the session, not a standing buy list.",
+    },
+  },
+  {
     slug: "options-analytics",
     no: "14",
     kind: "options-analytics",
@@ -384,6 +398,7 @@ const NO_FORMULA_REASON = {
   "breakout-candidates": "Breakout Candidates is served from curated ingested rows, not a computed scan — there is no formula to port.",
   "swing-reversal": "Reversal Signals only scans the Nifty 500 today — porting it to another market's universe is separate work not yet done.",
   "options-analytics": "Options Analytics reads a live NIFTY/BANKNIFTY/FINNIFTY option chain — no equivalent listed chain data source exists yet for this market.",
+  "intraday-momentum-scanner": "Intraday Momentum Scanner only covers the Nifty 500 today — porting the intraday bar feed to another market's universe is separate work not yet done.",
 };
 
 const MARKET_BLOCKERS = {
