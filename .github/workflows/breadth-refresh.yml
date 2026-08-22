@@ -7,10 +7,14 @@ name: Breadth — daily refresh
 # -- this cron just triggers it, it doesn't wait for completion.
 # 10:15 UTC = 15:45 IST, 15 min after NSE's 15:30 IST close so the day's
 # candle is finalised, weekdays only.
-# Re-saved 2026-08-10 to force GitHub to re-register this schedule -- every cron in this repo went silent after the 2026-08-06/07 GitHub Actions outage (confirmed: last scheduled run was 2026-08-07, workflow still showed state=active, GitHub never resumed firing it on its own).
+# Schedule trigger disabled 2026-08-23 -- folded into the single
+# "Refresh All EOD Tools" admin button (see server.py's
+# /admin/eod-refresh-all) per explicit instruction, both to cut Render's
+# outbound bandwidth (which got the service suspended for exceeding its
+# monthly quota) and so every EOD tool can be refreshed with one click
+# instead of scattered separate crons. workflow_dispatch kept as a manual
+# fallback.
 on:
-  schedule:
-    - cron: "15 10 * * 1-5"
   workflow_dispatch: {}
 
 jobs:

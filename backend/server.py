@@ -1170,6 +1170,80 @@ async def swing_picks_update_lcp_admin(admin: dict = Depends(get_current_admin))
 
 
 # ---------------------------------------------------------------------------
+# Refresh All EOD Tools — one admin button that fires every EOD-cadence
+# refresh in this codebase at once, added 2026-08-23 per explicit
+# instruction ("i will press one button and every tool that needs manual
+# refresh will be done"), alongside disabling each tool's own individual
+# GitHub Actions schedule (see breadth-refresh.yml, lattice-evaluate-
+# positions.yml, us-markets-refresh.yml, quant-lab-momentum-refresh.yml --
+# all converted to workflow_dispatch-only). Both changes exist for the same
+# reason: Render suspended this service for exceeding its monthly outbound-
+# bandwidth quota, and scattered automatic crons were the main driver.
+#
+# Deliberately EXCLUDES intraday-cadence tools (N50 quotes, OI buildup,
+# Intraday Momentum Scanner, Prism Alpha's live evaluator) -- those need to
+# run repeatedly THROUGH the trading session, not once at EOD, so bundling
+# them here would misrepresent what "EOD" means and wouldn't serve their
+# purpose anyway.
+#
+# Calls each tool's own existing X-Cron-Key-gated endpoint over loopback
+# (127.0.0.1, the same process's own port) rather than importing internal
+# functions directly -- several of those functions are private closures
+# inside their router factories (e.g. breadth_routes.py's _refresh_group),
+# not importable module-level functions, so re-wiring each one to be
+# importable would be a much larger, riskier change than reusing the
+# endpoints exactly as the GitHub Actions crons already did. Looping back
+# over 127.0.0.1 (not the public URL) means this dispatch mechanism itself
+# adds no external bandwidth -- only the underlying Definedge/NSE fetches
+# each tool was always going to make count, same as before.
+EOD_REFRESH_TARGETS = [
+    ("Breadth (Nifty 50)", "/api/terminal/breadth/admin/refresh?group=nifty-50"),
+    ("Breadth (Nifty 500)", "/api/terminal/breadth/admin/refresh?group=nifty-500"),
+    ("Lattice — evaluate positions", "/api/lattice/admin/evaluate-positions"),
+    ("Quant Lab — Sharpe refresh", "/api/quant-lab/admin/sharpe-refresh"),
+    ("Quant Lab — Momentum refresh", "/api/quant-lab/admin/momentum-refresh"),
+    ("US Markets — Momentum Investing", "/api/us-markets/momentum-investing/admin/refresh"),
+    ("US Markets — Momentum Leaders", "/api/us-markets/momentum-leaders/admin/refresh"),
+    ("US Markets — Breadth", "/api/us-markets/breadth/admin/refresh"),
+    ("Swing Reversal", "/api/swing-reversal/admin/refresh"),
+    ("Options Trend Scanner", "/api/terminal/options-trend/admin/refresh"),
+    ("Market Assessment", "/api/terminal/market-dashboard/admin/refresh"),
+    ("Forex — Breadth", "/api/markets/forex/breadth/admin/refresh"),
+    ("Forex — Rankings", "/api/markets/forex/rankings/admin/refresh"),
+    ("Crypto — Breadth", "/api/markets/crypto/breadth/admin/refresh"),
+    ("Crypto — Rankings", "/api/markets/crypto/rankings/admin/refresh"),
+    ("Momentum Leaders — track record evaluate", "/api/admin/terminal/momentum-track-evaluate"),
+    ("Swing Picks — LCP update", "/api/admin/terminal/swing-picks-update-lcp"),
+]
+
+
+@api_router.post("/admin/eod-refresh-all")
+async def eod_refresh_all(admin: dict = Depends(get_current_admin)):
+    """Fires every EOD tool's own refresh endpoint over loopback, in
+    parallel. Each target endpoint only kicks off ITS OWN background task
+    and returns immediately (same as every individual admin button already
+    did) -- this just saves clicking through all of them one at a time."""
+    port = os.environ.get("PORT", "8000")
+    base = f"http://127.0.0.1:{port}"
+    results = []
+
+    async def call_one(label: str, path: str):
+        try:
+            async with httpx.AsyncClient(timeout=15) as c:
+                r = await c.post(f"{base}{path}", headers={"X-Cron-Key": CRON_SECRET})
+            results.append({"label": label, "path": path, "status": r.status_code, "ok": r.status_code == 200})
+        except Exception as e:  # noqa: BLE001 — one target failing must not block the rest
+            results.append({"label": label, "path": path, "status": None, "ok": False, "error": str(e)})
+
+    await asyncio.gather(*(call_one(label, path) for label, path in EOD_REFRESH_TARGETS))
+    return {
+        "triggered": sum(1 for r in results if r["ok"]),
+        "total": len(results),
+        "results": results,
+    }
+
+
+# ---------------------------------------------------------------------------
 # Index Vector — multi-index directional bias indicator (formerly the
 # NIFTY-only "Straddle Compass"; extended 2026-07-27 to also run BANKNIFTY,
 # SENSEX, and BANKEX, then 2026-08-03 swapped SENSEX/BANKEX out for FINNIFTY

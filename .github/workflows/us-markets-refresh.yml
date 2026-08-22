@@ -6,11 +6,11 @@ name: US Markets — daily refresh
 # off its background job and returns immediately (a full ~503-symbol
 # pass is a multi-minute job, same shape as quant-lab-momentum-refresh.yml)
 # -- this cron just triggers all three, it doesn't wait for completion.
-# 22:00 UTC comfortably clears the US market's 4pm ET close year-round
-# (20:00 UTC during EDT, 21:00 UTC during EST), weekdays only.
+# Schedule trigger disabled 2026-08-23 -- folded into the single
+# "Refresh All EOD Tools" admin button (see server.py's
+# /admin/eod-refresh-all), same reasoning as breadth-refresh.yml.
+# workflow_dispatch kept as a manual fallback.
 on:
-  schedule:
-    - cron: "0 22 * * 1-5"
   workflow_dispatch: {}
 
 jobs:
