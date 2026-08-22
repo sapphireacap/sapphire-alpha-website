@@ -1,5 +1,5 @@
 import {
-  Compass, Crosshair, Activity, Radar, BarChart3, Sliders, TrendingUp, Target, Gauge, GitBranch, LayoutDashboard, Flame, ShieldAlert, LineChart,
+  Compass, Crosshair, Activity, Radar, BarChart3, Sliders, TrendingUp, Target, Gauge, GitBranch, LayoutDashboard, Flame, ShieldAlert, LineChart, Repeat,
 } from "lucide-react";
 
 // Every research module shown on the Alpha Terminal directory and served at
@@ -218,6 +218,20 @@ export const MODULES = [
       interpret: "A candidate here is a setup to watch, not a trigger — confirmation typically requires the breakout to hold with follow-through volume.",
     },
   },
+  {
+    slug: "swing-reversal",
+    no: "13",
+    kind: "swing-reversal",
+    live: true,
+    icon: Repeat,
+    title: "Reversal Signals",
+    shortDescription: "Flags objective swing-reversal setups the day they trigger.",
+    overview: {
+      purpose: "Surfaces stocks where a precise, rule-based reversal just confirmed — a different job than ranking momentum or reading sentiment.",
+      whatItMeasures: "A small family of exact open/high/low/close relationships against a stock's own prior session or prior swing point — never a subjective chart read.",
+      interpret: "Each signal comes with the pattern name, direction, and a reference stop-loss level. Treat it as a same-day reversal flag to investigate, not a standing buy/sell list.",
+    },
+  },
 ];
 
 // US Markets — same directory-of-pages shape as MODULES above (own
@@ -354,6 +368,7 @@ export const US_MODULES = [
 const NO_FORMULA_REASON = {
   "swing-picks": "Swing Picks is a curated pick list synced from a CSV export, not a computed scan — there is no formula to run against another market's instruments.",
   "breakout-candidates": "Breakout Candidates is served from curated ingested rows, not a computed scan — there is no formula to port.",
+  "swing-reversal": "Reversal Signals only scans the Nifty 500 today — porting it to another market's universe is separate work not yet done.",
 };
 
 const MARKET_BLOCKERS = {

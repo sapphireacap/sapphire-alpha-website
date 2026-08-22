@@ -574,6 +574,77 @@ const QuantLabPanel = ({ onAuthError }) => {
   );
 };
 
+/* ----------------------- Reversal Signals (Swing Reversal scanner) ----------------------- */
+// Always-on (not gated behind DISABLED_FEATURES=quant_lab like the panel
+// above) — this is its own live product module, not a paused experiment.
+const SwingReversalPanel = ({ onAuthError }) => {
+  const [status, setStatus] = useState(null);
+  const [starting, setStarting] = useState(false);
+
+  const loadStatus = useCallback(async () => {
+    try {
+      const { data } = await axios.get(`${API}/swing-reversal/refresh-status`);
+      setStatus(data);
+    } catch {
+      // best-effort — leave last-known status showing
+    }
+  }, []);
+
+  useEffect(() => { loadStatus(); }, [loadStatus]);
+
+  useEffect(() => {
+    if (status?.status !== "running") return undefined;
+    const id = setInterval(loadStatus, 3000);
+    return () => clearInterval(id);
+  }, [status?.status, loadStatus]);
+
+  const refreshNow = async () => {
+    setStarting(true);
+    try {
+      await axios.post(`${API}/swing-reversal/admin/refresh-now`, {}, authHeaders());
+      toast.success("Nifty 500 Reversal Signals refresh started — takes a few minutes.");
+      await loadStatus();
+    } catch (err) {
+      if (err?.response?.status === 401) { onAuthError(); return; }
+      toast.error(errMsg(err, "Failed to start refresh."));
+    } finally {
+      setStarting(false);
+    }
+  };
+
+  const running = status?.status === "running";
+
+  return (
+    <div className="glass rounded-2xl p-6 md:p-8 mb-10" data-testid="admin-swing-reversal-panel">
+      <div className="flex flex-wrap items-center justify-between gap-3 mb-2">
+        <h2 className="font-display text-xl font-bold text-white">Reversal Signals</h2>
+        <button
+          onClick={refreshNow}
+          disabled={starting || running}
+          className="btn-ghost !px-4 !py-2 text-sm disabled:opacity-50"
+          data-testid="swing-reversal-refresh-btn"
+        >
+          {running ? <><Loader2 size={16} className="animate-spin" /> Scanning</> : <><RefreshCw size={15} /> Scan Nifty 500</>}
+        </button>
+      </div>
+      <p className="text-sm text-slate-500 mb-4">
+        Runs the reversal-pattern detectors against all Nifty 500 constituents (takes a few minutes) — needed once
+        each session before the public Reversal Signals page has anything to show. Scheduled to also run once daily
+        via cron; this button is for an on-demand re-scan.
+      </p>
+      {status && (
+        <div className="text-xs text-slate-500 font-mono-ui" data-testid="swing-reversal-status-line">
+          {status.status === "idle" && "No scan has run yet."}
+          {running && `Scanning — ${status.done ?? 0}/${status.total ?? 0} processed (${status.with_signal ?? 0} with a signal, ${status.failed ?? 0} failed).`}
+          {status.status === "done" && !running && (
+            <>Last scan: {status.with_signal ?? 0}/{status.total ?? 0} with an active signal, {status.failed ?? 0} failed{status.completed_at ? ` — ${new Date(status.completed_at).toLocaleString("en-IN")}` : ""}.</>
+          )}
+        </div>
+      )}
+    </div>
+  );
+};
+
 /* ------------------------------ Black Box — Prism Alpha ------------------------------ */
 const StrategyReportAccordion = ({ strategy, onAuthError }) => {
   const [open, setOpen] = useState(false);

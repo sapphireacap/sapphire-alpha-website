@@ -24,6 +24,7 @@ import USMarketAssessmentTool from "./USMarketAssessment";
 import CryptoDashboard from "./CryptoDashboard";
 import { MMMomentumLeaders, MMIndexVector, MMUnavailable } from "./MultiMarketTools";
 import { VectorHero, IndexIntelligenceCard } from "./IndexVectorHero";
+import SwingReversalTool from "./SwingReversal";
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 const EASE = [0.16, 1, 0.3, 1];
@@ -205,6 +206,7 @@ const LiveDashboard = ({ module, signals }) => (
     {module.kind === "breadth" && <BreadthTool />}
     {module.kind === "options-trend" && <OptionsTrendTool />}
     {module.kind === "peter-tingle" && <PeterTingleTool />}
+    {module.kind === "swing-reversal" && <SwingReversalTool />}
     {module.kind === "us-exitline" && <USExitlineTool />}
     {module.kind === "us-momentum-leaders" && <USMomentumLeadersTool />}
     {module.kind === "us-momentum-investing" && <USMomentumInvestingTool />}
@@ -463,6 +465,10 @@ export default function ModuleDetail() {
                  "mm-exitline", "mm-breadth", "mm-relative-strength", "mm-momentum-investing",
                  "mm-momentum-leaders", "mm-sharpe", "mm-ewma", "mm-gamma-pulse",
                  "mm-index-vector", "mm-peter-tingle", "mm-unavailable", "crypto-dashboard",
+                 // Reversal Signals shows today's active signals directly in
+                 // its own Current Reading section -- no separate track
+                 // record to accumulate.
+                 "swing-reversal",
                  // Index Vector's own track record is admin-only now (see
                  // Admin.jsx's IndexTrackRecordPanel) -- this section had
                  // nothing to show a public visitor but an empty "still
