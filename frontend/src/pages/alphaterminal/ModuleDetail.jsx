@@ -25,6 +25,7 @@ import CryptoDashboard from "./CryptoDashboard";
 import { MMMomentumLeaders, MMIndexVector, MMUnavailable } from "./MultiMarketTools";
 import { VectorHero, IndexIntelligenceCard } from "./IndexVectorHero";
 import SwingReversalTool from "./SwingReversal";
+import OptionsAnalyticsTool from "./OptionsAnalytics";
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 const EASE = [0.16, 1, 0.3, 1];
@@ -207,6 +208,7 @@ const LiveDashboard = ({ module, signals }) => (
     {module.kind === "options-trend" && <OptionsTrendTool />}
     {module.kind === "peter-tingle" && <PeterTingleTool />}
     {module.kind === "swing-reversal" && <SwingReversalTool />}
+    {module.kind === "options-analytics" && <OptionsAnalyticsTool />}
     {module.kind === "us-exitline" && <USExitlineTool />}
     {module.kind === "us-momentum-leaders" && <USMomentumLeadersTool />}
     {module.kind === "us-momentum-investing" && <USMomentumInvestingTool />}
@@ -469,6 +471,10 @@ export default function ModuleDetail() {
                  // its own Current Reading section -- no separate track
                  // record to accumulate.
                  "swing-reversal",
+                 // Options Analytics is a live option-chain read (Max Pain/
+                 // PCR/IV Rank change every fetch) -- no track record to
+                 // accumulate, same as the mm-* adapter-backed modules above.
+                 "options-analytics",
                  // Index Vector's own track record is admin-only now (see
                  // Admin.jsx's IndexTrackRecordPanel) -- this section had
                  // nothing to show a public visitor but an empty "still

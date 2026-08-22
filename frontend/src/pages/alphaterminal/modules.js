@@ -1,5 +1,5 @@
 import {
-  Compass, Crosshair, Activity, Radar, BarChart3, Sliders, TrendingUp, Target, Gauge, GitBranch, LayoutDashboard, Flame, ShieldAlert, LineChart, Repeat,
+  Compass, Crosshair, Activity, Radar, BarChart3, Sliders, TrendingUp, Target, Gauge, GitBranch, LayoutDashboard, Flame, ShieldAlert, LineChart, Repeat, Layers,
 } from "lucide-react";
 
 // Every research module shown on the Alpha Terminal directory and served at
@@ -232,6 +232,20 @@ export const MODULES = [
       interpret: "Each signal comes with the pattern name, direction, and a reference stop-loss level. Treat it as a same-day reversal flag to investigate, not a standing buy/sell list.",
     },
   },
+  {
+    slug: "options-analytics",
+    no: "14",
+    kind: "options-analytics",
+    live: true,
+    icon: Layers,
+    title: "Options Analytics",
+    shortDescription: "Max Pain, Put-Call Ratio, and IV Rank from the live option chain.",
+    overview: {
+      purpose: "Reads the option chain itself for expiry-gravity and sentiment-extreme signals, a different axis than every price-action module on this terminal.",
+      whatItMeasures: "Max Pain (the strike where option writers collectively owe the least at expiry), Put-Call Ratio, and where today's at-the-money implied volatility sits against its own trailing history.",
+      interpret: "PCR and IV Rank extremes flag possible exhaustion, not a standalone signal. Max Pain is a gravitational tendency into expiry, strongest in the final day or two — not a guarantee.",
+    },
+  },
 ];
 
 // US Markets — same directory-of-pages shape as MODULES above (own
@@ -369,6 +383,7 @@ const NO_FORMULA_REASON = {
   "swing-picks": "Swing Picks is a curated pick list synced from a CSV export, not a computed scan — there is no formula to run against another market's instruments.",
   "breakout-candidates": "Breakout Candidates is served from curated ingested rows, not a computed scan — there is no formula to port.",
   "swing-reversal": "Reversal Signals only scans the Nifty 500 today — porting it to another market's universe is separate work not yet done.",
+  "options-analytics": "Options Analytics reads a live NIFTY/BANKNIFTY/FINNIFTY option chain — no equivalent listed chain data source exists yet for this market.",
 };
 
 const MARKET_BLOCKERS = {

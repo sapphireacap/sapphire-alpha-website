@@ -645,6 +645,56 @@ const SwingReversalPanel = ({ onAuthError }) => {
   );
 };
 
+/* -------------------------- Options Analytics (IV history) -------------------------- */
+// IV Rank/Percentile needs a stored history to mean anything — this button
+// triggers today's snapshot on demand (also runs once daily via cron; see
+// options_analytics_routes.py's /admin/snapshot-iv).
+const OptionsAnalyticsPanel = ({ onAuthError }) => {
+  const [starting, setStarting] = useState(false);
+  const [lastResult, setLastResult] = useState(null);
+
+  const snapshotNow = async () => {
+    setStarting(true);
+    try {
+      const { data } = await axios.post(`${API}/options-analytics/admin/snapshot-iv-now`, {}, authHeaders());
+      setLastResult(data);
+      toast.success(`IV snapshot saved for ${data.saved.length}/${data.saved.length + data.failed.length} indices.`);
+    } catch (err) {
+      if (err?.response?.status === 401) { onAuthError(); return; }
+      toast.error(errMsg(err, "Failed to snapshot IV."));
+    } finally {
+      setStarting(false);
+    }
+  };
+
+  return (
+    <div className="glass rounded-2xl p-6 md:p-8 mb-10" data-testid="admin-options-analytics-panel">
+      <div className="flex flex-wrap items-center justify-between gap-3 mb-2">
+        <h2 className="font-display text-xl font-bold text-white">Options Analytics</h2>
+        <button
+          onClick={snapshotNow}
+          disabled={starting}
+          className="btn-ghost !px-4 !py-2 text-sm disabled:opacity-50"
+          data-testid="options-analytics-snapshot-btn"
+        >
+          {starting ? <><Loader2 size={16} className="animate-spin" /> Saving</> : <><RefreshCw size={15} /> Snapshot Today's IV</>}
+        </button>
+      </div>
+      <p className="text-sm text-slate-500 mb-4">
+        Records today's ATM implied volatility for NIFTY/BANKNIFTY/FINNIFTY — IV Rank and IV Percentile on the public
+        page compare against this stored history, so it needs to accumulate for a while (weeks, ideally longer)
+        before those two figures are meaningful. Also runs automatically once daily via cron.
+      </p>
+      {lastResult && (
+        <div className="text-xs text-slate-500 font-mono-ui" data-testid="options-analytics-snapshot-status">
+          {lastResult.date}: saved {lastResult.saved.join(", ") || "none"}
+          {lastResult.failed.length > 0 && ` — failed: ${lastResult.failed.map((f) => f.index).join(", ")}`}
+        </div>
+      )}
+    </div>
+  );
+};
+
 /* ------------------------------ Black Box — Prism Alpha ------------------------------ */
 const StrategyReportAccordion = ({ strategy, onAuthError }) => {
   const [open, setOpen] = useState(false);
@@ -1613,6 +1663,7 @@ const Dashboard = ({ onLogout }) => {
         <IndexTrackRecordPanel onAuthError={onLogout} />
         <QuantLabPanel onAuthError={onLogout} />
         <SwingReversalPanel onAuthError={onLogout} />
+        <OptionsAnalyticsPanel onAuthError={onLogout} />
         <IpoPanel onAuthError={onLogout} />
         <BlackBoxPanel onAuthError={onLogout} />
         <MomentumTrackRecordPanel onAuthError={onLogout} />
