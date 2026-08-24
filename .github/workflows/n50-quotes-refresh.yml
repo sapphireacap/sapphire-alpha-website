@@ -5,14 +5,15 @@ name: N50 Quote Board — auto refresh
 # Definedge session (daily OTP auto-login handles that) -- self-skips
 # via n50_quotes.py's own per-symbol guard if the session is down, same
 # as every other Definedge-backed cron in this repo.
-# 03:45-10:00 UTC = 09:15-15:30 IST, weekdays only, every 15 minutes.
-# Reduced from every 5 minutes (2026-08-23) to cut Render's outbound
-# bandwidth quota usage -- see the n50_quotes admin panel's own
-# staleness tolerance before tightening this back up.
+# 03:45-10:00 UTC = 09:15-15:30 IST, weekdays only, every 5 minutes.
+# Restored to every 5 minutes (2026-08-25) now that the backend is on
+# Render's Starter plan -- was reduced to every 15 minutes (2026-08-23)
+# only to cut bandwidth on the free tier's monthly quota, which no
+# longer applies.
 on:
   schedule:
-    - cron: "45 3 * * 1-5"
-    - cron: "*/15 4-9 * * 1-5"
+    - cron: "45,50,55 3 * * 1-5"
+    - cron: "*/5 4-9 * * 1-5"
     - cron: "0 10 * * 1-5"
   workflow_dispatch: {}
 

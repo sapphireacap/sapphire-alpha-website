@@ -1,0 +1,37 @@
+name: EOD Refresh All — daily consolidated refresh
+
+# Single daily trigger for every EOD-cadence tool at once (Breadth,
+# Lattice, Quant Lab Sharpe/Momentum, US Markets, Swing Reversal, Options
+# Trend, Market Assessment, Forex/Crypto breadth+rankings, Momentum/Swing
+# Picks track-record) — see server.py's EOD_REFRESH_TARGETS for the exact
+# list and _run_eod_refresh_all() for the fan-out logic. Replaces the four
+# separate schedules (breadth-refresh.yml, lattice-evaluate-positions.yml,
+# quant-lab-momentum-refresh.yml, us-markets-refresh.yml) that used to run
+# independently — all four are now workflow_dispatch-only, superseded by
+# this one entry point.
+# Re-enabled 2026-08-25 now that the backend is on Render's Starter plan
+# (no more monthly bandwidth-quota suspension risk that motivated
+# disabling automatic EOD crons in the first place).
+# 10:15 UTC = 15:45 IST, 15 minutes after NSE's 15:30 IST close so the
+# day's candle is finalised, weekdays only.
+on:
+  schedule:
+    - cron: "15 10 * * 1-5"
+  workflow_dispatch: {}
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Call admin/eod-refresh-all-cron
+        run: |
+          status=$(curl -s -o response.json -w "%{http_code}" -X POST \
+            "https://sapphire-alpha-backend.onrender.com/api/admin/eod-refresh-all-cron" \
+            -H "X-Cron-Key: ${{ secrets.CRON_SECRET }}")
+          echo "HTTP status: $status"
+          cat response.json
+          echo
+          if [ "$status" != "200" ]; then
+            echo "::error::admin/eod-refresh-all-cron failed with status $status"
+            exit 1
+          fi

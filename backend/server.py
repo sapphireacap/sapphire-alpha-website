@@ -1217,12 +1217,12 @@ EOD_REFRESH_TARGETS = [
 ]
 
 
-@api_router.post("/admin/eod-refresh-all")
-async def eod_refresh_all(admin: dict = Depends(get_current_admin)):
+async def _run_eod_refresh_all() -> dict:
     """Fires every EOD tool's own refresh endpoint over loopback, in
     parallel. Each target endpoint only kicks off ITS OWN background task
     and returns immediately (same as every individual admin button already
-    did) -- this just saves clicking through all of them one at a time."""
+    did) -- this just saves clicking through all of them one at a time.
+    Shared by both the cron entry point and the admin-panel button below."""
     port = os.environ.get("PORT", "8000")
     base = f"http://127.0.0.1:{port}"
     results = []
@@ -1241,6 +1241,24 @@ async def eod_refresh_all(admin: dict = Depends(get_current_admin)):
         "total": len(results),
         "results": results,
     }
+
+
+@api_router.post("/admin/eod-refresh-all-cron")
+async def eod_refresh_all_cron(request: Request):
+    """External-cron entry point (same X-Cron-Key mechanism as every other
+    scheduled job here) -- run once daily, shortly after NSE close, so
+    every EOD tool stays current automatically without a manual click."""
+    if not CRON_SECRET or request.headers.get("X-Cron-Key") != CRON_SECRET:
+        raise HTTPException(status_code=401, detail="Invalid cron key")
+    return await _run_eod_refresh_all()
+
+
+@api_router.post("/admin/eod-refresh-all")
+async def eod_refresh_all(admin: dict = Depends(get_current_admin)):
+    """Same refresh, admin-JWT-gated for the admin panel's manual button
+    (an on-demand re-run, e.g. after a same-day data correction — the
+    cron above is what keeps this current day to day)."""
+    return await _run_eod_refresh_all()
 
 
 # ---------------------------------------------------------------------------

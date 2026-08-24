@@ -6,14 +6,16 @@ name: OI Build-Up — auto refresh
 # for the price leg -- self-skips via oi_buildup.py's own per-symbol
 # guard if the session is down, same as every other Definedge-backed
 # cron in this repo.
-# Every 30 minutes during the session (heavier than the N50 board --
+# Every 15 minutes during the session (heavier than the N50 board --
 # ~207 F&O stocks, not 50) -- 03:45-10:00 UTC = 09:15-15:30 IST, weekdays only.
-# Reduced from every 15 minutes (2026-08-23) to cut Render's outbound
-# bandwidth quota usage.
+# Restored to every 15 minutes (2026-08-25) now that the backend is on
+# Render's Starter plan -- was reduced to every 30 minutes (2026-08-23)
+# only to cut bandwidth on the free tier's monthly quota, which no
+# longer applies.
 on:
   schedule:
     - cron: "45 3 * * 1-5"
-    - cron: "0,30 4-9 * * 1-5"
+    - cron: "0,15,30,45 4-9 * * 1-5"
   workflow_dispatch: {}
 
 jobs:
