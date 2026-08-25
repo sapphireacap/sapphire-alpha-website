@@ -17,7 +17,6 @@ const TOKEN_KEY = "sac_admin_token";
 const SCANNERS = [
   { key: "momentum", label: "Momentum Leaders" },
   { key: "relative_strength", label: "Relative Strength Leaders" },
-  { key: "breakout", label: "Breakout Candidates" },
   { key: "positional", label: "Positional Opportunities" },
 ];
 const BIAS = ["Bullish", "Bearish", "Neutral"];

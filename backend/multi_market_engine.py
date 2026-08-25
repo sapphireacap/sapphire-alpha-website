@@ -28,13 +28,16 @@ from the module that already owned it. That is what makes the acceptance
 criterion "same formula, different instrument" structurally true rather
 than merely intended: there is only one copy to be right or wrong.
 
-Two modules are NOT here, and that is a finding rather than an omission:
-Swing Picks and Breakout Candidates have no formula anywhere in this
-codebase. Both are curated `terminal_stocks` rows -- Swing Picks is synced
-from a CSV export every 10 days and Breakout Candidates is ingested the
-same way. There is no calculation to point at a different market, so they
-are reported unavailable with that reason on every non-India tab (and
-Breakout Candidates is already `live: false` on India itself).
+One module is NOT here, and that is a finding rather than an omission:
+Swing Picks has no formula anywhere in this codebase -- it's a curated
+`terminal_stocks` collection synced from a CSV export every 10 days, not
+a computed scan. There is no calculation to point at a different market,
+so it is reported unavailable with that reason on every non-India tab.
+
+Breakout Candidates was removed entirely (2026-08-25) -- it was the same
+kind of curated-rows module as Swing Picks above, but with no live data
+source populating it anywhere, on any market. Nothing computed it, so
+there was nothing to port.
 """
 from __future__ import annotations
 
@@ -73,8 +76,6 @@ NO_FORMULA = {
     "swing-picks": "Swing Picks is a curated pick list synced from a CSV export every 10 days, "
                    "not a computed scan — there is no formula in this codebase to run against "
                    "another market's instruments.",
-    "breakout-candidates": "Breakout Candidates is served from curated ingested rows, not a "
-                           "computed scan — there is no formula in this codebase to port.",
 }
 
 

@@ -32,7 +32,7 @@ import zxcvbn
 # set DISABLED_FEATURES="" (or remove the env var and change the default
 # below back to "") to fully restore everything with no other changes.
 # Kept running: Index Vector, Exitline, Momentum Leaders (core `api_router`
-# routes + swing-picks/relative-strength/breakout share the same generic
+# routes + swing-picks/relative-strength share the same generic
 # `/terminal/stocks` endpoint so aren't separately gate-able here -- their
 # own cron refreshes are paused instead, see the .github/workflows/ files),
 # IPO/GMP, the new Convexity Window / Gamma Backspread options strategies.
@@ -174,7 +174,6 @@ ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "admin123")
 SCANNERS = [
     {"key": "momentum", "label": "Momentum Leaders", "active": True},
     {"key": "relative_strength", "label": "Relative Strength Leaders", "active": False},
-    {"key": "breakout", "label": "Breakout Candidates", "active": False},
     {"key": "swing_picks", "label": "Swing Picks", "active": False},
 ]
 SCANNER_KEYS = [s["key"] for s in SCANNERS]

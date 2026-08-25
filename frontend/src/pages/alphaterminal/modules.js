@@ -1,5 +1,5 @@
 import {
-  Compass, Crosshair, Activity, Radar, BarChart3, Sliders, TrendingUp, Target, Gauge, GitBranch, LayoutDashboard, Flame, ShieldAlert, LineChart, Repeat, Layers, Zap,
+  Compass, Crosshair, Activity, Radar, BarChart3, Sliders, Target, Gauge, GitBranch, LayoutDashboard, Flame, ShieldAlert, LineChart, Repeat, Layers, Zap,
 } from "lucide-react";
 
 // Every research module shown on the Alpha Terminal directory and served at
@@ -204,23 +204,8 @@ export const MODULES = [
     },
   },
   {
-    slug: "breakout-candidates",
-    no: "12",
-    kind: "scanner",
-    live: false,
-    scannerKey: "breakout",
-    icon: TrendingUp,
-    title: "Breakout Candidates",
-    shortDescription: "Detects high-conviction breakout setups.",
-    overview: {
-      purpose: "Detects names approaching or clearing a key structural price level.",
-      whatItMeasures: "Screens for price action nearing a defined resistance or support level alongside volume confirmation.",
-      interpret: "A candidate here is a setup to watch, not a trigger — confirmation typically requires the breakout to hold with follow-through volume.",
-    },
-  },
-  {
     slug: "swing-reversal",
-    no: "13",
+    no: "12",
     kind: "swing-reversal",
     live: true,
     icon: Repeat,
@@ -234,7 +219,7 @@ export const MODULES = [
   },
   {
     slug: "intraday-momentum-scanner",
-    no: "15",
+    no: "13",
     kind: "intraday-momentum-scanner",
     live: true,
     icon: Zap,
@@ -395,7 +380,6 @@ export const US_MODULES = [
 // /api/markets/{market}/modules, and the locked card shows them verbatim.
 const NO_FORMULA_REASON = {
   "swing-picks": "Swing Picks is a curated pick list synced from a CSV export, not a computed scan — there is no formula to run against another market's instruments.",
-  "breakout-candidates": "Breakout Candidates is served from curated ingested rows, not a computed scan — there is no formula to port.",
   "swing-reversal": "Reversal Signals only scans the Nifty 500 today — porting it to another market's universe is separate work not yet done.",
   "options-analytics": "Options Analytics reads a live NIFTY/BANKNIFTY/FINNIFTY option chain — no equivalent listed chain data source exists yet for this market.",
   "intraday-momentum-scanner": "Intraday Momentum Scanner only covers the Nifty 500 today — porting the intraday bar feed to another market's universe is separate work not yet done.",
@@ -428,7 +412,6 @@ const SLUG_MAP = {
     "swing-picks": "us-swing-picks",
     "sharpe-dashboard": "us-sharpe-dashboard",
     "ewma-scanner": "us-ewma-scanner",
-    "breakout-candidates": "us-breakout-candidates",
   },
 };
 
@@ -447,7 +430,6 @@ const GENERIC_KIND = {
   "momentum-engine": "mm-momentum-leaders",
   "sharpe-dashboard": "mm-sharpe",
   "ewma-scanner": "mm-ewma",
-  "breakout-candidates": "mm-unavailable",
 };
 
 // Card copy (title + shortDescription) is instrument-neutral and therefore

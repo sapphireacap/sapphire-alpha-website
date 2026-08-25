@@ -87,7 +87,7 @@ def create_multi_market_router(db, get_current_admin, get_current_user, cron_sec
         adapter = _adapter_or_404(market)
         slugs = ["index-vector", "exitline", "peter-tingle", "relative-strength", "breadth-indicator",
                  "options-trend-scanner", "swing-picks", "momentum-investing", "momentum-engine",
-                 "sharpe-dashboard", "ewma-scanner", "breakout-candidates"]
+                 "sharpe-dashboard", "ewma-scanner"]
         out = {}
         for slug in slugs:
             blocked = _blocked(adapter, slug)
