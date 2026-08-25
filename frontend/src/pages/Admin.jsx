@@ -108,23 +108,41 @@ const errMsg = (err, fallback) => {
 // Momentum Scanner) -- those still need their own repeated-through-the-day
 // refresh, not a once-off EOD trigger.
 const EodRefreshAllPanel = ({ onAuthError }) => {
-  const [running, setRunning] = useState(false);
-  const [lastResult, setLastResult] = useState(null);
+  const [starting, setStarting] = useState(false);
+  const [status, setStatus] = useState(null);
+
+  const loadStatus = useCallback(async () => {
+    try {
+      const { data } = await axios.get(`${API}/admin/eod-refresh-all-status`, authHeaders());
+      setStatus(data);
+    } catch {
+      // best-effort — leave last-known status showing
+    }
+  }, []);
+
+  useEffect(() => { loadStatus(); }, [loadStatus]);
+
+  useEffect(() => {
+    if (status?.status !== "running") return undefined;
+    const id = setInterval(loadStatus, 4000);
+    return () => clearInterval(id);
+  }, [status?.status, loadStatus]);
 
   const refreshAll = async () => {
-    setRunning(true);
-    setLastResult(null);
+    setStarting(true);
     try {
-      const { data } = await axios.post(`${API}/admin/eod-refresh-all`, {}, authHeaders());
-      setLastResult(data);
-      toast.success(`Triggered ${data.triggered}/${data.total} EOD tools.`);
+      await axios.post(`${API}/admin/eod-refresh-all`, {}, authHeaders());
+      toast.success("Started — tools trigger one at a time, ~90s apart, over roughly 25 minutes.");
+      await loadStatus();
     } catch (err) {
       if (err?.response?.status === 401) { onAuthError(); return; }
       toast.error(errMsg(err, "Failed to trigger EOD refresh."));
     } finally {
-      setRunning(false);
+      setStarting(false);
     }
   };
+
+  const running = status?.status === "running";
 
   return (
     <div className="glass rounded-2xl p-6 md:p-8 mb-10 border-2 border-sapphire/20" data-testid="admin-eod-refresh-all-panel">
@@ -132,26 +150,29 @@ const EodRefreshAllPanel = ({ onAuthError }) => {
         <h2 className="font-display text-xl font-bold text-white">Refresh All EOD Tools</h2>
         <button
           onClick={refreshAll}
-          disabled={running}
+          disabled={starting || running}
           className="btn-sapphire disabled:opacity-50"
           data-testid="eod-refresh-all-btn"
         >
-          {running ? <><Loader2 size={16} className="animate-spin" /> Triggering</> : <><RefreshCw size={15} /> Refresh Everything</>}
+          {starting || running ? <><Loader2 size={16} className="animate-spin" /> {running ? `Running (${status.done}/${status.total})` : "Starting"}</> : <><RefreshCw size={15} /> Refresh Everything</>}
         </button>
       </div>
       <p className="text-sm text-slate-500 mb-4">
-        Fires every EOD-cadence tool's refresh at once — Breadth, Lattice, Quant Lab (Sharpe/Momentum), US Markets,
-        Swing Reversal, Options Trend, Market Assessment, Forex/Crypto breadth and rankings, and the Momentum/Swing
-        Picks track-record jobs. Each one's automatic schedule has been turned off in favor of this single button,
-        so this needs to be run manually once a day after market close for those numbers to stay current. Does NOT
+        Fires every EOD-cadence tool's refresh ONE AT A TIME, ~90 seconds apart (~25 minutes total) — Breadth,
+        Lattice, Quant Lab (Sharpe/Momentum), US Markets, Swing Reversal, Options Trend, Market Assessment,
+        Forex/Crypto breadth and rankings, and the Momentum/Swing Picks track-record jobs. Deliberately staggered,
+        not parallel — running these 500-symbol-wide scans concurrently is what caused the OOM crash-loop (see the
+        2026-08-25 fix). Each tool's automatic schedule has been turned off in favor of this single button. Does NOT
         cover intraday tools (N50 Quotes, OI Buildup, Intraday Momentum Scanner) — those still refresh on their own
         automatic, more frequent schedule since they need to track the live session.
       </p>
-      {lastResult && (
+      {status && status.results?.length > 0 && (
         <div className="space-y-1" data-testid="eod-refresh-all-status">
-          <p className="text-xs text-slate-400 font-mono-ui mb-2">{lastResult.triggered}/{lastResult.total} triggered successfully.</p>
+          <p className="text-xs text-slate-400 font-mono-ui mb-2">
+            {status.done}/{status.total} triggered{status.status === "done" ? " — complete" : "…"}.
+          </p>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1">
-            {lastResult.results.map((r) => (
+            {status.results.map((r) => (
               <p key={r.path} className={`text-[11px] font-mono-ui ${r.ok ? "text-slate-500" : "text-red-400"}`}>
                 {r.ok ? "✓" : "✗"} {r.label}{!r.ok && r.error ? ` — ${r.error}` : ""}
               </p>

@@ -1217,48 +1217,92 @@ EOD_REFRESH_TARGETS = [
 ]
 
 
-async def _run_eod_refresh_all() -> dict:
-    """Fires every EOD tool's own refresh endpoint over loopback, in
-    parallel. Each target endpoint only kicks off ITS OWN background task
-    and returns immediately (same as every individual admin button already
-    did) -- this just saves clicking through all of them one at a time.
-    Shared by both the cron entry point and the admin-panel button below."""
+# Seconds between STARTING each target's own background refresh job.
+# Each individual `/admin/refresh` call itself returns almost instantly
+# (it just calls background_tasks.add_task and replies) -- the real
+# memory cost is the full Nifty-500/S&P-500-wide scan that runs AFTER
+# that response, as that target's own background task. Firing all 17 of
+# those with no gap (the original version of this function, which used
+# asyncio.gather) meant every one of those heavy scans started within
+# seconds of each other -- dozens of concurrent Definedge fetches each
+# holding hundreds of symbols' data in memory, on a 512MB instance. This
+# is almost certainly what caused the repeated "ran out of memory" crash-
+# loop (see the OOM error timestamps this was diagnosed from). Spacing
+# starts out by STAGGER_SECONDS keeps peak concurrent scans low without
+# needing to know when each one actually finishes -- the same principle
+# multi_market_routes.py's _safe_breadth_refresh already documented and
+# applied to its own group-by-group refresh, just not carried over here
+# when this endpoint was first built.
+EOD_REFRESH_STAGGER_SECONDS = 90
+
+
+async def _run_eod_refresh_all_staggered(status_id: str):
+    """Runs as a BackgroundTask -- triggers each EOD target one at a time,
+    STAGGER_SECONDS apart, writing progress to db.eod_refresh_status as it
+    goes so the admin panel can show it without blocking on this ~25-minute
+    job. Shared by both the cron entry point and the admin-panel button."""
     port = os.environ.get("PORT", "8000")
     base = f"http://127.0.0.1:{port}"
     results = []
 
-    async def call_one(label: str, path: str):
+    async def update_status():
+        await db.eod_refresh_status.update_one(
+            {"id": status_id},
+            {"$set": {"id": status_id, "results": results, "done": len(results),
+                      "total": len(EOD_REFRESH_TARGETS), "status": "running"}},
+            upsert=True,
+        )
+
+    await db.eod_refresh_status.update_one(
+        {"id": status_id},
+        {"$set": {"id": status_id, "results": [], "done": 0, "total": len(EOD_REFRESH_TARGETS),
+                  "status": "running", "started_at": datetime.now(timezone.utc).isoformat()}},
+        upsert=True,
+    )
+
+    for i, (label, path) in enumerate(EOD_REFRESH_TARGETS):
         try:
             async with httpx.AsyncClient(timeout=15) as c:
                 r = await c.post(f"{base}{path}", headers={"X-Cron-Key": CRON_SECRET})
             results.append({"label": label, "path": path, "status": r.status_code, "ok": r.status_code == 200})
         except Exception as e:  # noqa: BLE001 — one target failing must not block the rest
             results.append({"label": label, "path": path, "status": None, "ok": False, "error": str(e)})
+        await update_status()
+        if i < len(EOD_REFRESH_TARGETS) - 1:
+            await asyncio.sleep(EOD_REFRESH_STAGGER_SECONDS)
 
-    await asyncio.gather(*(call_one(label, path) for label, path in EOD_REFRESH_TARGETS))
-    return {
-        "triggered": sum(1 for r in results if r["ok"]),
-        "total": len(results),
-        "results": results,
-    }
+    await db.eod_refresh_status.update_one(
+        {"id": status_id},
+        {"$set": {"status": "done", "completed_at": datetime.now(timezone.utc).isoformat()}},
+    )
 
 
 @api_router.post("/admin/eod-refresh-all-cron")
-async def eod_refresh_all_cron(request: Request):
+async def eod_refresh_all_cron(request: Request, background_tasks: BackgroundTasks):
     """External-cron entry point (same X-Cron-Key mechanism as every other
     scheduled job here) -- run once daily, shortly after NSE close, so
-    every EOD tool stays current automatically without a manual click."""
+    every EOD tool stays current automatically without a manual click.
+    Returns immediately; the actual ~25-minute staggered run happens as a
+    background task (see EOD_REFRESH_STAGGER_SECONDS above)."""
     if not CRON_SECRET or request.headers.get("X-Cron-Key") != CRON_SECRET:
         raise HTTPException(status_code=401, detail="Invalid cron key")
-    return await _run_eod_refresh_all()
+    background_tasks.add_task(_run_eod_refresh_all_staggered, "current")
+    return {"status": "started"}
 
 
 @api_router.post("/admin/eod-refresh-all")
-async def eod_refresh_all(admin: dict = Depends(get_current_admin)):
+async def eod_refresh_all(background_tasks: BackgroundTasks, admin: dict = Depends(get_current_admin)):
     """Same refresh, admin-JWT-gated for the admin panel's manual button
     (an on-demand re-run, e.g. after a same-day data correction — the
     cron above is what keeps this current day to day)."""
-    return await _run_eod_refresh_all()
+    background_tasks.add_task(_run_eod_refresh_all_staggered, "current")
+    return {"status": "started"}
+
+
+@api_router.get("/admin/eod-refresh-all-status")
+async def eod_refresh_all_status(admin: dict = Depends(get_current_admin)):
+    doc = await db.eod_refresh_status.find_one({"id": "current"}, {"_id": 0})
+    return doc or {"status": "idle", "done": 0, "total": len(EOD_REFRESH_TARGETS), "results": []}
 
 
 # ---------------------------------------------------------------------------
