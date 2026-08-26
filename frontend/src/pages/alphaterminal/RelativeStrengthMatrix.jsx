@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import axios from "axios";
 import { authHeaders } from "../../lib/auth";
 import { EmptyState } from "./QuantLab";
+import { ParticleField } from "../../components/site/ParticleField";
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 const SURFACE = "rounded-2xl border border-white/10 bg-[#0A0D18]";
@@ -22,7 +23,7 @@ const BOX_SIZES = [
 // stays free to answer the status poll while it runs).
 const PHASE_LABEL = {
   resolving: "Resolving group constituents…",
-  fetching: "Fetching daily closes from Definedge…",
+  fetching: "Fetching daily closes…",
   computing: "Building P&F ratio charts & scoring pairs…",
 };
 
@@ -32,18 +33,26 @@ const PHASE_LABEL = {
 const POLL_MS = 400;
 
 const ComputingScreen = ({ phase, done, total, percent }) => (
-  <div className={`${SURFACE} w-full max-w-md p-6`} data-testid="rs-computing-screen">
-    <p className="font-mono-ui text-[10px] uppercase tracking-[0.18em] text-slate-500 mb-1">Computing Relative Strength Matrix</p>
-    <p className="text-sm text-slate-300 mb-4">{PHASE_LABEL[phase] || "Preparing…"}</p>
-    <div className="h-1.5 w-full rounded-full bg-white/5 overflow-hidden mb-2">
-      <div
-        className="h-full rounded-full bg-gradient-to-r from-sapphire to-sapphire-light transition-[width] duration-300 ease-out"
-        style={{ width: `${Math.max(percent, 3)}%` }}
-      />
-    </div>
-    <div className="flex items-center justify-between font-mono-ui text-[11px] text-slate-500">
-      <span>{total ? `${done} / ${total}` : "—"}</span>
-      <span className="text-white font-bold text-sm tabular-nums">{percent}%</span>
+  <div className="relative glass rounded-2xl border border-white/10 w-full max-w-md overflow-hidden flex flex-col items-center justify-center py-10 px-6" data-testid="rs-computing-screen">
+    <ParticleField density={0.00012} />
+    <div className="absolute inset-0 radial-glow pointer-events-none" />
+    <div className="relative z-10 flex flex-col items-center gap-3 w-full">
+      <span className="relative flex h-3 w-3">
+        <span className="absolute inline-flex h-full w-full rounded-full bg-sapphire-light opacity-75 animate-ping" />
+        <span className="relative inline-flex h-3 w-3 rounded-full bg-sapphire-light" />
+      </span>
+      <p className="font-mono-ui text-xs uppercase tracking-[0.24em] text-slate-300">Computing Relative Strength Matrix</p>
+      <p className="font-mono-ui text-[10px] uppercase tracking-[0.18em] text-slate-600 mb-2">{PHASE_LABEL[phase] || "Preparing…"}</p>
+      <div className="h-1.5 w-full rounded-full bg-white/5 overflow-hidden">
+        <div
+          className="h-full rounded-full bg-gradient-to-r from-sapphire to-sapphire-light transition-[width] duration-300 ease-out"
+          style={{ width: `${Math.max(percent, 3)}%` }}
+        />
+      </div>
+      <div className="flex items-center justify-between w-full font-mono-ui text-[11px] text-slate-500">
+        <span>{total ? `${done} / ${total}` : "—"}</span>
+        <span className="text-white font-bold text-sm tabular-nums">{percent}%</span>
+      </div>
     </div>
   </div>
 );

@@ -61,6 +61,7 @@ from definedge_service import DefinedgeService, DefinedgeError, derive_bias, der
 from definedge_stream import DefinedgeStream
 from index_vector_stream import IndexVectorStreamManager, broadcaster as index_vector_broadcaster
 from dhan_stream import DhanStream
+from market_dashboard_stream import MarketDashboardStreamManager
 import definedge_otp_email
 import mt5_client as mt5c
 if "journal" not in DISABLED_FEATURES:
@@ -197,6 +198,7 @@ index_vector_stream = IndexVectorStreamManager(definedge, definedge_stream)
 # pnf_routes.py) -- its own separate WS relay, same one-shared-connection
 # discipline as definedge_stream above.
 dhan_stream = DhanStream(db)
+market_dashboard_stream = MarketDashboardStreamManager(dhan_stream, db)
 
 app = FastAPI()
 api_router = APIRouter(prefix="/api")
@@ -2049,6 +2051,10 @@ async def on_startup():
     definedge_stream.start()
     await index_vector_stream.start()
     dhan_stream.start()
+    # Resolving ~20 index names against Dhan's master takes a few seconds
+    # (a real CSV download, see dhan_master.py) -- backgrounded so a slow
+    # Dhan fetch never delays the rest of startup.
+    asyncio.create_task(market_dashboard_stream.start())
 
     # Admin seeding (idempotent)
     existing = await db.users.find_one({"email": ADMIN_EMAIL})
@@ -2198,7 +2204,7 @@ n50_quotes_router = create_n50_quotes_router(db, definedge, get_current_admin, C
 oi_buildup_router = create_oi_buildup_router(db, definedge, get_current_admin, CRON_SECRET)
 multi_asset_returns_router = create_multi_asset_returns_router()
 options_trend_router = create_options_trend_router(db, definedge, get_current_admin, get_current_user, CRON_SECRET)
-market_dashboard_router = create_market_dashboard_router(db, get_current_admin, CRON_SECRET)
+market_dashboard_router = create_market_dashboard_router(db, get_current_admin, CRON_SECRET, market_dashboard_stream)
 swing_reversal_router = create_swing_reversal_router(db, definedge, get_current_admin, CRON_SECRET)
 options_analytics_router = create_options_analytics_router(db, definedge)
 intraday_momentum_router = create_intraday_momentum_router(db, definedge, get_current_admin, CRON_SECRET)
@@ -2265,5 +2271,6 @@ app.add_middleware(
 async def shutdown_db_client():
     await index_vector_stream.stop()
     await definedge_stream.stop()
+    await market_dashboard_stream.stop()
     await dhan_stream.stop()
     client.close()

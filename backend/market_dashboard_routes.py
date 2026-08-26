@@ -15,10 +15,11 @@ import logging
 import time
 from datetime import datetime, timezone, timedelta
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request, WebSocket, WebSocketDisconnect
 
 import market_dashboard_client as mdc
 import market_dashboard_engine as mde
+import market_dashboard_stream as mds
 import yahoo_finance_client as yf
 
 logger = logging.getLogger(__name__)
@@ -47,7 +48,7 @@ GLOBAL_INDICES = [
 ]
 
 
-def create_market_dashboard_router(db, get_current_admin, cron_secret: str) -> APIRouter:
+def create_market_dashboard_router(db, get_current_admin, cron_secret: str, market_dashboard_stream=None) -> APIRouter:
     router = APIRouter(prefix="/terminal/market-dashboard", tags=["market-dashboard"])
 
     async def _fetch_indices_section() -> tuple:
@@ -113,6 +114,13 @@ def create_market_dashboard_router(db, get_current_admin, cron_secret: str) -> A
             "updated_at": datetime.now(timezone.utc).isoformat(),
         }
         await db[SNAPSHOT_COLLECTION].update_one({"id": "current"}, {"$set": snapshot}, upsert=True)
+
+        if indices is not None and market_dashboard_stream is not None:
+            # Refreshes the previous-close reference every streamed index's
+            # live ticks are computed against (see market_dashboard_stream's
+            # module docstring for why LTP alone can't derive change/pct).
+            for row in indices["headline"] + indices["sectors"] + indices["segments"]:
+                market_dashboard_stream.set_reference(row["index"], row["last"], row["change"])
 
         if indices is not None:
             today = now_ist.date().isoformat()
@@ -185,6 +193,33 @@ def create_market_dashboard_router(db, get_current_admin, cron_secret: str) -> A
     async def fii_dii_history(days: int = 15):
         rows = await db[FII_DII_HISTORY_COLLECTION].find({}, {"_id": 0}).sort("date", -1).to_list(length=days)
         return {"rows": rows}
+
+    @router.websocket("/stream")
+    async def stream(websocket: WebSocket):
+        """Public, no auth -- same tier as every other route on this
+        router. Pushes a live tick for one index at a time as it arrives
+        (not batched), so a browser client merges each message into
+        whichever of headline/sectors/segments contains that index name.
+        Falls back to the existing polls if this drops -- this is a pure
+        addition, nothing about the snapshot/live-headline routes changed."""
+        if market_dashboard_stream is None:
+            await websocket.close(code=1011)
+            return
+        await websocket.accept()
+
+        async def _push(payload: dict) -> None:
+            await websocket.send_json(payload)
+
+        mds.broadcaster.subscribe(_push)
+        try:
+            for entry in market_dashboard_stream.latest().values():
+                await websocket.send_json(entry)
+            while True:
+                await websocket.receive_text()
+        except WebSocketDisconnect:
+            pass
+        finally:
+            mds.broadcaster.unsubscribe(_push)
 
     @router.post("/admin/refresh")
     async def refresh_cron(request: Request, background_tasks: BackgroundTasks):

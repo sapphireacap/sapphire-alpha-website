@@ -20,6 +20,27 @@ SECTOR_INDICES = [
 # Matches the reference dashboard's "NSE Major Segment Performance" bars.
 SEGMENT_INDICES = ["NIFTY TOTAL MARKET", "NIFTY 50", "NIFTY 500", "NIFTY 200", "NIFTY MIDSMALLCAP 400", "NIFTY MIDCAP 150"]
 
+# This dashboard's display names follow NSE's `allIndices` spelling. Dhan's
+# own scrip master carries the same indices under slightly different
+# strings (confirmed live against the real master, 2026-08-26) -- this maps
+# our name to Dhan's so the streaming layer can resolve a security id
+# without the display name changing anywhere else in this file.
+DHAN_INDEX_ALIAS = {
+    "NIFTY HEALTHCARE INDEX": "NIFTY HEALTHCARE",
+    "NIFTY OIL & GAS": "NIFTY OIL AND GAS",
+    "NIFTY TOTAL MARKET": "NIFTY TOTAL MKT",
+}
+
+# "NIFTY CONSUMER DURABLES" has no equivalent in Dhan's master under any
+# name tried (checked: NIFTY CONSUMPTION and NIFTY NEW CONSUMP are
+# different indices) -- excluded here rather than guessed, so it just
+# stays on the existing NSE poll like every index was before this file
+# existed.
+STREAMABLE_INDICES = sorted(
+    (set(HEADLINE_INDICES) | set(SECTOR_INDICES) | set(SEGMENT_INDICES) | {"INDIA VIX"})
+    - {"NIFTY CONSUMER DURABLES"}
+)
+
 
 def _pick(rows_by_name: dict, names: list) -> list:
     """Only the rows that actually resolved — never fabricates a missing

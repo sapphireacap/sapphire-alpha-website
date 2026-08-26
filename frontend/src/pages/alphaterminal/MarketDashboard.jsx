@@ -54,6 +54,7 @@ const MarketDashboardTool = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
   const [liveHeadline, setLiveHeadline] = useState(null);
+  const [liveTicks, setLiveTicks] = useState({});
 
   useEffect(() => {
     let cancelled = false;
@@ -101,9 +102,48 @@ const MarketDashboardTool = () => {
     return () => { cancelled = true; clearInterval(id); };
   }, []);
 
+  // Live Dhan-socket ticks (see backend/market_dashboard_stream.py) for the
+  // ~20 indices Dhan's master resolves -- additive on top of the polls
+  // above, which stay exactly as they are as the fallback if this drops.
+  // NIFTY CONSUMER DURABLES has no Dhan equivalent and always falls
+  // through to the snapshot/live-headline values untouched.
+  useEffect(() => {
+    let ws;
+    let cancelled = false;
+    let retryTimer;
+
+    const connect = () => {
+      if (cancelled) return;
+      const wsBase = (process.env.REACT_APP_BACKEND_URL || "").replace(/^http/, "ws");
+      ws = new WebSocket(`${wsBase}/api/terminal/market-dashboard/stream`);
+      ws.onmessage = (event) => {
+        try {
+          const tick = JSON.parse(event.data);
+          if (!tick?.index) return;
+          setLiveTicks((prev) => ({ ...prev, [tick.index]: tick }));
+        } catch {
+          // Ignore a malformed frame -- next tick corrects it.
+        }
+      };
+      ws.onclose = () => { if (!cancelled) retryTimer = setTimeout(connect, 5000); };
+      ws.onerror = () => ws.close();
+    };
+
+    connect();
+    return () => { cancelled = true; clearTimeout(retryTimer); ws?.close(); };
+  }, []);
+
+  const withLiveTicks = (rows) => rows?.map((row) => {
+    const tick = liveTicks[row.index];
+    return tick ? { ...row, last: tick.last, change: tick.change ?? row.change, change_pct: tick.change_pct ?? row.change_pct } : row;
+  });
+
   const indices = data?.indices;
   const live = isSessionLive();
-  const headlineRows = liveHeadline || indices?.headline;
+  const headlineRows = withLiveTicks(liveHeadline || indices?.headline);
+  const sectorRows = withLiveTicks(indices?.sectors);
+  const vixTick = liveTicks["INDIA VIX"];
+  const vix = vixTick && indices?.vix ? { last: vixTick.last, change_pct: vixTick.change_pct ?? indices.vix.change_pct } : indices?.vix;
 
   if (loading) {
     return (
@@ -131,7 +171,7 @@ const MarketDashboardTool = () => {
 
       <div className="grid grid-cols-1 lg:grid-cols-[1.35fr_1fr] border-b" style={{ borderColor: "var(--term-border)" }}>
         <div className="border-b lg:border-b-0 lg:border-r" style={{ borderColor: "var(--term-border)" }}>
-          {indices?.sectors?.length ? <SectorPanel rows={indices.sectors} /> : (
+          {sectorRows?.length ? <SectorPanel rows={sectorRows} /> : (
             <div className="p-6 text-center term-grey text-[11px]">Sector performance unavailable.</div>
           )}
         </div>
@@ -144,7 +184,7 @@ const MarketDashboardTool = () => {
                 unchanged={indices.market_unchanged}
                 weekHigh={data.week_hilo?.high}
                 weekLow={data.week_hilo?.low}
-                vix={indices.vix}
+                vix={vix}
               />
             ) : (
               <div className="p-6 text-center term-grey text-[11px]">Breadth unavailable.</div>
@@ -156,7 +196,7 @@ const MarketDashboardTool = () => {
 
       <div className="grid grid-cols-1 lg:grid-cols-[1.35fr_1fr] border-b" style={{ borderColor: "var(--term-border)" }}>
         <div className="border-b lg:border-b-0 lg:border-r" style={{ borderColor: "var(--term-border)" }}>
-          <SectorsInActionPanel sectors={indices?.sectors} />
+          <SectorsInActionPanel sectors={sectorRows} />
         </div>
         <div className="grid grid-cols-1 sm:grid-cols-2">
           <GlobalIndicesPanel rows={data.global_indices} />
