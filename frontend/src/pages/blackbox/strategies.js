@@ -10,9 +10,12 @@
 // `capitalValue` is an internal computation input (the % base for Net
 // Return/CAGR), not something rendered to the public — don't add a public
 // "Capital Required" field back without checking this is still true.
-// Order below is deliberate: Convexity Window / Gamma Backspread lead
-// (they're the only strategies currently running -- see PAUSED note on the
-// legacy three), not just appended at the end.
+// Order below is deliberate: Premium Band Strangle / Structural Retest /
+// Trend Ignition / Volume Cascade lead (the currently-running new
+// strategies -- see PAUSED note on the legacy three), not just appended
+// at the end. Convexity Window and Gamma Backspread (the original two
+// options-live strategies here) were removed entirely on 2026-08-26,
+// code and production data both, per explicit instruction.
 // Fields added 2026-08-04 for the redesigned public Black Box page
 // (card grid + "View Strategy" modal): objective/marketLabel/tradingStyle/
 // automation/status/estimatedRelease/riskManagement/brokerIntegration.
@@ -21,68 +24,8 @@
 // Admin.jsx's StrategyReportAccordion) already expect them.
 export const STRATEGIES = [
   {
-    slug: "convexity-window",
-    no: "01",
-    apiPath: "convexity_window",
-    kind: "options-live",
-    optionsLive: true,
-    title: "Convexity Window",
-    subtitle: "Rule-based options buying",
-    assetClass: "Index Options",
-    tags: ["Rule-Based", "Long Options"],
-    objective: "Captures cheap-convexity setups using proprietary volatility and price filters.",
-    marketLabel: "Options",
-    tradingStyle: "Intraday",
-    automation: "Fully Automated",
-    status: "In Validation",
-    estimatedRelease: "Q4 2026",
-    riskManagement: "Built-in",
-    brokerIntegration: "Supported",
-    summary: {
-      what: "Convexity Window buys a single near-the-money NIFTY or BANK NIFTY option only when a set of volatility and price filters suggest convexity is cheap relative to the underlying's recent behavior — never on discretion.",
-      market: "NIFTY & BANK NIFTY Weekly Options",
-      objective: "Capture short, sharp directional moves by paying for convexity only when it looks statistically underpriced.",
-      riskProfile: "Defined-risk, long-options only — the maximum loss on any trade is capped at the premium paid, with a hard stop-loss and a Greeks-based exit besides.",
-      holdingPeriod: "Intraday — every position is opened and closed within the same trading session (hard time stop 15:15 IST).",
-      executionStyle: "Fully systematic. Every filter and every exit rule is disclosed in full below — nothing about this strategy's logic is hidden.",
-      suitableInvestor: "Not investment advice. Currently in PAPER TRADING — no real capital is deployed. Published for research and transparency.",
-    },
-    methodology:
-      "Convexity Window computes implied volatility, Delta, Gamma, Theta and Vega itself from live option prices (not broker-supplied Greeks), and only enters a long call or put when: implied volatility sits meaningfully below 20-day realized volatility, the option's own breakeven move is smaller than the underlying's typical daily range, and price is trading on the same side of both the prior close and a 20-period intraday average. Full entry and exit rules are in the Rules panel below.",
-  },
-  {
-    slug: "gamma-backspread",
-    no: "02",
-    apiPath: "gamma_backspread",
-    kind: "options-live",
-    optionsLive: true,
-    title: "Gamma Backspread",
-    subtitle: "Rule-based near-zero-theta options structure",
-    assetClass: "Index Options",
-    tags: ["Rule-Based", "Options Structure"],
-    objective: "Holds long convexity across multiple sessions while keeping time decay near zero.",
-    marketLabel: "Options",
-    tradingStyle: "Multi-Day",
-    automation: "Fully Automated",
-    status: "In Validation",
-    estimatedRelease: "Q4 2026",
-    riskManagement: "Built-in",
-    brokerIntegration: "Supported",
-    summary: {
-      what: "Gamma Backspread sells one at-the-money option and buys two further out-of-the-money options of the same type and expiry, sized so the package carries close to zero time decay while staying net long Gamma — entered only when implied volatility is cheap on its own trailing history.",
-      market: "NIFTY & BANK NIFTY Options",
-      objective: "Hold long convexity for longer than a single-option trade can (5–12 days to expiry) without theta working hard against the position.",
-      riskProfile: "Defined-risk on the long legs; the structure's overall risk is bounded by construction, not unlimited — full mechanics disclosed below.",
-      holdingPeriod: "Multi-day — positions are typically held several sessions, exited by rule (target/stop, theta drift, or 2 days-to-expiry, whichever comes first).",
-      executionStyle: "Fully systematic. Every filter and every exit rule is disclosed in full below — nothing about this strategy's logic is hidden.",
-      suitableInvestor: "Not investment advice. Currently in PAPER TRADING — no real capital is deployed. Published for research and transparency.",
-    },
-    methodology:
-      "Gamma Backspread computes implied volatility and Greeks itself from live option prices (not broker-supplied Greeks). It only enters when the at-the-money option's implied volatility sits in the cheapest third of its own trailing history, and only if an out-of-the-money strike exists that brings the package's net time decay close to zero while keeping Gamma and Vega positive. Full entry and exit rules are in the Rules panel below.",
-  },
-  {
     slug: "premium-band-strangle",
-    no: "03",
+    no: "01",
     apiPath: "premium_band_strangle",
     kind: "options-live",
     optionsLive: true,
@@ -112,7 +55,7 @@ export const STRATEGIES = [
   },
   {
     slug: "structural-retest",
-    no: "04",
+    no: "02",
     apiPath: "structural_retest",
     kind: "equity-live",
     equityLive: true,
@@ -142,7 +85,7 @@ export const STRATEGIES = [
   },
   {
     slug: "trend-ignition",
-    no: "05",
+    no: "03",
     apiPath: "trend_ignition",
     kind: "equity-live",
     equityLive: true,
@@ -172,7 +115,7 @@ export const STRATEGIES = [
   },
   {
     slug: "volume-cascade",
-    no: "06",
+    no: "04",
     apiPath: "volume_cascade",
     kind: "equity-live",
     equityLive: true,
@@ -209,7 +152,7 @@ export const STRATEGIES = [
   // instead of live buttons (see Admin.jsx's BlackBoxPanel).
   {
     slug: "prism-alpha",
-    no: "07",
+    no: "05",
     apiPath: "prism-alpha",
     kind: "prism",
     title: "Prism Alpha",
@@ -240,7 +183,7 @@ export const STRATEGIES = [
   },
   {
     slug: "prism-alpha-2",
-    no: "08",
+    no: "06",
     apiPath: "prism-alpha-2",
     kind: "prism",
     title: "Prism Alpha II",
@@ -271,7 +214,7 @@ export const STRATEGIES = [
   },
   {
     slug: "lumen-sip",
-    no: "09",
+    no: "07",
     apiPath: "lumen-sip",
     kind: "lumen",
     title: "Lumen SIP",

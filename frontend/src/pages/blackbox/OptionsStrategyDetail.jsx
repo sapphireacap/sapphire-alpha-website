@@ -8,14 +8,18 @@ import { fmtNum, fmtINR } from "./adapters";
 import { RANGES, filterByRange, downloadCSV, tradesToCSV } from "../../lib/strategyStats";
 import { authHeaders } from "../../lib/auth";
 
-// Public, real-data detail page for the two new options-buying strategies
-// (Convexity Window, Gamma Backspread) — see [[proprietary_naming]] memory:
-// this is a DELIBERATE exception for these two strategies only (their own
-// spec requires full rule disclosure, "transparent rather than a black box
-// in the dishonest sense"); the original three strategies stay proprietary
-// via the plain StrategyDetail.jsx. Everything shown here is PAPER MODE —
-// no real capital, ever, until the site owner explicitly approves going
-// live (see backend/blackbox_options_engine.py's LIVE_MODE gate).
+// Public, real-data detail page for Premium Band Strangle — see
+// [[proprietary_naming]] memory: a DELIBERATE exception for this strategy
+// (its own spec requires full rule disclosure, "transparent rather than a
+// black box in the dishonest sense"); the original three legacy strategies
+// stay proprietary. Everything shown here is PAPER MODE — no real capital,
+// ever, until the site owner explicitly approves going live (see
+// backend/blackbox_options_engine.py's LIVE_MODE gate).
+//
+// Convexity Window and Gamma Backspread (the two strategies this page
+// originally covered) were removed entirely on 2026-08-26, code and
+// production data both, per explicit instruction — see git history for
+// the filter-display machinery (FILTER_LABELS etc.) that only they used.
 
 const SURFACE = "rounded-2xl border border-white/10 bg-[#0A0D18]";
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
@@ -27,23 +31,10 @@ const STATUS_TONE = {
   flat: "bg-white/5 text-slate-400 border-white/10",
 };
 
-const FILTER_LABELS = {
-  direction: "Direction", atm_iv: "ATM IV", realized_vol: "Realized Vol", iv_rv_ratio: "IV / RV",
-  required_move: "Required Move", required_move_threshold: "Required Move Cap", median_true_range: "Median True Range",
-  candidate_count_within_vega_cap: "Candidates in Vega Cap", selected_gamma_theta_ratio: "Gamma/Theta (selected)",
-  dte: "Days to Expiry", iv_percentile: "IV Percentile", iv_history_len: "IV History Samples",
-  net_theta: "Net Theta", net_gamma: "Net Gamma", net_vega: "Net Vega",
-};
-
-const PCT_KEYS = new Set(["atm_iv", "realized_vol", "iv_percentile"]);
-
 const fmtFilterValue = (key, value) => {
   if (value == null) return "—";
   if (typeof value === "boolean") return value ? "Yes" : "No";
-  if (typeof value === "number") {
-    if (PCT_KEYS.has(key)) return `${(value * 100).toFixed(2)}%`;
-    return Number.isInteger(value) ? String(value) : value.toFixed(4);
-  }
+  if (typeof value === "number") return Number.isInteger(value) ? String(value) : value.toFixed(4);
   return String(value);
 };
 
@@ -90,32 +81,12 @@ function buildCombinedCurve(dailyDocs, field) {
 }
 
 function normalizeSignal(strategyId, s) {
-  if (strategyId === "convexity_window") {
-    return {
-      id: s.id, index: s.index, date: s.timestamp?.slice(0, 10), side: s.side, status: s.status,
-      instrument: `${s.strike} ${s.side}`,
-      entry: s.entry_price != null ? `₹${s.entry_price.toFixed(2)}` : "—",
-      exit: s.exit_price != null ? `₹${s.exit_price.toFixed(2)}` : "—",
-      exitReason: s.exit_reason, grossPnl: s.gross_pnl, netPnl: s.net_pnl, pnlPct: s.pnl_pct,
-    };
-  }
-  if (strategyId === "premium_band_strangle") {
-    const ce = s.legs?.CE, pe = s.legs?.PE;
-    return {
-      id: s.id, index: s.index, date: s.timestamp?.slice(0, 10), side: "CE/PE", status: s.status,
-      instrument: `${ce?.strike ?? "—"} CE / ${pe?.strike ?? "—"} PE`,
-      entry: `CE ₹${ce?.entry_premium?.toFixed(2) ?? "—"} / PE ₹${pe?.entry_premium?.toFixed(2) ?? "—"}`,
-      exit: s.status === "closed" ? "Expired (cash-settled)" : "—",
-      exitReason: s.exit_reason, grossPnl: s.gross_pnl, netPnl: s.net_pnl, pnlPct: null,
-    };
-  }
-  const exitPrice = s.exit_price && typeof s.exit_price === "object"
-    ? `ATM ₹${s.exit_price.atm?.toFixed(2)} / OTM ₹${s.exit_price.otm?.toFixed(2)}` : "—";
+  const ce = s.legs?.CE, pe = s.legs?.PE;
   return {
-    id: s.id, index: s.index, date: s.timestamp?.slice(0, 10), side: s.side, status: s.status,
-    instrument: `${s.atm_strike}/${s.otm_strike} ${s.side}`,
-    entry: `ATM ₹${s.atm_entry_price?.toFixed(2)} / OTM ₹${s.otm_entry_price?.toFixed(2)}`,
-    exit: exitPrice,
+    id: s.id, index: s.index, date: s.timestamp?.slice(0, 10), side: "CE/PE", status: s.status,
+    instrument: `${ce?.strike ?? "—"} CE / ${pe?.strike ?? "—"} PE`,
+    entry: `CE ₹${ce?.entry_premium?.toFixed(2) ?? "—"} / PE ₹${pe?.entry_premium?.toFixed(2) ?? "—"}`,
+    exit: s.status === "closed" ? "Expired (cash-settled)" : "—",
     exitReason: s.exit_reason, grossPnl: s.gross_pnl, netPnl: s.net_pnl, pnlPct: null,
   };
 }
@@ -219,37 +190,6 @@ function SignalTable({ signals, strategyId, slug }) {
 }
 
 const RULES_TEXT = {
-  convexity_window: {
-    entry: [
-      "Evaluated once daily at 09:30 IST.",
-      "Implied volatility of the at-the-money option must sit below 95% of the underlying's 20-day realized volatility — i.e. options must be pricing in less movement than the underlying has actually shown.",
-      "The option's own breakeven move (√(2 × Theta ÷ Gamma)) must be smaller than 0.8× the median true daily range over the last 20 days.",
-      "Among strikes within 2 of at-the-money and expiries 1–4 days out, the contract with the best Gamma-per-Theta is chosen, as long as its Vega stays under the configured cap.",
-      "Direction is price-only: a call if spot is above both the previous close and the 20-period 15-minute average; a put on the mirror condition. No trade if neither holds.",
-    ],
-    exit: [
-      "Stop-loss at −35% of premium paid.",
-      "Target at +70% of premium paid.",
-      "Time stop: square off by 15:15 IST regardless of P&L.",
-      "Greeks stop: exit if the position's Gamma falls below 50% of its value at entry.",
-    ],
-  },
-  gamma_backspread: {
-    entry: [
-      "Sells 1 at-the-money option, buys 2 further out-of-the-money options of the same type and expiry.",
-      "The at-the-money option's implied volatility must sit in the cheapest 30th percentile of its own trailing history.",
-      "The out-of-the-money strike is chosen so the package's net Theta lands between −0.05 and +0.05 per lot per day (closest to zero, among strikes that qualify) while net Gamma stays positive.",
-      "Net Vega of the whole package must be positive.",
-      "Expiry must be 5–12 days out.",
-      "Direction follows the same price-only rule as Convexity Window — a call backspread on bullish alignment, a put backspread on bearish.",
-    ],
-    exit: [
-      "Exit if live net Theta drifts below −0.15 per lot per day.",
-      "Exit at 2 days-to-expiry regardless of P&L.",
-      "Target at +40% of net debit paid; stop-loss at −25% of net debit.",
-      "Exit if IV percentile rises above 60 — volatility has repriced, so the position takes the Vega gain and closes.",
-    ],
-  },
   premium_band_strangle: {
     entry: [
       "Sells the NIFTY call and put (next monthly expiry) whose live premium sits closest to a fixed target band (default ₹60–70).",
@@ -314,7 +254,7 @@ function StatusCard({ index, data }) {
         <div className="grid grid-cols-2 gap-x-4 gap-y-1.5 pt-3 border-t border-white/[0.06]">
           {Object.entries(data.filters).map(([k, v]) => (
             <div key={k} className="flex justify-between gap-2">
-              <span className="font-mono-ui text-[9px] uppercase tracking-wider text-slate-600 whitespace-nowrap">{FILTER_LABELS[k] || k}</span>
+              <span className="font-mono-ui text-[9px] uppercase tracking-wider text-slate-600 whitespace-nowrap">{k}</span>
               <span className="font-mono-ui text-[10px] text-slate-300 text-right">{fmtFilterValue(k, v)}</span>
             </div>
           ))}

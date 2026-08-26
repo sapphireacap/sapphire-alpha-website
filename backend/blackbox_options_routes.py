@@ -1,51 +1,43 @@
 """
-PUBLIC routes for the three options strategies (Convexity Window, Gamma
-Backspread, Premium Band Strangle) inside the existing Black Box tab.
+PUBLIC routes for Premium Band Strangle inside the existing Black Box tab.
 Deliberately separate from blackbox_routes.py's create_blackbox_router,
 which is entirely admin-gated by explicit prior instruction for the
-ORIGINAL three strategies (Prism Alpha, Prism Alpha 2, Lumen SIP) -- these
-are public by a LATER, separate explicit instruction ("New strategies go
-public, existing 3 stay admin-only"). Same router-factory / cron-vs-admin-JWT
-twin pattern as every other cron-driven feature in this codebase, just
-with the read routes left open instead of admin-gated.
+ORIGINAL three strategies (Prism Alpha, Prism Alpha 2, Lumen SIP) -- this
+one is public by a LATER, separate explicit instruction ("New strategies
+go public, existing 3 stay admin-only"). Same router-factory /
+cron-vs-admin-JWT twin pattern as every other cron-driven feature in this
+codebase, just with the read routes left open instead of admin-gated.
 
-FULL detail (real config numbers, live signals, performance, backtest
-runs) is further gated to a single named account (see blackbox_access.py)
-via `_gate()` below -- every read route stays publicly reachable (200 for
-anyone), but a visitor who isn't that account gets a locked/"coming soon"
-shape back instead of the real numbers. `get_current_user_optional` never
-401s (unlike get_current_admin), so this doesn't require signing in at
-all to get a response -- it only changes WHAT the response contains.
+FULL detail (real config numbers, live signals, performance) is further
+gated to a single named account (see blackbox_access.py) -- every read
+route stays publicly reachable (200 for anyone), but a visitor who isn't
+that account gets a locked/"coming soon" shape back instead of the real
+numbers. `get_current_user_optional` never 401s (unlike get_current_admin),
+so this doesn't require signing in at all to get a response -- it only
+changes WHAT the response contains.
 
 Every read route only ever returns paper-mode data right now (MODE is
 hardcoded "paper" in blackbox_options_engine.py until the user explicitly
 approves going live) -- there is nothing to accidentally leak.
+
+Convexity Window and Gamma Backspread (the original two strategies here,
+plus their EOD job and backtest harness) were removed entirely on
+2026-08-26, code and production data both, per explicit instruction --
+see git history if either is ever wanted back.
 """
 import logging
-from datetime import datetime
 
 from fastapi import APIRouter, HTTPException, Request, Depends
 
 from blackbox_access import is_owner
 from blackbox_options_config import get_config
 from blackbox_options_engine import evaluate_all, MODE, STRATEGIES
-from blackbox_options_eod import run_eod
-from blackbox_options_backtest import backtest_convexity_window, backtest_gamma_backspread
-from definedge_service import IST, INDEX_CONFIG
 
 logger = logging.getLogger(__name__)
 
 INDICES = ("NIFTY", "BANKNIFTY")
 
 STRATEGY_LABELS = {
-    "convexity_window": {
-        "name": "Convexity Window",
-        "description": "Conditional long ATM options — enters only when the vol regime suggests convexity is underpriced (IV/RV filter, required-move filter, Gamma/Theta contract selection, price-only direction).",
-    },
-    "gamma_backspread": {
-        "name": "Gamma Backspread",
-        "description": "Sells 1 ATM option, buys 2 OTM of the same type/expiry — a near-zero-theta convexity structure, entered only when ATM IV percentile is cheap.",
-    },
     "premium_band_strangle": {
         "name": "Premium Band Strangle",
         "description": "Sells a monthly-expiry NIFTY call and put whose live premium sits closest to a fixed target band — no Greeks, no chart reading. Legs are rolled back into the band on a fixed profit, a fixed loss, or the premium approaching double its entry value.",
@@ -109,16 +101,6 @@ def create_blackbox_options_router(db, definedge, get_current_admin, get_current
         docs = await db.blackbox_daily_performance.find(q, {"_id": 0}).sort("date", 1).to_list(5000)
         return {"mode": MODE, "count": len(docs), "daily": docs, "locked": False}
 
-    @router.get("/backtest-runs")
-    async def backtest_runs(user: dict | None = require_user_optional):
-        """The Phase-1 backtest findings — real Definedge data, whatever
-        small sample currently exists (see blackbox_options_backtest.py's
-        module docstring for the exact data-availability constraint)."""
-        if not is_owner(user):
-            return {"count": 0, "runs": [], "locked": True}
-        docs = await db.blackbox_options_backtest_runs.find({}, {"_id": 0}).sort("recorded_at", -1).to_list(50)
-        return {"count": len(docs), "runs": docs, "locked": False}
-
     # ----------------------------------------------------------- cron + admin
 
     @router.post("/options-evaluate")
@@ -140,41 +122,5 @@ def create_blackbox_options_router(db, definedge, get_current_admin, get_current
             return await evaluate_all(db, definedge)
         except Exception as e:  # noqa: BLE001
             raise HTTPException(status_code=502, detail=f"Blackbox options evaluation failed: {e}")
-
-    @router.post("/options-eod-close")
-    async def options_eod_cron(request: Request):
-        """External-cron entry point — once daily at 15:35 IST. Force-closes
-        open positions and writes the day's IMMUTABLE performance record."""
-        if not cron_secret or request.headers.get("X-Cron-Key") != cron_secret:
-            raise HTTPException(status_code=401, detail="Invalid cron key")
-        try:
-            return await run_eod(db, definedge)
-        except Exception as e:  # noqa: BLE001
-            raise HTTPException(status_code=502, detail=f"Blackbox options EOD job failed: {e}")
-
-    @router.post("/options-eod-close-now")
-    async def options_eod_admin(admin: dict = Depends(get_current_admin)):
-        try:
-            return await run_eod(db, definedge)
-        except Exception as e:  # noqa: BLE001
-            raise HTTPException(status_code=502, detail=f"Blackbox options EOD job failed: {e}")
-
-    @router.post("/options-backtest-run")
-    async def options_backtest_run(admin: dict = Depends(get_current_admin)):
-        """Manual re-run of the Phase-1 backtest (admin only — this hits
-        Definedge with a real, moderately expensive data pull, not something
-        to expose for public/cron triggering)."""
-        results = []
-        for index_key in INDICES:
-            try:
-                results.append(await backtest_convexity_window(db, definedge, index_key))
-                results.append(await backtest_gamma_backspread(db, definedge, index_key))
-            except Exception as e:  # noqa: BLE001
-                raise HTTPException(status_code=502, detail=f"Backtest failed for {index_key}: {e}")
-        now_iso = datetime.now(IST).isoformat()
-        for r in results:
-            r["recorded_at"] = now_iso
-        await db.blackbox_options_backtest_runs.insert_many([dict(r) for r in results])
-        return {"runs": results}
 
     return router
