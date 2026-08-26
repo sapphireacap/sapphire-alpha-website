@@ -99,6 +99,16 @@ function normalizeSignal(strategyId, s) {
       exitReason: s.exit_reason, grossPnl: s.gross_pnl, netPnl: s.net_pnl, pnlPct: s.pnl_pct,
     };
   }
+  if (strategyId === "premium_band_strangle") {
+    const ce = s.legs?.CE, pe = s.legs?.PE;
+    return {
+      id: s.id, index: s.index, date: s.timestamp?.slice(0, 10), side: "CE/PE", status: s.status,
+      instrument: `${ce?.strike ?? "—"} CE / ${pe?.strike ?? "—"} PE`,
+      entry: `CE ₹${ce?.entry_premium?.toFixed(2) ?? "—"} / PE ₹${pe?.entry_premium?.toFixed(2) ?? "—"}`,
+      exit: s.status === "closed" ? "Expired (cash-settled)" : "—",
+      exitReason: s.exit_reason, grossPnl: s.gross_pnl, netPnl: s.net_pnl, pnlPct: null,
+    };
+  }
   const exitPrice = s.exit_price && typeof s.exit_price === "object"
     ? `ATM ₹${s.exit_price.atm?.toFixed(2)} / OTM ₹${s.exit_price.otm?.toFixed(2)}` : "—";
   return {
