@@ -661,6 +661,13 @@ class DefinedgeService:
                     "high": float(parts[2]),
                     "low": float(parts[3]),
                     "close": float(parts[4]),
+                    # Confirmed live (2026-08-26): Definedge's day-history CSV
+                    # already carries volume as a 6th field, it was just being
+                    # discarded here. int() not float() -- share count, never
+                    # fractional. Older cached bars fetched before this fix
+                    # simply won't have this key; callers that need volume
+                    # should treat a missing key the same as 0/unknown.
+                    "volume": int(float(parts[5])) if len(parts) > 5 else None,
                 })
             except (ValueError, IndexError):
                 continue

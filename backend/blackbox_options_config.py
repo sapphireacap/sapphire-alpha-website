@@ -40,6 +40,21 @@ DEFAULT_CONFIG = {
         "gamma_stop_ratio": 0.50,  # exit if position gamma falls below this fraction of entry gamma
     },
 
+    # Premium Band Strangle -- deliberately has NO iv/greeks/ema keys, unlike
+    # the two strategies above: the source strategy is explicitly "No
+    # Greeks, No Indicators" (see blackbox_premium_band_strangle.py), so its
+    # config is just the premium band + adjustment thresholds.
+    "premium_band_strangle": {
+        "band_lo": 60.0,
+        "band_hi": 70.0,
+        "profit_shift_rupees": 1000.0,
+        "loss_trigger_rupees": 3500.0,
+        "double_trigger_ratio": 2.0,
+        "dte_min": 20,   # monthly expiry, per the source deck (not weekly like the other two)
+        "dte_max": 35,
+        "strike_range_from_atm": 15,  # wide enough to find a Rs 60-70 premium strike most months
+    },
+
     "gamma_backspread": {
         "iv_percentile_window_days": 252,
         "iv_percentile_entry_max": 30,

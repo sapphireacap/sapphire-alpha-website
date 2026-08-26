@@ -69,6 +69,7 @@ from ipo_routes import create_ipo_router
 if "blackbox_legacy" not in DISABLED_FEATURES:
     from blackbox_routes import create_blackbox_router
 from blackbox_options_routes import create_blackbox_options_router
+from blackbox_equity_routes import create_blackbox_equity_router
 from exitline_routes import create_exitline_router
 from pnf_routes import create_pnf_router
 from renko_routes import create_renko_router
@@ -1213,6 +1214,7 @@ EOD_REFRESH_TARGETS = [
     ("Crypto — Rankings", "/api/markets/crypto/rankings/admin/refresh"),
     ("Momentum Leaders — track record evaluate", "/api/admin/terminal/momentum-track-evaluate"),
     ("Swing Picks — LCP update", "/api/admin/terminal/swing-picks-update-lcp"),
+    ("Black Box — equity strategies", "/api/blackbox/equity/evaluate"),
 ]
 
 
@@ -2082,6 +2084,7 @@ async def on_startup():
 
 ipo_router = create_ipo_router(db, get_current_admin, CRON_SECRET)
 blackbox_options_router = create_blackbox_options_router(db, definedge, get_current_admin, CRON_SECRET)
+blackbox_equity_router = create_blackbox_equity_router(db, definedge, get_current_admin, CRON_SECRET)
 exitline_router = create_exitline_router(db, definedge)
 pnf_router = create_pnf_router(db, definedge, get_current_pnf_subscriber)
 renko_router = create_renko_router(db, definedge, get_current_pnf_subscriber)
@@ -2100,6 +2103,7 @@ intraday_momentum_router = create_intraday_momentum_router(db, definedge, get_cu
 app.include_router(api_router)
 app.include_router(ipo_router, prefix="/api")
 app.include_router(blackbox_options_router, prefix="/api")
+app.include_router(blackbox_equity_router, prefix="/api")
 app.include_router(exitline_router, prefix="/api")
 app.include_router(pnf_router, prefix="/api")
 app.include_router(renko_router, prefix="/api")

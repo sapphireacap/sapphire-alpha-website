@@ -37,6 +37,10 @@ STRATEGY_LABELS = {
         "name": "Gamma Backspread",
         "description": "Sells 1 ATM option, buys 2 OTM of the same type/expiry — a near-zero-theta convexity structure, entered only when ATM IV percentile is cheap.",
     },
+    "premium_band_strangle": {
+        "name": "Premium Band Strangle",
+        "description": "Sells a monthly-expiry NIFTY call and put whose live premium sits closest to a fixed target band — no Greeks, no chart reading. Legs are rolled back into the band on a fixed profit, a fixed loss, or the premium approaching double its entry value.",
+    },
 }
 
 
