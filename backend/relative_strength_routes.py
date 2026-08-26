@@ -2,11 +2,26 @@
 Alpha Terminal's other live modules (Index Vector, Exitline, Momentum
 Leaders). See relative_strength_matrix.py for the actual computation and
 relative_strength_groups.py for the fixed sector baskets.
-"""
+
+/matrix-start + /matrix-status is a job/poll pair (same shape as
+server.py's EOD-refresh-all admin panel) so the frontend can show REAL
+percent-complete instead of a fabricated animation. This matters because
+compute_ranking is synchronous, CPU-bound pure Python with no awaits in
+its inner loop -- for a 250-symbol group that's ~31k pairs x 3 box sizes,
+enough real work that running it directly inside a request handler would
+freeze the whole single-process event loop (including this endpoint's own
+status polls) for the entire duration. Instead the job runs the fetch
+phase as normal async I/O, then hands the compute phase to a worker
+thread via asyncio.to_thread -- the event loop stays free to serve
+/matrix-status polls throughout, and the progress counter the worker
+thread increments (a plain int in the job dict) is safe to read from the
+main thread under the GIL without a lock."""
 import asyncio
 import csv
 import io
 import logging
+import time
+import uuid
 from datetime import datetime
 
 import httpx
@@ -72,6 +87,21 @@ _FETCH_CONCURRENCY = 10
 # stocks and costs nothing extra - daily_history() just returns whatever
 # actually exists if the instrument is younger.
 YEARS_BACK = 20
+
+# In-memory job store for /matrix-start + /matrix-status. Deliberately not
+# in Mongo -- a job is a few seconds to at most ~1-2 minutes of scratch
+# progress state for one visitor's one request, not something that needs
+# to survive a restart or be queried by anything else. Pruned opportunistically
+# (_prune_jobs) rather than on a timer, since traffic on this module is low
+# enough that a dict of a few live/recent jobs is never a memory concern.
+_jobs: dict = {}
+_JOB_TTL_SECONDS = 600
+
+
+def _prune_jobs():
+    cutoff = time.time() - _JOB_TTL_SECONDS
+    for jid in [j for j, v in _jobs.items() if v["created_at"] < cutoff]:
+        _jobs.pop(jid, None)
 
 
 def create_relative_strength_router(db, definedge, get_current_user) -> APIRouter:
@@ -161,25 +191,12 @@ def create_relative_strength_router(db, definedge, get_current_user) -> APIRoute
                                 detail="Chart data is temporarily unavailable — please try again shortly.")
         return {b["date"]: b["close"] for b in bars}
 
-    @router.get("/matrix")
-    async def matrix(group: str, box_pcts: str = "0.25,1,3", user: dict = require_user):
-        """Full multi-box-size matrix + ranking for one fixed group. Box
-        sizes default to the book's own short/medium/long-term convention
-        (0.25% / 1% / 3%) — pass a different comma-separated list to
-        override."""
-        cfg = get_group(group)
-        if not cfg:
-            raise HTTPException(status_code=404,
-                                detail=f"Unknown group '{group}'. Must be one of {', '.join(GROUPS)}.")
-        tokens = [t.strip() for t in box_pcts.split(",") if t.strip()]
-        try:
-            values = [float(t) for t in tokens]
-        except ValueError:
-            raise HTTPException(status_code=400, detail="box_pcts must be comma-separated numbers.")
-        if not values:
-            raise HTTPException(status_code=400, detail="Provide at least one box_pct.")
-        label_by_value = dict(zip(values, tokens))
-
+    async def _resolve_closes(cfg: dict, job: dict | None):
+        """Symbol list + {date: close} per symbol for one group. `job`, if
+        given, gets its phase/done/total updated live as each symbol
+        resolves — the fetch phase is real async I/O, so these updates
+        land while the event loop is free to serve a concurrent status
+        poll."""
         if cfg.get("csv_url"):
             try:
                 symbols = await _fetch_index_csv(cfg["csv_url"])
@@ -189,9 +206,17 @@ def create_relative_strength_router(db, definedge, get_current_user) -> APIRoute
         else:
             symbols = cfg["symbols"]
 
+        if job is not None:
+            job["phase"] = "fetching"
+            job["done"] = 0
+            job["total"] = len(symbols)
+
         async def _bounded(coro):
             async with fetch_semaphore:
-                return await coro
+                result = await coro
+                if job is not None:
+                    job["done"] += 1
+                return result
 
         source = cfg.get("source", "NSE")
         if source == "YAHOO":
@@ -214,7 +239,14 @@ def create_relative_strength_router(db, definedge, get_current_user) -> APIRoute
         per_symbol = dict(resolved_pairs)
         if len(symbols) < 2:
             raise HTTPException(status_code=502, detail="Not enough resolvable instruments in this group right now.")
+        return symbols, per_symbol
 
+    def _build_response(group: str, cfg: dict, symbols: list, per_symbol: dict,
+                        tokens: list, values: list, label_by_value: dict, job: dict | None):
+        """Pure assembly + the actual (CPU-bound) compute_ranking call.
+        Safe to run inside asyncio.to_thread — touches no async/db state,
+        only reads closes already fetched and writes progress ints into
+        `job` (plain dict, GIL-safe for the main thread to read)."""
         # NOT truncated to a group-wide date intersection — rsm.compute_matrix
         # aligns each PAIR to its own common dates. A group-wide intersection
         # here would clip every pair's history down to the group's youngest
@@ -227,7 +259,15 @@ def create_relative_strength_router(db, definedge, get_current_user) -> APIRoute
         if len(common_dates) < 2:
             raise HTTPException(status_code=400, detail="Not enough overlapping price history for this group yet.")
 
-        result = rsm.compute_ranking(symbols, per_symbol, values)
+        if job is not None:
+            job["phase"] = "computing"
+            job["done"] = 0
+            job["total"] = (len(symbols) * (len(symbols) - 1) // 2) * len(values)
+            on_pair = lambda: job.__setitem__("done", job["done"] + 1)
+        else:
+            on_pair = None
+
+        result = rsm.compute_ranking(symbols, per_symbol, values, on_pair=on_pair)
 
         return {
             "group": group,
@@ -246,6 +286,78 @@ def create_relative_strength_router(db, definedge, get_current_user) -> APIRoute
                  "total": r["total"]}
                 for r in result["ranking"]
             ],
+        }
+
+    def _parse_group_and_boxes(group: str, box_pcts: str):
+        cfg = get_group(group)
+        if not cfg:
+            raise HTTPException(status_code=404,
+                                detail=f"Unknown group '{group}'. Must be one of {', '.join(GROUPS)}.")
+        tokens = [t.strip() for t in box_pcts.split(",") if t.strip()]
+        try:
+            values = [float(t) for t in tokens]
+        except ValueError:
+            raise HTTPException(status_code=400, detail="box_pcts must be comma-separated numbers.")
+        if not values:
+            raise HTTPException(status_code=400, detail="Provide at least one box_pct.")
+        return cfg, tokens, values, dict(zip(values, tokens))
+
+    @router.get("/matrix")
+    async def matrix(group: str, box_pcts: str = "0.25,1,3", user: dict = require_user):
+        """Full multi-box-size matrix + ranking for one fixed group,
+        computed synchronously. Box sizes default to the book's own
+        short/medium/long-term convention (0.25% / 1% / 3%) — pass a
+        different comma-separated list to override. Kept for any direct
+        caller that doesn't need progress; the frontend tool itself uses
+        /matrix-start + /matrix-status instead (see module docstring)."""
+        cfg, tokens, values, label_by_value = _parse_group_and_boxes(group, box_pcts)
+        symbols, per_symbol = await _resolve_closes(cfg, job=None)
+        return _build_response(group, cfg, symbols, per_symbol, tokens, values, label_by_value, job=None)
+
+    @router.post("/matrix-start")
+    async def matrix_start(group: str, box_pcts: str = "0.25,1,3", user: dict = require_user):
+        """Kicks off the same computation as /matrix as a background job
+        and returns a job_id immediately — poll /matrix-status with it for
+        real phase/percent-complete plus the final result."""
+        cfg, tokens, values, label_by_value = _parse_group_and_boxes(group, box_pcts)
+        _prune_jobs()
+        job_id = uuid.uuid4().hex
+        job = {"status": "running", "phase": "resolving", "done": 0, "total": 0,
+              "result": None, "error": None, "created_at": time.time()}
+        _jobs[job_id] = job
+
+        async def _run():
+            try:
+                symbols, per_symbol = await _resolve_closes(cfg, job=job)
+                payload = await asyncio.to_thread(
+                    _build_response, group, cfg, symbols, per_symbol, tokens, values, label_by_value, job,
+                )
+                job["result"] = payload
+                job["status"] = "done"
+            except HTTPException as e:
+                job["error"] = e.detail
+                job["status"] = "error"
+            except Exception as e:  # noqa: BLE001 -- a job must never hang the poller on an unexpected error
+                logger.exception("Relative Strength job %s failed", job_id)
+                job["error"] = "Something went wrong computing this matrix — please try again."
+                job["status"] = "error"
+
+        # Reference kept on the job dict itself -- asyncio only holds a
+        # weak reference to a bare create_task() result, so without this
+        # the task could be garbage-collected mid-run.
+        job["_task"] = asyncio.create_task(_run())
+        return {"job_id": job_id}
+
+    @router.get("/matrix-status")
+    async def matrix_status(job_id: str, user: dict = require_user):
+        job = _jobs.get(job_id)
+        if not job:
+            raise HTTPException(status_code=404, detail="Unknown or expired job.")
+        percent = round(100 * job["done"] / job["total"]) if job["total"] else 0
+        return {
+            "status": job["status"], "phase": job["phase"],
+            "done": job["done"], "total": job["total"], "percent": percent,
+            "result": job["result"], "error": job["error"],
         }
 
     return router

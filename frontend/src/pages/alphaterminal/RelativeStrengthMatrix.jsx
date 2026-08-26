@@ -1,8 +1,7 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect } from "react";
 import axios from "axios";
 import { authHeaders } from "../../lib/auth";
 import { EmptyState } from "./QuantLab";
-import LoadingBar from "../../components/site/LoadingBar";
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 const SURFACE = "rounded-2xl border border-white/10 bg-[#0A0D18]";
@@ -13,50 +12,41 @@ const BOX_SIZES = [
   { key: "3", label: "Long-Term", short: "Long" },
 ];
 
-// Rough constituent counts for groups sourced live from an NSE index CSV
-// (relative_strength_groups.py's `csv_url` entries) — only used here to
-// decide whether to show the "big group" computing treatment below, not
-// for anything the matrix math depends on. A group missing from this map
-// (any hand-curated sector basket) is treated as small, which is correct
-// for all of them (8-14 symbols).
-const GROUP_SIZE_HINT = {
-  "nifty-50": 50,
-  "nifty-100": 100,
-  "nifty-midcap-100": 100,
-  "nifty-smallcap-250": 250,
-  "nifty-bank": 14,
+// Maps the backend job's real `phase` (relative_strength_routes.py's
+// /matrix-start + /matrix-status) to what this screen calls it — the
+// percent shown alongside is genuine progress through that phase's own
+// work (symbols fetched / total, or pairs scored / total), not a
+// fabricated animation. See relative_strength_routes.py's module
+// docstring for why the compute phase can report real progress at all
+// (it runs in a worker thread via asyncio.to_thread, so the event loop
+// stays free to answer the status poll while it runs).
+const PHASE_LABEL = {
+  resolving: "Resolving group constituents…",
+  fetching: "Fetching daily closes from Definedge…",
+  computing: "Building P&F ratio charts & scoring pairs…",
 };
-const BIG_GROUP_THRESHOLD = 30;
 
-// Mirrors the actual computation pipeline (relative_strength_matrix.py):
-// for every pair, build a P&F chart of the price ratio at each box size,
-// read its last column's direction, then aggregate. Rotated during the
-// load so a long wait on a big group reads as real work happening, not a
-// stuck spinner.
-const COMPUTE_STAGES = [
-  "Fetching daily closes…",
-  "Building P&F ratio charts for each pair…",
-  "Scoring bullish / bearish bias per pair…",
-  "Aggregating short, medium & long-term scores…",
-  "Ranking by combined score…",
-];
+// Poll cadence — fast enough to feel live, cheap enough (an in-memory
+// dict lookup on the backend) to run for however long a 250-symbol
+// group's compute phase takes.
+const POLL_MS = 400;
 
-const useComputeStage = (active, big) => {
-  const [stage, setStage] = useState(0);
-  const timerRef = useRef(null);
-  useEffect(() => {
-    if (!active) {
-      setStage(0);
-      return;
-    }
-    const intervalMs = big ? 1400 : 900;
-    timerRef.current = setInterval(() => {
-      setStage((s) => Math.min(s + 1, COMPUTE_STAGES.length - 1));
-    }, intervalMs);
-    return () => clearInterval(timerRef.current);
-  }, [active, big]);
-  return stage;
-};
+const ComputingScreen = ({ phase, done, total, percent }) => (
+  <div className={`${SURFACE} w-full max-w-md p-6`} data-testid="rs-computing-screen">
+    <p className="font-mono-ui text-[10px] uppercase tracking-[0.18em] text-slate-500 mb-1">Computing Relative Strength Matrix</p>
+    <p className="text-sm text-slate-300 mb-4">{PHASE_LABEL[phase] || "Preparing…"}</p>
+    <div className="h-1.5 w-full rounded-full bg-white/5 overflow-hidden mb-2">
+      <div
+        className="h-full rounded-full bg-gradient-to-r from-sapphire to-sapphire-light transition-[width] duration-300 ease-out"
+        style={{ width: `${Math.max(percent, 3)}%` }}
+      />
+    </div>
+    <div className="flex items-center justify-between font-mono-ui text-[11px] text-slate-500">
+      <span>{total ? `${done} / ${total}` : "—"}</span>
+      <span className="text-white font-bold text-sm tabular-nums">{percent}%</span>
+    </div>
+  </div>
+);
 
 // India stays DD/MM/YYYY (existing convention everywhere else on the
 // India side); US groups (groupPrefix "us-") use the US convention
@@ -172,9 +162,14 @@ const RelativeStrengthMatrix = ({ groupPrefix, defaultGroup = "nifty-bank",
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
-  const groupSize = GROUP_SIZE_HINT[group] || 0;
-  const isBigGroup = groupSize >= BIG_GROUP_THRESHOLD;
-  const stage = useComputeStage(loading, isBigGroup);
+  const [progress, setProgress] = useState({ phase: "resolving", done: 0, total: 0, percent: 0 });
+  // Real job-based progress (relative_strength_routes.py's /matrix-start +
+  // /matrix-status) only exists for the shared India/US endpoint this
+  // component defaults to. The multi-market variant (Forex/Crypto/US via
+  // multi_market_routes.py, passed in as a different matrixPath) has no
+  // job endpoints — those groups are small (8-10 symbols) and resolve
+  // near-instantly anyway, so they keep the plain synchronous GET.
+  const supportsJobFlow = matrixPath === "/terminal/relative-strength/matrix";
 
   useEffect(() => {
     axios.get(`${API}${groupsPath}`, { headers: authHeaders() })
@@ -190,14 +185,41 @@ const RelativeStrengthMatrix = ({ groupPrefix, defaultGroup = "nifty-bank",
 
   useEffect(() => {
     let cancelled = false;
+    let pollTimer = null;
     setLoading(true);
     setError(false);
-    axios.get(`${API}${matrixPath}`, { params: { group, box_pcts: "0.25,1,3" }, headers: authHeaders() })
-      .then(({ data: d }) => { if (!cancelled) setData(d); })
-      .catch(() => { if (!cancelled) setError(true); })
-      .finally(() => { if (!cancelled) setLoading(false); });
-    return () => { cancelled = true; };
-  }, [group, matrixPath]);
+    setProgress({ phase: "resolving", done: 0, total: 0, percent: 0 });
+
+    const finish = (d) => { if (!cancelled) { setData(d); setLoading(false); } };
+    const fail = () => { if (!cancelled) { setError(true); setLoading(false); } };
+
+    if (!supportsJobFlow) {
+      axios.get(`${API}${matrixPath}`, { params: { group, box_pcts: "0.25,1,3" }, headers: authHeaders() })
+        .then(({ data: d }) => finish(d))
+        .catch(fail);
+      return () => { cancelled = true; };
+    }
+
+    axios.post(`${API}${matrixPath}-start`, null, { params: { group, box_pcts: "0.25,1,3" }, headers: authHeaders() })
+      .then(({ data: started }) => {
+        if (cancelled) return;
+        const poll = () => {
+          axios.get(`${API}${matrixPath}-status`, { params: { job_id: started.job_id }, headers: authHeaders() })
+            .then(({ data: j }) => {
+              if (cancelled) return;
+              setProgress({ phase: j.phase, done: j.done, total: j.total, percent: j.percent });
+              if (j.status === "done") finish(j.result);
+              else if (j.status === "error") fail();
+              else pollTimer = setTimeout(poll, POLL_MS);
+            })
+            .catch(fail);
+        };
+        poll();
+      })
+      .catch(fail);
+
+    return () => { cancelled = true; if (pollTimer) clearTimeout(pollTimer); };
+  }, [group, matrixPath, supportsJobFlow]);
 
   return (
     <div data-testid="rs-matrix-tool">
@@ -218,13 +240,8 @@ const RelativeStrengthMatrix = ({ groupPrefix, defaultGroup = "nifty-bank",
       </div>
 
       {loading ? (
-        <div className="flex flex-col items-center justify-center gap-4 py-20" data-testid="rs-matrix-loading">
-          <LoadingBar inline label={COMPUTE_STAGES[stage]} />
-          {isBigGroup && (
-            <p className="font-mono-ui text-[10px] uppercase tracking-[0.14em] text-slate-600 text-center max-w-xs">
-              {groupSize} instruments · {Math.round((groupSize * (groupSize - 1)) / 2)} pairs per timeframe — this group takes a little longer
-            </p>
-          )}
+        <div className="flex items-center justify-center py-20" data-testid="rs-matrix-loading">
+          <ComputingScreen {...progress} />
         </div>
       ) : error || !data ? (
         <EmptyState reason="Could not load this group's matrix right now — try again shortly." />

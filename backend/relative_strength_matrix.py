@@ -70,8 +70,15 @@ def pair_bias(closes_num: list, closes_den: list, box_pct: float) -> str | None:
     return "bullish" if columns[-1].direction == "up" else "bearish"
 
 
-def compute_matrix(symbols: list, closes_by_symbol: dict, box_pct: float) -> dict:
+def compute_matrix(symbols: list, closes_by_symbol: dict, box_pct: float, on_pair=None) -> dict:
     """Full NxN grid + per-symbol total score for one box size.
+
+    `on_pair`, if given, is called once per pair processed (no arguments)
+    — purely a progress hook for callers computing a big group (see
+    relative_strength_routes.py's job-based /matrix-start, which uses this
+    to report real percent-complete rather than a fabricated one). Every
+    other caller (multi_market_engine.py, this module's own compute_ranking)
+    omits it and behaves exactly as before.
 
     Computes BOTH directions of every pair (A/B and B/A) as their own
     independently-built ratio charts — NOT a mirror image of each other.
@@ -116,17 +123,22 @@ def compute_matrix(symbols: list, closes_by_symbol: dict, box_pct: float) -> dic
             elif bias_ba == "bullish":
                 scores[b] += 1
 
+            if on_pair:
+                on_pair()
+
     return {"grid": grid, "scores": scores, "unresolved": unresolved}
 
 
-def compute_ranking(symbols: list, closes_by_symbol: dict, box_pcts: list) -> dict:
+def compute_ranking(symbols: list, closes_by_symbol: dict, box_pcts: list, on_pair=None) -> dict:
     """Runs compute_matrix once per box size and combines them into the
     book's own "multi-timeframe" ranking table — each box size is its own
     independent matrix (not a rolling average), summed into a Total and
-    sorted by it, descending."""
+    sorted by it, descending. `on_pair` is passed straight through to each
+    compute_matrix call (see there) — it fires once per pair PER box size,
+    i.e. len(box_pcts) times per pair overall."""
     matrices = {}
     for box_pct in box_pcts:
-        matrices[box_pct] = compute_matrix(symbols, closes_by_symbol, box_pct)
+        matrices[box_pct] = compute_matrix(symbols, closes_by_symbol, box_pct, on_pair=on_pair)
 
     ranking = []
     for s in symbols:
