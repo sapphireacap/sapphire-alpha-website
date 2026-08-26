@@ -31,14 +31,52 @@ against allmaster.zip -- real prices came back for every one.
 from __future__ import annotations
 
 GROUPS = {
+    # Broad-market index groups. Unlike the hand-curated sector baskets
+    # below (8-12 symbols each, small enough to verify one-by-one against
+    # allmaster.zip by hand), these run 50-250 constituents, so they're
+    # sourced live from NSE's own published index-constituent CSVs
+    # instead of typed out — same CSV-fetch approach swing_reversal_routes.py
+    # already uses for its Nifty 500 universe, just generalised here to any
+    # index (see relative_strength_routes.py's `_fetch_index_csv`). No
+    # `symbols` key here on purpose: a `csv_url` marks a group as dynamic,
+    # fetched + cached per day, with per-symbol resolution failures
+    # skipped rather than failing the whole group (250 constituents means
+    # a single delisted/renamed symbol is expected occasionally, not a
+    # reason to break the matrix for the other 249).
+    "nifty-50": {
+        "label": "Nifty 50",
+        "source": "NSE",
+        "csv_url": "https://nsearchives.nseindia.com/content/indices/ind_nifty50list.csv",
+    },
+    "nifty-100": {
+        "label": "Nifty 100",
+        "source": "NSE",
+        "csv_url": "https://nsearchives.nseindia.com/content/indices/ind_nifty100list.csv",
+    },
+    "nifty-midcap-100": {
+        "label": "Nifty Midcap 100",
+        "source": "NSE",
+        "csv_url": "https://nsearchives.nseindia.com/content/indices/ind_niftymidcap100list.csv",
+    },
+    "nifty-smallcap-250": {
+        "label": "Nifty Smallcap 250",
+        "source": "NSE",
+        "csv_url": "https://nsearchives.nseindia.com/content/indices/ind_niftysmallcap250list.csv",
+    },
+    # Was a hand-curated 12-symbol list (including BANDHANBNK) until
+    # 2026-08-26 — checked against NSE's own live ind_niftybanklist.csv
+    # that day and found it stale: the real index has since been
+    # reconstituted to 14 members, dropping BANDHANBNK and adding CANBK,
+    # UNIONBANK, YESBANK. Switched to dynamic (csv_url) like the broad
+    # groups above so it can't drift out of date again. Note this means
+    # any earlier comparison against Definedge's own Nifty Bank scanner
+    # (which still used the pre-reconstitution 12-name list as of
+    # 2026-08-25) will now show 14 names instead of 12 — that's this
+    # group tracking NSE's actual current index, not a regression.
     "nifty-bank": {
         "label": "Nifty Bank",
         "source": "NSE",
-        "symbols": [
-            "HDFCBANK", "ICICIBANK", "SBIN", "KOTAKBANK", "AXISBANK",
-            "INDUSINDBK", "BANKBARODA", "PNB", "AUBANK", "FEDERALBNK",
-            "IDFCFIRSTB", "BANDHANBNK",
-        ],
+        "csv_url": "https://nsearchives.nseindia.com/content/indices/ind_niftybanklist.csv",
     },
     "nifty-it": {
         "label": "Nifty IT",

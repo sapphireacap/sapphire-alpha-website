@@ -73,10 +73,19 @@ def pair_bias(closes_num: list, closes_den: list, box_pct: float) -> str | None:
 def compute_matrix(symbols: list, closes_by_symbol: dict, box_pct: float) -> dict:
     """Full NxN grid + per-symbol total score for one box size.
 
-    Only computes the upper triangle (C(N,2) ratio charts, not N*(N-1)) —
-    a rising A/B ratio is mathematically the same movement as a falling
-    B/A ratio (1/x is strictly monotonic-decreasing for x>0), so the
-    lower triangle is the exact mirror image, not a second computation.
+    Computes BOTH directions of every pair (A/B and B/A) as their own
+    independently-built ratio charts — NOT a mirror image of each other.
+    A rising A/B ratio is the same underlying price movement as a falling
+    B/A ratio, but P&F box/reversal construction is nonlinear under
+    reciprocation (box boundaries don't map to their reciprocal boundaries
+    at a fixed offset), so near a reversal boundary A/B and B/A can print
+    the SAME last-column direction instead of opposite ones. Verified
+    against Definedge's own "Ultimate Matrix" pairwise grid (Nifty Bank,
+    2026-08-25): e.g. HDFCBANK/ICICIBANK and ICICIBANK/HDFCBANK both showed
+    bearish (0) simultaneously at the 0.25% box — impossible if one side
+    were merely inferred as the other's negation, which is exactly what
+    this function used to do (a documented, now-fixed bug: see git history
+    for relative_strength_matrix.py around 2026-08-26).
 
     `closes_by_symbol[s]` is {date: close} — each pair aligns to ITS OWN
     common dates here, not a group-wide intersection (see module
@@ -88,20 +97,23 @@ def compute_matrix(symbols: list, closes_by_symbol: dict, box_pct: float) -> dic
     for i, a in enumerate(symbols):
         for b in symbols[i + 1:]:
             pair_dates = sorted(set(closes_by_symbol[a]) & set(closes_by_symbol[b]))
-            closes_num = [closes_by_symbol[a][d] for d in pair_dates]
-            closes_den = [closes_by_symbol[b][d] for d in pair_dates]
-            bias = pair_bias(closes_num, closes_den, box_pct)
-            if bias is None:
-                grid[a][b] = None
-                grid[b][a] = None
+            closes_a = [closes_by_symbol[a][d] for d in pair_dates]
+            closes_b = [closes_by_symbol[b][d] for d in pair_dates]
+
+            bias_ab = pair_bias(closes_a, closes_b, box_pct)
+            bias_ba = pair_bias(closes_b, closes_a, box_pct)
+
+            grid[a][b] = bias_ab
+            grid[b][a] = bias_ba
+
+            if bias_ab is None:
                 unresolved[a] += 1
-                unresolved[b] += 1
-                continue
-            grid[a][b] = bias
-            grid[b][a] = "bearish" if bias == "bullish" else "bullish"
-            if bias == "bullish":
+            elif bias_ab == "bullish":
                 scores[a] += 1
-            else:
+
+            if bias_ba is None:
+                unresolved[b] += 1
+            elif bias_ba == "bullish":
                 scores[b] += 1
 
     return {"grid": grid, "scores": scores, "unresolved": unresolved}

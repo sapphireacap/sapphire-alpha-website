@@ -1,8 +1,8 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import axios from "axios";
 import { authHeaders } from "../../lib/auth";
-import { Loader2 } from "lucide-react";
 import { EmptyState } from "./QuantLab";
+import LoadingBar from "../../components/site/LoadingBar";
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 const SURFACE = "rounded-2xl border border-white/10 bg-[#0A0D18]";
@@ -12,6 +12,51 @@ const BOX_SIZES = [
   { key: "1", label: "Medium-Term", short: "Medium" },
   { key: "3", label: "Long-Term", short: "Long" },
 ];
+
+// Rough constituent counts for groups sourced live from an NSE index CSV
+// (relative_strength_groups.py's `csv_url` entries) — only used here to
+// decide whether to show the "big group" computing treatment below, not
+// for anything the matrix math depends on. A group missing from this map
+// (any hand-curated sector basket) is treated as small, which is correct
+// for all of them (8-14 symbols).
+const GROUP_SIZE_HINT = {
+  "nifty-50": 50,
+  "nifty-100": 100,
+  "nifty-midcap-100": 100,
+  "nifty-smallcap-250": 250,
+  "nifty-bank": 14,
+};
+const BIG_GROUP_THRESHOLD = 30;
+
+// Mirrors the actual computation pipeline (relative_strength_matrix.py):
+// for every pair, build a P&F chart of the price ratio at each box size,
+// read its last column's direction, then aggregate. Rotated during the
+// load so a long wait on a big group reads as real work happening, not a
+// stuck spinner.
+const COMPUTE_STAGES = [
+  "Fetching daily closes…",
+  "Building P&F ratio charts for each pair…",
+  "Scoring bullish / bearish bias per pair…",
+  "Aggregating short, medium & long-term scores…",
+  "Ranking by combined score…",
+];
+
+const useComputeStage = (active, big) => {
+  const [stage, setStage] = useState(0);
+  const timerRef = useRef(null);
+  useEffect(() => {
+    if (!active) {
+      setStage(0);
+      return;
+    }
+    const intervalMs = big ? 1400 : 900;
+    timerRef.current = setInterval(() => {
+      setStage((s) => Math.min(s + 1, COMPUTE_STAGES.length - 1));
+    }, intervalMs);
+    return () => clearInterval(timerRef.current);
+  }, [active, big]);
+  return stage;
+};
 
 // India stays DD/MM/YYYY (existing convention everywhere else on the
 // India side); US groups (groupPrefix "us-") use the US convention
@@ -127,6 +172,9 @@ const RelativeStrengthMatrix = ({ groupPrefix, defaultGroup = "nifty-bank",
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
+  const groupSize = GROUP_SIZE_HINT[group] || 0;
+  const isBigGroup = groupSize >= BIG_GROUP_THRESHOLD;
+  const stage = useComputeStage(loading, isBigGroup);
 
   useEffect(() => {
     axios.get(`${API}${groupsPath}`, { headers: authHeaders() })
@@ -170,8 +218,13 @@ const RelativeStrengthMatrix = ({ groupPrefix, defaultGroup = "nifty-bank",
       </div>
 
       {loading ? (
-        <div className="flex items-center justify-center py-20 text-slate-500 font-mono-ui text-sm gap-3">
-          <Loader2 className="animate-spin" size={16} /> Building matrix…
+        <div className="flex flex-col items-center justify-center gap-4 py-20" data-testid="rs-matrix-loading">
+          <LoadingBar inline label={COMPUTE_STAGES[stage]} />
+          {isBigGroup && (
+            <p className="font-mono-ui text-[10px] uppercase tracking-[0.14em] text-slate-600 text-center max-w-xs">
+              {groupSize} instruments · {Math.round((groupSize * (groupSize - 1)) / 2)} pairs per timeframe — this group takes a little longer
+            </p>
+          )}
         </div>
       ) : error || !data ? (
         <EmptyState reason="Could not load this group's matrix right now — try again shortly." />
