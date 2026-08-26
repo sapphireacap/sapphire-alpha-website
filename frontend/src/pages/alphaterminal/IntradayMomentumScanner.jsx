@@ -152,7 +152,8 @@ const IntradayMomentumScannerTool = () => {
     }
   };
 
-  useEffect(() => { runScan(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, []);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => { runScan(); }, []);
 
   return (
     <div className="mt-6" data-testid="intraday-momentum-tool">
