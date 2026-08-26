@@ -13,10 +13,12 @@ exitline_routes does it — upstream data-provider errors name the vendor
 and its session mechanics directly, and that attribution must never
 reach a response body.
 """
+import asyncio
 import logging
+import time
 from typing import List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel
 
 import alpaca_client as ac
@@ -29,6 +31,15 @@ import yahoo_finance_client as yf
 from definedge_service import DefinedgeError
 from exitline import list_expiries, list_strikes, list_symbols, resolve_instrument
 from pnf_indicators import DEFAULT_XO_LOOKBACK
+
+# Live-stream throttle: a tick fires on every real price change (both
+# Dhan's and Definedge's feeds only send when LTP actually moves), which
+# can be many times a second on a liquid instrument. build_chart() re-runs
+# the full pattern/indicator/trend-line scan over the whole history on
+# every call (see its own docstring) -- cheap once, wasteful dozens of
+# times a second for no visible benefit. This caps actual recompute+send
+# to once per window, coalescing any faster burst into the next window.
+LIVE_RECOMPUTE_THROTTLE_SECONDS = 1.0
 
 logger = logging.getLogger(__name__)
 
@@ -51,7 +62,8 @@ def _public_error(e: DefinedgeError) -> str:
     return msg
 
 
-def create_pnf_router(db, definedge, get_current_subscriber) -> APIRouter:
+def create_pnf_router(db, definedge, get_current_subscriber, get_current_subscriber_ws=None,
+                      dhan_stream=None, definedge_stream=None) -> APIRouter:
     router = APIRouter(prefix="/pnf", tags=["pnf"])
 
     def _check_segment(segment: str) -> str:
@@ -401,6 +413,152 @@ def create_pnf_router(db, definedge, get_current_subscriber) -> APIRouter:
         }
         payload["bar_source"] = bar_source
         return payload
+
+    @router.websocket("/chart/stream")
+    async def chart_stream(websocket: WebSocket, symbol: str, segment: str = "NSE",
+                           interval: str = "daily",
+                           box_pct: Optional[float] = pnf_chart.DEFAULT_BOX_PCT,
+                           box_value: Optional[float] = None,
+                           expiry: Optional[str] = None, strike: Optional[float] = None,
+                           option_type: Optional[str] = None,
+                           years: int = 10, days: int = 30, token: Optional[str] = None):
+        """Live counterpart to GET /chart — same resolution (Dhan first,
+        Definedge fallback), same box/pattern/indicator engine, just fed by
+        a live tick instead of a poll. Sends one full chart payload on
+        connect, then a full recompute (throttled, see
+        LIVE_RECOMPUTE_THROTTLE_SECONDS) each time the underlying's LTP
+        moves — see this module's docstring for why this stays a full
+        recompute+send rather than a byte-minimal diff for v1.
+
+        Auth: a browser's native WebSocket API can't set a custom
+        Authorization header, so the JWT arrives as a query param instead
+        (get_current_subscriber_ws) — same access rule as GET /chart's
+        Depends(get_current_subscriber), just checked once at connect."""
+        if get_current_subscriber_ws is None or dhan_stream is None or definedge_stream is None:
+            await websocket.close(code=1011)
+            return
+        user = await get_current_subscriber_ws(token)
+        if user is None:
+            await websocket.close(code=1008)
+            return
+
+        segment = segment.strip().upper()
+        if segment not in ("NSE", "FUT", "OPT"):
+            # Every other segment (US/COMMODITY/CRYPTO) has its own
+            # separate bar source (Yahoo/Alpaca/MT5/client-fetched) with
+            # no live-tick integration in this pass — the frontend falls
+            # back to its existing poll for those, same as if this
+            # connection had simply failed to open.
+            await websocket.close(code=1000)
+            return
+        if box_value is not None:
+            box_pct = None
+        cfg = pnf_chart.pf.PatternConfig()
+
+        found = None
+        bar_source = "dhan"
+        source = None
+        try:
+            dhan_found = await dhan_master.resolve(segment, symbol, expiry, strike, option_type, db=db)
+            if dhan_found:
+                found = {"segment": dhan_found["exchange_segment"], "token": dhan_found["security_id"]}
+                source = dhan_history.DhanBarSource(db, instrument=dhan_found["instrument"])
+        except Exception as e:  # noqa: BLE001 — never fatal, Definedge still stands behind it
+            logger.info("Dhan resolve failed for %s/%s (%s) — falling back to Definedge.", segment, symbol, e)
+        if source is None:
+            bar_source = "definedge"
+            try:
+                found = await _resolve(segment, symbol, expiry, strike, option_type)
+            except HTTPException:
+                await websocket.close(code=1000)
+                return
+            source = definedge
+
+        try:
+            bars = await pnf_chart.fetch_bars(source, found["segment"], found["token"], interval, years=years, days=days)
+        except (pnf_chart.PnfError, DefinedgeError, dhan_history.DhanHistoryError):
+            await websocket.close(code=1011)
+            return
+        if not bars:
+            await websocket.close(code=1000)
+            return
+
+        await websocket.accept()
+
+        state = {"bars": bars, "last_sent": 0.0, "flush_task": None}
+
+        def _current_chart() -> dict:
+            chart = pnf_chart.build_chart(state["bars"], box_pct=box_pct, box_value=box_value,
+                                          reversal=pnf_chart.DEFAULT_REVERSAL, cfg=cfg)
+            chart["params"]["interval"] = interval
+            chart["bar_source"] = bar_source
+            return chart
+
+        await websocket.send_json({"type": "full", "chart": _current_chart()})
+
+        async def _send_now() -> None:
+            state["last_sent"] = time.monotonic()
+            state["flush_task"] = None
+            try:
+                await websocket.send_json({"type": "full", "chart": _current_chart()})
+            except Exception:  # noqa: BLE001 — a send on a closing socket is not worth logging loudly
+                pass
+
+        async def _on_tick(msg: dict) -> None:
+            price = msg.get("ltp") if bar_source == "dhan" else None
+            if bar_source == "definedge" and "lp" in msg:
+                try:
+                    price = float(msg["lp"])
+                except (TypeError, ValueError):
+                    price = None
+            if price is None or price <= 0:
+                return
+            last = state["bars"][-1]
+            last["close"] = price
+            last["high"] = max(last["high"], price)
+            last["low"] = min(last["low"], price)
+
+            elapsed = time.monotonic() - state["last_sent"]
+            if elapsed >= LIVE_RECOMPUTE_THROTTLE_SECONDS:
+                await _send_now()
+                return
+            # Throttled: a later tick within this window would otherwise
+            # overwrite this price with no send ever happening for it if
+            # ticks then stop arriving (a real, dropped-update bug in an
+            # earlier version of this handler) -- schedule ONE delayed
+            # flush for the remainder of the window instead, so the latest
+            # price always gets sent even if this was the last tick for a
+            # while. A second throttled tick before that flush fires just
+            # mutates `state["bars"]` further; the flush always reads
+            # whatever is current when it actually runs.
+            if state["flush_task"] is None:
+                remaining = LIVE_RECOMPUTE_THROTTLE_SECONDS - elapsed
+                state["flush_task"] = asyncio.create_task(_delayed_flush(remaining))
+
+        async def _delayed_flush(delay: float) -> None:
+            await asyncio.sleep(max(delay, 0))
+            await _send_now()
+
+        def _tick_handler(msg: dict) -> None:
+            asyncio.create_task(_on_tick(msg))
+
+        if bar_source == "dhan":
+            await dhan_stream.subscribe(found["segment"], found["token"], _tick_handler)
+        else:
+            await definedge_stream.subscribe(found["segment"], found["token"], _tick_handler)
+
+        try:
+            while True:
+                await websocket.receive_text()  # never sent by this route's client; only used to detect disconnect
+        except WebSocketDisconnect:
+            pass
+        finally:
+            if state["flush_task"] is not None:
+                state["flush_task"].cancel()
+            if bar_source == "dhan":
+                await dhan_stream.unsubscribe(found["segment"], found["token"], _tick_handler)
+            else:
+                await definedge_stream.unsubscribe(found["segment"], found["token"], _tick_handler)
 
     # -- crypto (bars fetched client-side, see module docstring in
     #    binance_client.py for why) -----------------------------------------

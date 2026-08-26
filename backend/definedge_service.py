@@ -287,12 +287,22 @@ class DefinedgeService:
         if "error" in data:
             detail = data.get("error_description") or data.get("error")
             raise DefinedgeError(f"OTP verify rejected: {detail}")
-        session_key = data.get("api_session_key") or data.get("access_token") or data.get("susertoken")
+        session_key = data.get("api_session_key") or data.get("access_token")
         if not session_key:
             raise DefinedgeError(f"No session key in response: {list(data.keys())}")
+        # `uid`/`actid`/`susertoken` are REAL, DISTINCT fields on this same
+        # response (confirmed against Definedge's own pyintegrate client,
+        # integrate/connect.py's login()) -- NOT aliases for api_session_key.
+        # Previously only api_session_key was kept (susertoken was treated as
+        # a fallback for it, which is wrong); these three are needed
+        # separately to authenticate the WebSocket feed (definedge_stream.py)
+        # -- harmless to store even before that existed, since nothing else
+        # reads them.
         await self.db.definedge_session.update_one(
             {"id": "current"},
             {"$set": {"id": "current", "api_session_key": session_key,
+                      "uid": data.get("uid"), "actid": data.get("actid"),
+                      "susertoken": data.get("susertoken"),
                       "updated_at": datetime.now(timezone.utc).isoformat()}},
             upsert=True,
         )
@@ -303,6 +313,15 @@ class DefinedgeService:
         if not doc or not doc.get("api_session_key"):
             raise DefinedgeError("No active Definedge session. Please complete daily OTP login.")
         return doc["api_session_key"]
+
+    async def ws_credentials(self):
+        """{"uid","actid","susertoken"} for the WebSocket login frame (see
+        definedge_stream.py) -- None if any is missing (e.g. a session
+        stored before this field existed, or before today's OTP login)."""
+        doc = await self.db.definedge_session.find_one({"id": "current"}, {"_id": 0})
+        if not doc or not all(doc.get(k) for k in ("uid", "actid", "susertoken")):
+            return None
+        return {"uid": doc["uid"], "actid": doc["actid"], "susertoken": doc["susertoken"]}
 
     async def status(self):
         """`connected` requires BOTH a stored session key AND that it was

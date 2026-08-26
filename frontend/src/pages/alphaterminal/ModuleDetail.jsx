@@ -414,7 +414,39 @@ export default function ModuleDetail() {
     // IndexTrackRecordPanel for the admin-only display.
     loadSignals();
     const id = setInterval(loadSignals, 60000);
-    return () => clearInterval(id);
+
+    // Live push on top of the poll above (not instead of it) -- WS
+    // /terminal/signal/stream (backend/index_vector_stream.py) pushes a
+    // fresh signal whenever a tick-driven or cron recompute lands, so a
+    // bias flip shows up immediately instead of waiting for the next 60s
+    // tick. The poll stays running unconditionally as the fallback: if a
+    // socket never connects or drops, this page still refreshes every
+    // 60s exactly as it always has -- a live update is a bonus, not a
+    // dependency.
+    const wsBase = (process.env.REACT_APP_BACKEND_URL || "").replace(/^http/, "ws");
+    const sockets = module.indices.map((idx) => {
+      let ws;
+      try {
+        ws = new WebSocket(`${wsBase}/api/terminal/signal/stream?index=${idx}`);
+      } catch {
+        return null;
+      }
+      ws.onmessage = (event) => {
+        try {
+          const data = JSON.parse(event.data);
+          setSignals((s) => ({ ...s, [idx]: data }));
+        } catch {
+          // malformed push -- next poll tick will still correct the value
+        }
+      };
+      ws.onerror = () => {}; // the poll above is the real fallback, nothing to surface here
+      return ws;
+    });
+
+    return () => {
+      clearInterval(id);
+      sockets.forEach((ws) => ws?.close());
+    };
   }, [module]);
 
   if (!module) {

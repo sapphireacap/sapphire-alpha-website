@@ -1,4 +1,4 @@
-from fastapi import FastAPI, APIRouter, BackgroundTasks, HTTPException, Depends, Request, Response
+from fastapi import FastAPI, APIRouter, BackgroundTasks, HTTPException, Depends, Request, Response, WebSocket, WebSocketDisconnect
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
@@ -58,6 +58,9 @@ DISABLED_FEATURES = set(
 )
 
 from definedge_service import DefinedgeService, DefinedgeError, derive_bias, derive_bias_4, INDEX_CONFIG
+from definedge_stream import DefinedgeStream
+from index_vector_stream import IndexVectorStreamManager, broadcaster as index_vector_broadcaster
+from dhan_stream import DhanStream
 import definedge_otp_email
 import mt5_client as mt5c
 if "journal" not in DISABLED_FEATURES:
@@ -185,6 +188,15 @@ definedge = DefinedgeService(
     os.environ.get("DEFINEDGE_API_TOKEN", ""),
     os.environ.get("DEFINEDGE_API_SECRET", ""),
 )
+# The ONE Definedge WebSocket connection this process is allowed to hold
+# (see definedge_stream.py's module docstring) -- started once at
+# app startup, stopped once at shutdown. Never opened per-request.
+definedge_stream = DefinedgeStream(definedge)
+index_vector_stream = IndexVectorStreamManager(definedge, definedge_stream)
+# P&F Studio's PRIMARY India bar source is Dhan, not Definedge (see
+# pnf_routes.py) -- its own separate WS relay, same one-shared-connection
+# discipline as definedge_stream above.
+dhan_stream = DhanStream(db)
 
 app = FastAPI()
 api_router = APIRouter(prefix="/api")
@@ -455,6 +467,32 @@ async def get_current_pnf_subscriber(request: Request) -> dict:
     until = user.get("pnf_access_until")
     if not until or datetime.fromisoformat(until) <= datetime.now(timezone.utc):
         raise HTTPException(status_code=402, detail="An active P&F Studio subscription is required.")
+    return user
+
+
+async def get_current_pnf_subscriber_ws(token: str | None) -> dict | None:
+    """Same access rule as get_current_pnf_subscriber, but for a WebSocket
+    connection: a browser's native WebSocket API can't set a custom
+    Authorization header on the handshake, so the token arrives as a
+    query parameter instead (see pnf_routes.py's /chart/stream). Returns
+    None (never raises) on any failure -- the WS route closes the
+    connection with a clean code rather than surfacing an HTTP error."""
+    if not token:
+        return None
+    try:
+        payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
+        if payload.get("type") != "access":
+            return None
+    except jwt.InvalidTokenError:
+        return None
+    user = await db.users.find_one({"email": payload.get("email")}, {"_id": 0, "password_hash": 0})
+    if not user:
+        return None
+    if user.get("role") == "admin":
+        return user
+    until = user.get("pnf_access_until")
+    if not until or datetime.fromisoformat(until) <= datetime.now(timezone.utc):
+        return None
     return user
 
 
@@ -1438,6 +1476,39 @@ async def get_signal(index: str = "NIFTY"):
     return _public_signal(doc or _default_signal(index))
 
 
+@api_router.websocket("/terminal/signal/stream")
+async def signal_stream(websocket: WebSocket, index: str = "NIFTY"):
+    """Push counterpart to GET /terminal/signal — same public shape, same
+    no-auth-required access (Index Vector is one of the two free modules),
+    pushed whenever index_vector_stream.py's tick-driven debounce OR the
+    existing 5-min cron produces a fresh recompute (index_vector_broadcaster
+    is notified from both). The frontend keeps its 60s poll as a fallback
+    for whenever this connection isn't up (see ModuleDetail.jsx)."""
+    try:
+        _validate_index(index)
+    except HTTPException:
+        await websocket.close(code=1008)
+        return
+    await websocket.accept()
+
+    async def _push(idx: str) -> None:
+        doc = await db.index_signal.find_one({"id": f"current_{idx}"}, {"_id": 0})
+        await websocket.send_json(_public_signal(doc or _default_signal(idx)))
+
+    index_vector_broadcaster.subscribe(index, _push)
+    try:
+        await _push(index)  # send current state immediately on connect, don't wait for the next tick
+        while True:
+            # This route only ever pushes; a client isn't expected to send
+            # anything, but we still need to await something to detect a
+            # disconnect (WebSocketDisconnect) rather than spin.
+            await websocket.receive_text()
+    except WebSocketDisconnect:
+        pass
+    finally:
+        index_vector_broadcaster.unsubscribe(index, _push)
+
+
 @api_router.get("/admin/terminal/signal")
 async def get_signal_admin(index: str = "NIFTY", admin: dict = Depends(get_current_admin)):
     _validate_index(index)
@@ -1803,6 +1874,12 @@ async def _run_auto_refresh():
     async def _refresh_one(idx):
         try:
             signal = await definedge.compute_vector(idx)
+            # Pushes this cron-driven update to any browser WS connections
+            # watching `idx` (see /terminal/signal/stream) -- the stream's
+            # own tick-driven trigger (index_vector_stream.py) calls this
+            # same broadcaster after ITS recomputes, so a connected browser
+            # gets pushed an update from whichever trigger fires first.
+            await index_vector_broadcaster.notify(idx)
             return idx, {"bias": signal["bias"]}
         except DefinedgeError as e:
             return idx, {"error": str(e)}
@@ -1965,6 +2042,14 @@ async def definedge_otp_auto_login(request: Request, background_tasks: Backgroun
 # ---------------------------------------------------------------------------
 @app.on_event("startup")
 async def on_startup():
+    # Starts the one shared Definedge WebSocket connection for the whole
+    # process (see definedge_stream.py) -- a no-op loop until today's OTP
+    # login has been done (definedge.ws_credentials() returns None until
+    # then), not a hard dependency for the rest of startup.
+    definedge_stream.start()
+    await index_vector_stream.start()
+    dhan_stream.start()
+
     # Admin seeding (idempotent)
     existing = await db.users.find_one({"email": ADMIN_EMAIL})
     if existing is None:
@@ -2104,7 +2189,7 @@ ipo_router = create_ipo_router(db, get_current_admin, CRON_SECRET)
 blackbox_options_router = create_blackbox_options_router(db, definedge, get_current_admin, get_current_user_optional, CRON_SECRET)
 blackbox_equity_router = create_blackbox_equity_router(db, definedge, get_current_admin, get_current_user_optional, CRON_SECRET)
 exitline_router = create_exitline_router(db, definedge)
-pnf_router = create_pnf_router(db, definedge, get_current_pnf_subscriber)
+pnf_router = create_pnf_router(db, definedge, get_current_pnf_subscriber, get_current_pnf_subscriber_ws, dhan_stream, definedge_stream)
 renko_router = create_renko_router(db, definedge, get_current_pnf_subscriber)
 relative_strength_router = create_relative_strength_router(db, definedge, get_current_user)
 breadth_router = create_breadth_router(db, definedge, get_current_admin, get_current_user, CRON_SECRET)
@@ -2178,4 +2263,7 @@ app.add_middleware(
 
 @app.on_event("shutdown")
 async def shutdown_db_client():
+    await index_vector_stream.stop()
+    await definedge_stream.stop()
+    await dhan_stream.stop()
     client.close()

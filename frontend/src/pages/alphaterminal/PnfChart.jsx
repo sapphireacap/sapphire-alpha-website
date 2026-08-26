@@ -1261,18 +1261,59 @@ const PnfChart = forwardRef(({ embedded = false, controlled = false, onPlotted, 
     fetchChart();
   };
 
-  // Live auto-refresh: only meaningful once a chart is on screen and the
-  // segment actually has a live quote to poll (see canGoLive). Daily+
-  // charts still move during the session -- the backend synthesizes
-  // today's still-forming bar off a live LTP quote, so this isn't wasted
-  // for them the way it would be if Definedge's day bar only updated
-  // post-EOD.
+  // Live updates: NSE/FUT/OPT (India) charts get a real WebSocket tick
+  // stream (backend/pnf_routes.py's WS /pnf/chart/stream, backed by
+  // definedge_stream.py/dhan_stream.py) instead of a poll -- the socket
+  // pushes a freshly recomputed chart every time the underlying's price
+  // actually moves, rather than on a fixed timer. Every other segment
+  // (US/COMMODITY/Yahoo-backed charts, crypto) has no live-stream
+  // integration yet and keeps the original poll unconditionally.
+  //
+  // The poll is NOT removed for India segments either -- it's the
+  // fallback for as long as the socket isn't open (starting up,
+  // reconnecting, or this pass's route rejected the segment/instrument
+  // for any reason), so a chart never goes stale just because a socket
+  // hiccuped. `wsOpenRef` tracks this without a re-render on every
+  // connect/disconnect.
+  const wsOpenRef = useRef(false);
   useEffect(() => {
     if (!live || !data || !canGoLive) return undefined;
     const ms = LIVE_REFRESH_MS[interval] || 30000;
-    const id = setInterval(() => fetchChart({ silent: true }), ms);
+    const id = setInterval(() => {
+      if (!wsOpenRef.current) fetchChart({ silent: true });
+    }, ms);
     return () => clearInterval(id);
   }, [live, data, canGoLive, interval, fetchChart]);
+
+  useEffect(() => {
+    wsOpenRef.current = false;
+    if (!live || !data || !canGoLive) return undefined;
+    if (!["NSE", "FUT", "OPT"].includes(segment) || !symbol) return undefined;
+
+    const params = new URLSearchParams({
+      symbol, segment, interval, token: localStorage.getItem(TRADER_TOKEN_KEY) || "",
+    });
+    if (boxPct != null) params.set("box_pct", boxPct);
+    if (segment === "FUT" || segment === "OPT") params.set("expiry", expiry || "");
+    if (segment === "OPT") { params.set("strike", strike || ""); params.set("option_type", optionType || ""); }
+
+    const wsUrl = `${API.replace(/^http/, "ws")}/pnf/chart/stream?${params.toString()}`;
+    const ws = new WebSocket(wsUrl);
+    ws.onopen = () => { wsOpenRef.current = true; };
+    ws.onmessage = (event) => {
+      try {
+        const msg = JSON.parse(event.data);
+        if (msg.type === "full" && msg.chart) setData(msg.chart);
+      } catch {
+        // malformed push -- the poll fallback (still running whenever
+        // wsOpenRef is false) will correct the display on its own next tick
+      }
+    };
+    ws.onclose = () => { wsOpenRef.current = false; };
+    ws.onerror = () => { wsOpenRef.current = false; };
+    return () => { wsOpenRef.current = false; ws.close(); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [live, data === null, canGoLive, segment, symbol, interval, boxPct, expiry, strike, optionType]);
 
   // Auto-off if the user switches to a US index while Live was on.
   useEffect(() => {
