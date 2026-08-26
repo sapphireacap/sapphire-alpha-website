@@ -417,6 +417,24 @@ async def get_current_user(request: Request) -> dict:
     return user
 
 
+async def get_current_user_optional(request: Request) -> dict | None:
+    """Same decode as get_current_user, but returns None instead of
+    raising on anything that would 401 -- for routes that stay public
+    (200) for every visitor but personalize their response based on who,
+    if anyone, is signed in (see blackbox_access.py)."""
+    auth_header = request.headers.get("Authorization", "")
+    token = auth_header[7:] if auth_header.startswith("Bearer ") else None
+    if not token:
+        return None
+    try:
+        payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
+        if payload.get("type") != "access":
+            return None
+    except jwt.InvalidTokenError:
+        return None
+    return await db.users.find_one({"email": payload.get("email")}, {"_id": 0, "password_hash": 0})
+
+
 async def get_current_admin(request: Request) -> dict:
     user = await get_current_user(request)
     if user.get("role") != "admin":
@@ -2083,8 +2101,8 @@ async def on_startup():
 
 
 ipo_router = create_ipo_router(db, get_current_admin, CRON_SECRET)
-blackbox_options_router = create_blackbox_options_router(db, definedge, get_current_admin, CRON_SECRET)
-blackbox_equity_router = create_blackbox_equity_router(db, definedge, get_current_admin, CRON_SECRET)
+blackbox_options_router = create_blackbox_options_router(db, definedge, get_current_admin, get_current_user_optional, CRON_SECRET)
+blackbox_equity_router = create_blackbox_equity_router(db, definedge, get_current_admin, get_current_user_optional, CRON_SECRET)
 exitline_router = create_exitline_router(db, definedge)
 pnf_router = create_pnf_router(db, definedge, get_current_pnf_subscriber)
 renko_router = create_renko_router(db, definedge, get_current_pnf_subscriber)

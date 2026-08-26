@@ -1,13 +1,21 @@
 """
-PUBLIC routes for the two new options-buying strategies (Convexity Window,
-Gamma Backspread) inside the existing Black Box tab. Deliberately separate
-from blackbox_routes.py's create_blackbox_router, which is entirely
-admin-gated by explicit prior instruction for the ORIGINAL three
-strategies (Prism Alpha, Prism Alpha 2, Lumen SIP) -- these two are public
-by a LATER, separate explicit instruction ("New strategies go public,
-existing 3 stay admin-only"). Same router-factory / cron-vs-admin-JWT twin
-pattern as every other cron-driven feature in this codebase, just with the
-read routes left open instead of admin-gated.
+PUBLIC routes for the three options strategies (Convexity Window, Gamma
+Backspread, Premium Band Strangle) inside the existing Black Box tab.
+Deliberately separate from blackbox_routes.py's create_blackbox_router,
+which is entirely admin-gated by explicit prior instruction for the
+ORIGINAL three strategies (Prism Alpha, Prism Alpha 2, Lumen SIP) -- these
+are public by a LATER, separate explicit instruction ("New strategies go
+public, existing 3 stay admin-only"). Same router-factory / cron-vs-admin-JWT
+twin pattern as every other cron-driven feature in this codebase, just
+with the read routes left open instead of admin-gated.
+
+FULL detail (real config numbers, live signals, performance, backtest
+runs) is further gated to a single named account (see blackbox_access.py)
+via `_gate()` below -- every read route stays publicly reachable (200 for
+anyone), but a visitor who isn't that account gets a locked/"coming soon"
+shape back instead of the real numbers. `get_current_user_optional` never
+401s (unlike get_current_admin), so this doesn't require signing in at
+all to get a response -- it only changes WHAT the response contains.
 
 Every read route only ever returns paper-mode data right now (MODE is
 hardcoded "paper" in blackbox_options_engine.py until the user explicitly
@@ -18,6 +26,7 @@ from datetime import datetime
 
 from fastapi import APIRouter, HTTPException, Request, Depends
 
+from blackbox_access import is_owner
 from blackbox_options_config import get_config
 from blackbox_options_engine import evaluate_all, MODE, STRATEGIES
 from blackbox_options_eod import run_eod
@@ -44,16 +53,21 @@ STRATEGY_LABELS = {
 }
 
 
-def create_blackbox_options_router(db, definedge, get_current_admin, cron_secret: str) -> APIRouter:
+def create_blackbox_options_router(db, definedge, get_current_admin, get_current_user_optional, cron_secret: str) -> APIRouter:
     router = APIRouter(prefix="/blackbox")
+    require_user_optional = Depends(get_current_user_optional)
 
     # ----------------------------------------------------------- public reads
 
     @router.get("/strategies")
-    async def strategies():
+    async def strategies(user: dict | None = require_user_optional):
         out = []
         for strategy_id in STRATEGIES:
             entry = {"strategy_id": strategy_id, **STRATEGY_LABELS[strategy_id], "mode": MODE, "indices": {}}
+            if not is_owner(user):
+                entry["locked"] = True
+                out.append(entry)
+                continue
             for index_key in INDICES:
                 cfg = await get_config(db, index_key)
                 status = await db.blackbox_strategy_status.find_one(
@@ -67,10 +81,13 @@ def create_blackbox_options_router(db, definedge, get_current_admin, cron_secret
                     "updated_at": (status or {}).get("updated_at"),
                 }
             out.append(entry)
-        return {"mode": MODE, "strategies": out}
+        return {"mode": MODE, "strategies": out, "locked": not is_owner(user)}
 
     @router.get("/signals")
-    async def signals(limit: int = 100, index: str = None, strategy_id: str = None):
+    async def signals(limit: int = 100, index: str = None, strategy_id: str = None,
+                      user: dict | None = require_user_optional):
+        if not is_owner(user):
+            return {"mode": MODE, "count": 0, "signals": [], "locked": True}
         limit = max(1, min(limit, 1000))
         q = {"mode": MODE}
         if index:
@@ -78,25 +95,29 @@ def create_blackbox_options_router(db, definedge, get_current_admin, cron_secret
         if strategy_id:
             q["strategy_id"] = strategy_id
         docs = await db.blackbox_signals.find(q, {"_id": 0}).sort("timestamp", -1).to_list(limit)
-        return {"mode": MODE, "count": len(docs), "signals": docs}
+        return {"mode": MODE, "count": len(docs), "signals": docs, "locked": False}
 
     @router.get("/performance")
-    async def performance(index: str = None, strategy_id: str = None):
+    async def performance(index: str = None, strategy_id: str = None, user: dict | None = require_user_optional):
+        if not is_owner(user):
+            return {"mode": MODE, "count": 0, "daily": [], "locked": True}
         q = {"mode": MODE}
         if index:
             q["index"] = index.upper()
         if strategy_id:
             q["strategy_id"] = strategy_id
         docs = await db.blackbox_daily_performance.find(q, {"_id": 0}).sort("date", 1).to_list(5000)
-        return {"mode": MODE, "count": len(docs), "daily": docs}
+        return {"mode": MODE, "count": len(docs), "daily": docs, "locked": False}
 
     @router.get("/backtest-runs")
-    async def backtest_runs():
+    async def backtest_runs(user: dict | None = require_user_optional):
         """The Phase-1 backtest findings — real Definedge data, whatever
         small sample currently exists (see blackbox_options_backtest.py's
         module docstring for the exact data-availability constraint)."""
+        if not is_owner(user):
+            return {"count": 0, "runs": [], "locked": True}
         docs = await db.blackbox_options_backtest_runs.find({}, {"_id": 0}).sort("recorded_at", -1).to_list(50)
-        return {"count": len(docs), "runs": docs}
+        return {"count": len(docs), "runs": docs, "locked": False}
 
     # ----------------------------------------------------------- cron + admin
 

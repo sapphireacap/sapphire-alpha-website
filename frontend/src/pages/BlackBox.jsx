@@ -1,10 +1,20 @@
 import { useEffect, useState } from "react";
+import { Link } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
-import { Plug, LayoutGrid, ShieldCheck, Zap, ChevronDown, ArrowRight, ShieldQuestion, Lock } from "lucide-react";
+import { Plug, LayoutGrid, ShieldCheck, Zap, ChevronDown, ArrowRight, ShieldQuestion, Lock, ArrowUpRight } from "lucide-react";
 import Navbar from "../components/site/Navbar";
 import Footer from "../components/site/Footer";
 import ParticleField from "../components/site/ParticleField";
+import { useCurrentUser } from "../lib/auth";
 import { STRATEGIES, RISK_DISCLOSURE } from "./blackbox/strategies";
+
+// Full detail (rules, backtest results, metrics) is only ever RETURNED by
+// the backend to this one account (see backend/blackbox_access.py) --
+// everyone else gets a locked/"Coming Soon" shape from the same API
+// routes regardless of what this page renders. Checking the email here
+// is purely a UI convenience (skip the extra click into a page that would
+// just show "Coming Soon" anyway) — never the actual gate.
+const isOwnerEmail = (email) => (email || "").trim().toLowerCase() === "prithvihq@gmail.com";
 
 const EASE = [0.16, 1, 0.3, 1];
 const SURFACE = "rounded-2xl border border-white/10 bg-[#0A0D18]";
@@ -125,51 +135,69 @@ const StrategyCounts = () => {
 // methodology fields on each entry are deliberately NOT rendered here --
 // that is the proprietary part. Same "Coming Soon" locked-card treatment
 // the Alpha Terminal directory uses, so the two pages read consistently.
-const StrategyRoster = () => (
-  <section className="relative pb-20 md:pb-28" data-testid="black-box-strategy-roster">
-    <div className="container-x">
-      <motion.h2
-        initial={{ opacity: 0, y: 16 }}
-        whileInView={{ opacity: 1, y: 0 }}
-        viewport={{ once: true, margin: "-80px" }}
-        transition={{ duration: 0.7, ease: EASE }}
-        className="font-display text-3xl md:text-4xl font-normal text-white tracking-tight mb-3 text-center"
-      >
-        The Strategies
-      </motion.h2>
-      <p className="text-sm font-light text-slate-500 text-center max-w-lg mx-auto mb-10">
-        Each strategy's rules and calculations stay private until it clears validation.
-      </p>
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-        {STRATEGIES.map((s, i) => (
-          <motion.div
-            key={s.slug}
-            initial={{ opacity: 0, y: 20 }}
-            whileInView={{ opacity: 1, y: 0 }}
-            viewport={{ once: true, margin: "-60px" }}
-            transition={{ duration: 0.6, ease: EASE, delay: i * 0.06 }}
-            className={`${SURFACE} p-6 opacity-80`}
-            data-testid={`strategy-card-${s.slug}`}
-          >
-            <div className="flex items-start justify-between gap-3 mb-5">
-              <span className="font-mono-ui text-xs text-slate-500">{s.no}</span>
-              <span className="font-mono-ui text-[10px] uppercase tracking-wider text-slate-500 border border-white/10 rounded-full px-2.5 py-1 whitespace-nowrap">
-                {s.status}
-              </span>
-            </div>
-            <h3 className="text-xl font-bold text-white tracking-tight mb-1.5">{s.title}</h3>
-            <p className="text-sm font-light text-slate-500 mb-6 leading-relaxed">{s.assetClass}</p>
-            <div className="flex items-center justify-end pt-4 border-t border-white/[0.06]">
-              <span className="inline-flex items-center gap-1.5 font-mono-ui text-[11px] uppercase tracking-wider text-slate-500">
-                <Lock size={10} /> Coming Soon
-              </span>
-            </div>
-          </motion.div>
-        ))}
+const StrategyRoster = ({ isOwner }) => {
+  const detailable = new Set(["options-live", "equity-live"]);
+  return (
+    <section className="relative pb-20 md:pb-28" data-testid="black-box-strategy-roster">
+      <div className="container-x">
+        <motion.h2
+          initial={{ opacity: 0, y: 16 }}
+          whileInView={{ opacity: 1, y: 0 }}
+          viewport={{ once: true, margin: "-80px" }}
+          transition={{ duration: 0.7, ease: EASE }}
+          className="font-display text-3xl md:text-4xl font-normal text-white tracking-tight mb-3 text-center"
+        >
+          The Strategies
+        </motion.h2>
+        <p className="text-sm font-light text-slate-500 text-center max-w-lg mx-auto mb-10">
+          Each strategy's rules and calculations stay private until it clears validation.
+        </p>
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+          {STRATEGIES.map((s, i) => {
+            const unlocked = isOwner && detailable.has(s.kind);
+            const CardTag = unlocked ? Link : "div";
+            const cardProps = unlocked ? { to: `/black-box/${s.slug}` } : {};
+            return (
+              <motion.div
+                key={s.slug}
+                initial={{ opacity: 0, y: 20 }}
+                whileInView={{ opacity: 1, y: 0 }}
+                viewport={{ once: true, margin: "-60px" }}
+                transition={{ duration: 0.6, ease: EASE, delay: i * 0.06 }}
+              >
+                <CardTag
+                  {...cardProps}
+                  className={`block ${SURFACE} p-6 ${unlocked ? "hover:border-white/20 transition-colors" : "opacity-80"}`}
+                  data-testid={`strategy-card-${s.slug}`}
+                >
+                  <div className="flex items-start justify-between gap-3 mb-5">
+                    <span className="font-mono-ui text-xs text-slate-500">{s.no}</span>
+                    <span className="font-mono-ui text-[10px] uppercase tracking-wider text-slate-500 border border-white/10 rounded-full px-2.5 py-1 whitespace-nowrap">
+                      {s.status}
+                    </span>
+                  </div>
+                  <h3 className="text-xl font-bold text-white tracking-tight mb-1.5">{s.title}</h3>
+                  <p className="text-sm font-light text-slate-500 mb-6 leading-relaxed">{s.assetClass}</p>
+                  <div className="flex items-center justify-end pt-4 border-t border-white/[0.06]">
+                    {unlocked ? (
+                      <span className="inline-flex items-center gap-1.5 font-mono-ui text-[11px] uppercase tracking-wider text-sapphire-light">
+                        View Details <ArrowUpRight size={10} />
+                      </span>
+                    ) : (
+                      <span className="inline-flex items-center gap-1.5 font-mono-ui text-[11px] uppercase tracking-wider text-slate-500">
+                        <Lock size={10} /> Coming Soon
+                      </span>
+                    )}
+                  </div>
+                </CardTag>
+              </motion.div>
+            );
+          })}
+        </div>
       </div>
-    </div>
-  </section>
-);
+    </section>
+  );
+};
 
 /* --------------------------- Validation notice --------------------------- */
 const ValidationNotice = () => (
@@ -252,6 +280,8 @@ const Faq = () => {
 /* --------------------------------- Page --------------------------------- */
 export default function BlackBox() {
   useEffect(() => { window.scrollTo(0, 0); }, []);
+  const [user] = useCurrentUser();
+  const isOwner = isOwnerEmail(user?.email);
 
   return (
     <>
@@ -294,7 +324,7 @@ export default function BlackBox() {
 
         <HowItWorks />
         <StrategyCounts />
-        <StrategyRoster />
+        <StrategyRoster isOwner={isOwner} />
         <ValidationNotice />
         <Faq />
 

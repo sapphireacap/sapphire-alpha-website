@@ -5,12 +5,19 @@ convention as blackbox_options_routes.py's Convexity Window / Gamma
 Backspread (new strategies are public; the original three stay
 admin-only). Same router-factory / cron-vs-admin-JWT twin pattern as
 every other cron-driven feature in this codebase.
+
+FULL detail is further gated to a single named account -- see
+blackbox_access.py and blackbox_options_routes.py's module docstring for
+the exact mechanism (`_gate` shape is duplicated here rather than shared,
+same reasoning swing_reversal_routes.py gives for its own duplicated
+Nifty 500 fetch: keeping this module self-contained).
 """
 import logging
 from datetime import datetime
 
 from fastapi import APIRouter, HTTPException, Request, Depends
 
+from blackbox_access import is_owner
 import blackbox_equity_config as cfgmod
 import blackbox_equity_market as market
 import blackbox_structural_retest as retest
@@ -37,15 +44,20 @@ STRATEGY_LABELS = {
 }
 
 
-def create_blackbox_equity_router(db, definedge, get_current_admin, cron_secret: str) -> APIRouter:
+def create_blackbox_equity_router(db, definedge, get_current_admin, get_current_user_optional, cron_secret: str) -> APIRouter:
     router = APIRouter(prefix="/blackbox/equity")
+    require_user_optional = Depends(get_current_user_optional)
 
     # ----------------------------------------------------------- public reads
 
     @router.get("/strategies")
-    async def strategies():
+    async def strategies(user: dict | None = require_user_optional):
+        owner = is_owner(user)
         out = []
         for strategy_id in STRATEGIES:
+            if not owner:
+                out.append({"strategy_id": strategy_id, **STRATEGY_LABELS[strategy_id], "mode": MODE, "locked": True})
+                continue
             cfg = await cfgmod.get_config(db, strategy_id)
             status = await db.blackbox_equity_strategy_status.find_one(
                 {"strategy_id": strategy_id, "mode": MODE}, {"_id": 0}
@@ -55,10 +67,13 @@ def create_blackbox_equity_router(db, definedge, get_current_admin, cron_secret:
                 "config": cfg, "universe": cfgmod.UNIVERSE[strategy_id],
                 "status": status or {},
             })
-        return {"mode": MODE, "strategies": out}
+        return {"mode": MODE, "strategies": out, "locked": not owner}
 
     @router.get("/signals")
-    async def signals(limit: int = 100, symbol: str = None, strategy_id: str = None):
+    async def signals(limit: int = 100, symbol: str = None, strategy_id: str = None,
+                      user: dict | None = require_user_optional):
+        if not is_owner(user):
+            return {"mode": MODE, "count": 0, "signals": [], "locked": True}
         limit = max(1, min(limit, 1000))
         q = {"mode": MODE, "kind": "equity"}
         if symbol:
@@ -66,15 +81,17 @@ def create_blackbox_equity_router(db, definedge, get_current_admin, cron_secret:
         if strategy_id:
             q["strategy_id"] = strategy_id
         docs = await db.blackbox_signals.find(q, {"_id": 0}).sort("timestamp", -1).to_list(limit)
-        return {"mode": MODE, "count": len(docs), "signals": docs}
+        return {"mode": MODE, "count": len(docs), "signals": docs, "locked": False}
 
     @router.get("/positions")
-    async def positions(status: str = "open", strategy_id: str = None):
+    async def positions(status: str = "open", strategy_id: str = None, user: dict | None = require_user_optional):
+        if not is_owner(user):
+            return {"mode": MODE, "count": 0, "positions": [], "locked": True}
         q = {"mode": MODE, "status": status}
         if strategy_id:
             q["strategy_id"] = strategy_id
         docs = await db.blackbox_equity_positions.find(q, {"_id": 0}).sort("entry_date", -1).to_list(2000)
-        return {"mode": MODE, "count": len(docs), "positions": docs}
+        return {"mode": MODE, "count": len(docs), "positions": docs, "locked": False}
 
     # ----------------------------------------------------------- cron + admin
 
@@ -181,8 +198,10 @@ def create_blackbox_equity_router(db, definedge, get_current_admin, cron_secret:
         return {"runs": runs}
 
     @router.get("/backtest-runs")
-    async def backtest_runs():
+    async def backtest_runs(user: dict | None = require_user_optional):
+        if not is_owner(user):
+            return {"count": 0, "runs": [], "locked": True}
         docs = await db.blackbox_equity_backtest_runs.find({}, {"_id": 0}).sort("recorded_at", -1).to_list(50)
-        return {"count": len(docs), "runs": docs}
+        return {"count": len(docs), "runs": docs, "locked": False}
 
     return router

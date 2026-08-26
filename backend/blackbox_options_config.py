@@ -93,6 +93,14 @@ def default_config_for(index: str) -> dict:
 async def get_config(db, index: str) -> dict:
     doc = await db.blackbox_config.find_one({"index": index}, {"_id": 0})
     if doc:
+        # A doc written before a new strategy was added (e.g.
+        # "premium_band_strangle", 2026-08-26) won't have that top-level
+        # key yet -- backfill it from DEFAULT_CONFIG rather than letting
+        # every reader KeyError on a real, pre-existing production doc.
+        missing = {k: v for k, v in DEFAULT_CONFIG.items() if k not in doc}
+        if missing:
+            doc.update(copy.deepcopy(missing))
+            await db.blackbox_config.update_one({"index": index}, {"$set": missing})
         return doc
     cfg = default_config_for(index)
     await db.blackbox_config.insert_one(dict(cfg))

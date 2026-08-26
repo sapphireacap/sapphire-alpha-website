@@ -25,6 +25,7 @@ import { TRADER_TOKEN_KEY } from "@/pages/Auth";
 // visitor up front.
 const AlphaTerminal = lazy(() => import("@/pages/AlphaTerminal"));
 const BlackBox = lazy(() => import("@/pages/BlackBox"));
+const BlackBoxStrategyDetail = lazy(() => import("@/pages/BlackBoxStrategyDetail"));
 const ModuleDetail = lazy(() => import("@/pages/alphaterminal/ModuleDetail"));
 const PnfWorkspace = lazy(() => import("@/pages/alphaterminal/PnfWorkspace"));
 const PnfStudio = lazy(() => import("@/pages/PnfStudio"));
@@ -79,6 +80,7 @@ const AppShell = () => {
             <Route path="/" element={<Landing />} />
             <Route path="/alpha-terminal" element={<AlphaTerminal />} />
             <Route path="/black-box" element={<BlackBox />} />
+            <Route path="/black-box/:slug" element={<BlackBoxStrategyDetail />} />
             {/* Must precede the /:slug route below — otherwise "pnf" is
                 swallowed as a module slug and never reaches this page.
                 Paid-access gated (see RequirePnfAccess) -- /pnf-studio is

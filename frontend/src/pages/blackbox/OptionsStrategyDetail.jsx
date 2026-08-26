@@ -6,6 +6,7 @@ import {
 } from "recharts";
 import { fmtNum, fmtINR } from "./adapters";
 import { RANGES, filterByRange, downloadCSV, tradesToCSV } from "../../lib/strategyStats";
+import { authHeaders } from "../../lib/auth";
 
 // Public, real-data detail page for the two new options-buying strategies
 // (Convexity Window, Gamma Backspread) — see [[proprietary_naming]] memory:
@@ -239,6 +240,19 @@ const RULES_TEXT = {
       "Exit if IV percentile rises above 60 — volatility has repriced, so the position takes the Vega gain and closes.",
     ],
   },
+  premium_band_strangle: {
+    entry: [
+      "Sells the NIFTY call and put (next monthly expiry) whose live premium sits closest to a fixed target band (default ₹60–70).",
+      "No implied volatility, no Greeks, no chart pattern — strike selection is premium level only.",
+      "Both legs are entered together, once per expiry cycle.",
+    ],
+    exit: [
+      "Profit shift: if a leg's own profit exceeds a fixed rupee threshold, that leg is closed and re-sold back into the target band.",
+      "Loss trigger: if a leg's running loss exceeds a fixed rupee threshold, that leg is closed and re-sold back into the band.",
+      "Premium-doubling trigger: if a leg's premium approaches double its entry value, it's closed and re-sold back into the band.",
+      "Both legs are marked closed at expiry (cash-settled), regardless of whether a roll trigger fired that cycle.",
+    ],
+  },
 };
 
 function RulesAccordion({ strategyId }) {
@@ -304,6 +318,7 @@ function StatusCard({ index, data }) {
 export default function OptionsStrategyDetail({ strategy }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
+  const [locked, setLocked] = useState(false);
   const [entry, setEntry] = useState(null);
   const [signals, setSignals] = useState([]);
   const [performance, setPerformance] = useState([]);
@@ -315,12 +330,14 @@ export default function OptionsStrategyDetail({ strategy }) {
     let cancelled = false;
     setLoading(true);
     setError(false);
+    const headers = authHeaders();
     Promise.all([
-      axios.get(`${API}/blackbox/strategies`).then((r) => r.data),
-      axios.get(`${API}/blackbox/signals`, { params: { strategy_id: strategy.apiPath, limit: 1000 } }).then((r) => r.data),
-      axios.get(`${API}/blackbox/performance`, { params: { strategy_id: strategy.apiPath } }).then((r) => r.data),
+      axios.get(`${API}/blackbox/strategies`, { headers }).then((r) => r.data),
+      axios.get(`${API}/blackbox/signals`, { params: { strategy_id: strategy.apiPath, limit: 1000 }, headers }).then((r) => r.data),
+      axios.get(`${API}/blackbox/performance`, { params: { strategy_id: strategy.apiPath }, headers }).then((r) => r.data),
     ]).then(([strategiesRes, signalsRes, perfRes]) => {
       if (cancelled) return;
+      setLocked(!!strategiesRes.locked);
       setEntry(strategiesRes.strategies.find((s) => s.strategy_id === strategy.apiPath) || null);
       setSignals(signalsRes.signals || []);
       setPerformance(perfRes.daily || []);
@@ -370,6 +387,14 @@ export default function OptionsStrategyDetail({ strategy }) {
   }
   if (error) {
     return <p className="text-sm text-slate-500 py-16 text-center">Could not load this strategy's data right now.</p>;
+  }
+  if (locked) {
+    return (
+      <div className={`${SURFACE} p-10 text-center`}>
+        <p className="text-lg font-bold text-white mb-2">Coming Soon</p>
+        <p className="text-sm text-slate-500 max-w-sm mx-auto">This strategy's rules and performance data aren't public yet.</p>
+      </div>
+    );
   }
 
   return (
