@@ -407,7 +407,7 @@ const LockedDirectoryCard = ({ module, index, label, signInPrompt = false }) => 
         <div className="flex items-center justify-between gap-3 pt-4 border-t border-white/[0.06]">
           {signInPrompt ? (
             <Link
-              to="/auth"
+              to="/login"
               className="inline-flex items-center gap-1.5 text-xs font-medium text-sapphire-light hover:text-white transition-colors"
               data-testid={`module-signin-${module.slug}`}
             >

@@ -571,7 +571,7 @@ const SignInRequiredNotice = ({ loading }) => (
             This module is available to account holders.
           </p>
           <Link
-            to="/auth"
+            to="/login"
             className="inline-flex items-center gap-1.5 rounded-full border border-sapphire-light/40 bg-sapphire/10 px-5 py-2.5 text-sm font-medium text-white hover:border-sapphire-light/70 transition-colors"
             data-testid="module-signin-cta"
           >
