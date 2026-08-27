@@ -453,7 +453,16 @@ def create_pnf_router(db, definedge, get_current_subscriber, get_current_subscri
     async def chart_combo(op: str, interval: str = "daily",
                           box_pct: Optional[float] = pnf_chart.DEFAULT_BOX_PCT,
                           box_value: Optional[float] = None,
-                          years: int = 10, days: int = 30,
+                          # GET /chart's own default (30) is fine for a single
+                          # instrument, but a Straddle/Strangle SUMS two
+                          # legs' full listing-to-date decay -- confirmed
+                          # live against the reference terminal (2026-08-27):
+                          # 30 days of NIFTY 24400 CE+PE spans the option's
+                          # entire ~525->27 lifetime swing, drawing a chart
+                          # that doesn't resemble the terminal's own (which
+                          # shows only the last few sessions). 3 days
+                          # reproduced its CMP and range almost exactly.
+                          years: int = 10, days: int = 3,
                           leg_a_segment: str = "NSE", leg_a_symbol: str = "",
                           leg_a_expiry: Optional[str] = None, leg_a_strike: Optional[float] = None,
                           leg_a_option_type: Optional[str] = None,
