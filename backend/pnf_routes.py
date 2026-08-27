@@ -16,6 +16,7 @@ reach a response body.
 import asyncio
 import logging
 import time
+from datetime import datetime, timedelta, timezone
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, WebSocket, WebSocketDisconnect
@@ -40,6 +41,20 @@ from pnf_indicators import DEFAULT_XO_LOOKBACK
 # times a second for no visible benefit. This caps actual recompute+send
 # to once per window, coalescing any faster burst into the next window.
 LIVE_RECOMPUTE_THROTTLE_SECONDS = 1.0
+
+# Matches pnf_chart.aggregate_minutes's own bucketing (09:15 IST session
+# anchor, ts strings already IST wall-clock with no tz suffix) -- the WS
+# handler needs the exact same bucket math so a tick that crosses into a
+# new minute rolls into a NEW bar instead of stretching the previous one.
+_IST = timezone(timedelta(hours=5, minutes=30))
+
+
+def _minute_bucket(now_ist: datetime, minutes: int) -> datetime:
+    anchor = now_ist.replace(hour=9, minute=15, second=0, microsecond=0)
+    if now_ist < anchor:
+        anchor -= timedelta(days=1)
+    offset = int((now_ist - anchor).total_seconds() // 60)
+    return anchor + timedelta(minutes=(offset // minutes) * minutes)
 
 logger = logging.getLogger(__name__)
 
@@ -514,6 +529,24 @@ def create_pnf_router(db, definedge, get_current_subscriber, get_current_subscri
             if price is None or price <= 0:
                 return
             last = state["bars"][-1]
+            # Minute charts: a tick belongs to whichever bucket "now" falls
+            # in, and that bucket keeps advancing while the socket stays
+            # open. Mutating `last` forever (the original version of this
+            # handler) meant every tick after the first bucket kept
+            # stretching that one bar's high/low indefinitely instead of
+            # ever starting a new column -- a real bug, caught by a live
+            # chart visibly diverging from the reference terminal's the
+            # longer a connection stayed open. Daily+ charts have exactly
+            # one bar for "today" regardless of tick count (see
+            # pnf_chart._with_live_bar), so they always fall through to
+            # the plain mutate-in-place branch below.
+            if interval.isdigit() and "ts" in last:
+                minutes = int(interval)
+                bucket = _minute_bucket(datetime.now(_IST).replace(tzinfo=None), minutes)
+                last_bucket = datetime.strptime(last["ts"], "%d%m%Y%H%M")
+                if bucket > last_bucket:
+                    last = {"ts": bucket.strftime("%d%m%Y%H%M"), "open": price, "high": price, "low": price, "close": price}
+                    state["bars"].append(last)
             last["close"] = price
             last["high"] = max(last["high"], price)
             last["low"] = min(last["low"], price)
