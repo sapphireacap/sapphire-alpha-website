@@ -60,6 +60,7 @@ DISABLED_FEATURES = set(
 from definedge_service import DefinedgeService, DefinedgeError, derive_bias, derive_bias_4, INDEX_CONFIG
 from definedge_stream import DefinedgeStream
 from index_vector_stream import IndexVectorStreamManager, broadcaster as index_vector_broadcaster
+import dhan_master
 from dhan_stream import DhanStream
 from market_dashboard_stream import MarketDashboardStreamManager
 import definedge_otp_email
@@ -2055,6 +2056,19 @@ async def on_startup():
     # (a real CSV download, see dhan_master.py) -- backgrounded so a slow
     # Dhan fetch never delays the rest of startup.
     asyncio.create_task(market_dashboard_stream.start())
+    # dhan_master.py only Mongo-caches the NSE (equity/index) segment --
+    # FUT/OPT are excluded (a 79k-row block risks the 16MB Mongo doc cap,
+    # see that module's own docstring), so they only ever live in the
+    # in-process cache, which a restart wipes. Confirmed live 2026-08-27:
+    # the first options chart requested after a fresh deploy took 51s to
+    # download+parse the master from scratch (vs 0.84s once warm) --
+    # comfortably past Render/Cloudflare's proxy timeout, surfacing to a
+    # user as a flat "Could not plot that chart" 502. resolve() always
+    # calls _index_for(segment) before doing anything segment-specific,
+    # so a bogus symbol still forces the full NSE+FUT+OPT load (one
+    # download populates all three, see _load's `also` param) without
+    # needing a dedicated warm-up API.
+    asyncio.create_task(dhan_master.resolve("OPT", "__WARMUP__", db=db))
 
     # Admin seeding (idempotent)
     existing = await db.users.find_one({"email": ADMIN_EMAIL})
