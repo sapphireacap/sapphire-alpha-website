@@ -95,6 +95,23 @@ def create_pnf_router(db, definedge, get_current_subscriber, get_current_subscri
             raise HTTPException(status_code=404, detail=f"No instrument found for {symbol}.")
         return found
 
+    async def _resolve_bar_source(segment: str, symbol: str, expiry: Optional[str],
+                                  strike: Optional[float], option_type: Optional[str]):
+        """Dhan-first-then-Definedge resolution -- same logic as GET
+        /chart's inline version above, factored out so the combo route
+        below (which resolves TWO independent legs) doesn't need a third
+        copy of it. Returns (source, found, bar_source)."""
+        try:
+            dhan_found = await dhan_master.resolve(segment, symbol, expiry, strike, option_type, db=db)
+            if dhan_found:
+                found = {"segment": dhan_found["exchange_segment"], "token": dhan_found["security_id"],
+                          "tradingsymbol": dhan_found["tradingsymbol"]}
+                return dhan_history.DhanBarSource(db, instrument=dhan_found["instrument"]), found, "dhan"
+        except Exception as e:  # noqa: BLE001 — never fatal, Definedge still stands behind it
+            logger.info("Dhan resolve failed for %s/%s (%s) — falling back to Definedge.", segment, symbol, e)
+        found = await _resolve(segment, symbol, expiry, strike, option_type)
+        return definedge, found, "definedge"
+
     # -- instrument pickers ------------------------------------------------
 
     @router.get("/instruments")
@@ -428,6 +445,93 @@ def create_pnf_router(db, definedge, get_current_subscriber, get_current_subscri
         }
         payload["bar_source"] = bar_source
         return payload
+
+    _COMBO_OPS = {"rs": "ratio", "straddle": "sum", "strangle": "sum"}
+    _COMBO_SEGMENTS = ("NSE", "FUT", "OPT")
+
+    @router.get("/chart/combo")
+    async def chart_combo(op: str, interval: str = "daily",
+                          box_pct: Optional[float] = pnf_chart.DEFAULT_BOX_PCT,
+                          box_value: Optional[float] = None,
+                          years: int = 10, days: int = 30,
+                          leg_a_segment: str = "NSE", leg_a_symbol: str = "",
+                          leg_a_expiry: Optional[str] = None, leg_a_strike: Optional[float] = None,
+                          leg_a_option_type: Optional[str] = None,
+                          leg_b_segment: str = "NSE", leg_b_symbol: str = "",
+                          leg_b_expiry: Optional[str] = None, leg_b_strike: Optional[float] = None,
+                          leg_b_option_type: Optional[str] = None,
+                          user: dict = Depends(get_current_subscriber)):
+        """RS / Straddle / Strangle charts: two independently resolved
+        NSE/FUT/OPT instruments combined into one synthetic close-only
+        price series (RS divides, Straddle/Strangle add), then plotted
+        through the exact same box/pattern/indicator engine as any other
+        P&F chart. Straddle and Strangle are the IDENTICAL combine
+        (op="sum") -- same strike vs different is a labeling convention
+        this route doesn't enforce, matching how Definedge's own terminal
+        offers this feature."""
+        op_key = _COMBO_OPS.get(op.strip().lower())
+        if op_key is None:
+            raise HTTPException(status_code=400, detail=f"op must be one of: {', '.join(_COMBO_OPS)}.")
+        if not leg_a_symbol or not leg_b_symbol:
+            raise HTTPException(status_code=400, detail="Both legs need a symbol.")
+        for seg in (leg_a_segment, leg_b_segment):
+            if seg.strip().upper() not in _COMBO_SEGMENTS:
+                raise HTTPException(status_code=400,
+                                    detail=f"Combo chart legs must be one of: {', '.join(_COMBO_SEGMENTS)}.")
+        leg_a_segment = leg_a_segment.strip().upper()
+        leg_b_segment = leg_b_segment.strip().upper()
+        if box_value is not None:
+            box_pct = None
+
+        async def _leg(segment, symbol, expiry, strike, option_type):
+            source, found, bar_source = await _resolve_bar_source(segment, symbol, expiry, strike, option_type)
+            bars = await pnf_chart.fetch_bars(source, found["segment"], found["token"], interval, years=years, days=days)
+            return bars, found, bar_source
+
+        try:
+            # Sequential, NOT asyncio.gather -- Dhan enforces roughly 1
+            # request/second (see this file's own comment on GET /chart's
+            # resolution above), and a daily+ interval's live-bar refresh
+            # (pnf_chart._with_live_bar) fires a real LTP quote call per
+            # leg. Firing both legs at once trips that ceiling: confirmed
+            # live, the second leg's LTP call came back a real Dhan 429
+            # while the first succeeded, turning into a 502 for the whole
+            # chart. Two legs sequentially costs under a second either way.
+            bars_a, found_a, source_a = await _leg(leg_a_segment, leg_a_symbol, leg_a_expiry, leg_a_strike, leg_a_option_type)
+            bars_b, found_b, source_b = await _leg(leg_b_segment, leg_b_symbol, leg_b_expiry, leg_b_strike, leg_b_option_type)
+        except DefinedgeError as e:
+            raise HTTPException(status_code=502, detail=_public_error(e))
+        except dhan_history.DhanHistoryError as e:
+            raise HTTPException(status_code=502, detail=str(e))
+
+        if not bars_a or not bars_b:
+            raise HTTPException(status_code=404, detail="No price history available for one of the legs.")
+
+        combined = pnf_chart.combine_bars(bars_a, bars_b, op_key)
+        if not combined:
+            raise HTTPException(status_code=400, detail="The two legs share no overlapping trading history.")
+
+        try:
+            chart = pnf_chart.build_chart(combined, box_pct=box_pct, box_value=box_value,
+                                          reversal=pnf_chart.DEFAULT_REVERSAL)
+        except pnf_chart.PnfError as e:
+            raise HTTPException(status_code=400, detail=str(e))
+        chart["params"]["interval"] = interval
+        chart["bar_source"] = f"{source_a}+{source_b}"
+        joiner = " / " if op_key == "ratio" else " + "
+        chart["instrument"] = {
+            "op": op.strip().lower(),
+            # A plain "tradingsymbol" alongside the two legs so the
+            # existing single-instrument stat-readout row (which reads
+            # data.instrument.tradingsymbol unconditionally) needs no
+            # combo-specific branching.
+            "tradingsymbol": f"{found_a['tradingsymbol']}{joiner}{found_b['tradingsymbol']}",
+            "leg_a": {"symbol": leg_a_symbol.upper(), "selector_segment": leg_a_segment,
+                      "tradingsymbol": found_a["tradingsymbol"]},
+            "leg_b": {"symbol": leg_b_symbol.upper(), "selector_segment": leg_b_segment,
+                      "tradingsymbol": found_b["tradingsymbol"]},
+        }
+        return chart
 
     @router.websocket("/chart/stream")
     async def chart_stream(websocket: WebSocket, symbol: str, segment: str = "NSE",

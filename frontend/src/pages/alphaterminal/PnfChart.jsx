@@ -11,6 +11,7 @@ import {
 } from "lucide-react";
 import { EmptyState } from "./QuantLab";
 import { TRADER_TOKEN_KEY } from "../Auth";
+import { PnfComboModal } from "./PnfComboModal";
 import {
   EXITLINE_SEGMENTS, EXITLINE_VISIBLE_LEVELS, EXITLINE_LEVEL_COLORS, EXITLINE_DISPLAY_LABELS,
   fetchExitlineLevels, priceToFractionalLevel, findSessionBoundaries, isIntradayInterval,
@@ -29,6 +30,13 @@ export const SEGMENTS = [
   { key: "COMMODITY", label: "Commodities" },
   { key: "CRYPTO", label: "Crypto" },
 ];
+
+// RS/Straddle/Strangle only exists in this file's own standalone toolbar
+// (below) -- PnfWorkspace's shared multi-cell dropdown still uses the
+// plain SEGMENTS list above and has no UI yet for a two-leg instrument,
+// so it's kept out of the array Workspace imports rather than adding a
+// segment value its own plotInstrument() call can't actually fill in.
+export const STANDALONE_SEGMENTS = [...SEGMENTS, { key: "COMBO", label: "RS / Straddle / Strangle" }];
 
 export const INTERVALS = [
   { key: "daily", label: "Daily" },
@@ -1033,7 +1041,7 @@ export const ToolRail = ({
 /* Page                                                                   */
 /* --------------------------------------------------------------------- */
 
-const compactField = "bg-white/5 border border-white/10 rounded-md px-2.5 py-1.5 text-xs text-white outline-none focus:border-sapphire-light transition-colors [color-scheme:dark]";
+export const compactField = "bg-white/5 border border-white/10 rounded-md px-2.5 py-1.5 text-xs text-white outline-none focus:border-sapphire-light transition-colors [color-scheme:dark]";
 
 // `embedded`: renders to fill its parent instead of claiming the full
 // viewport (h-[100dvh] w-screen) -- what lets four instances sit in one
@@ -1062,6 +1070,13 @@ const PnfChart = forwardRef(({ embedded = false, controlled = false, onPlotted, 
   const [strikes, setStrikes] = useState([]);
   const [strike, setStrike] = useState("");
   const [optionType, setOptionType] = useState("CE");
+  // RS/Straddle/Strangle -- a fully separate instrument shape (two legs,
+  // not one), so it's kept out of the plain segment/symbol/expiry/strike
+  // state above rather than overloading those fields with a shape they
+  // don't fit. Configured via PnfComboModal, applied via Plot like any
+  // other segment.
+  const [comboOpen, setComboOpen] = useState(false);
+  const [comboParams, setComboParams] = useState(null);
 
   const [interval, setIntervalKey] = useState("daily");
   const [boxPct, setBoxPct] = useState(0.25);
@@ -1147,11 +1162,25 @@ const PnfChart = forwardRef(({ embedded = false, controlled = false, onPlotted, 
       expiry: override?.expiry ?? expiry, strike: override?.strike ?? strike,
       optionType: override?.optionType ?? optionType,
     };
-    if (!p.symbol) return;
+    if (p.segment === "COMBO" ? !comboParams : !p.symbol) return;
     if (!silent) { setLoading(true); }
     try {
       let d;
-      if (p.segment === "CRYPTO") {
+      if (p.segment === "COMBO") {
+        const cp = comboParams;
+        ({ data: d } = await axios.get(`${API}/pnf/chart/combo`, {
+          params: {
+            op: cp.op, interval: p.interval, box_pct: p.boxPct,
+            leg_a_segment: cp.legA.segment, leg_a_symbol: cp.legA.symbol,
+            ...(cp.legA.expiry ? { leg_a_expiry: cp.legA.expiry } : {}),
+            ...(cp.legA.strike ? { leg_a_strike: cp.legA.strike, leg_a_option_type: cp.legA.optionType } : {}),
+            leg_b_segment: cp.legB.segment, leg_b_symbol: cp.legB.symbol,
+            ...(cp.legB.expiry ? { leg_b_expiry: cp.legB.expiry } : {}),
+            ...(cp.legB.strike ? { leg_b_strike: cp.legB.strike, leg_b_option_type: cp.legB.optionType } : {}),
+          },
+          ...authHeaders(),
+        }));
+      } else if (p.segment === "CRYPTO") {
         const bars = await fetchCryptoBars(p.symbol, p.interval);
         ({ data: d } = await axios.post(`${API}/pnf/chart/crypto`, { symbol: p.symbol, bars }, {
           params: { interval: p.interval, box_pct: p.boxPct },
@@ -1178,7 +1207,7 @@ const PnfChart = forwardRef(({ embedded = false, controlled = false, onPlotted, 
     } finally {
       if (!silent) setLoading(false);
     }
-  }, [symbol, segment, interval, boxPct, expiry, strike, optionType, onPlotted]);
+  }, [symbol, segment, interval, boxPct, expiry, strike, optionType, onPlotted, comboParams]);
 
   // The shared workspace controller's own imperative handle onto this cell
   // (only meaningful when `controlled`, but harmless to expose always):
@@ -1255,6 +1284,11 @@ const PnfChart = forwardRef(({ embedded = false, controlled = false, onPlotted, 
   }, [showExitline, plottedInstrument]);
 
   const plot = () => {
+    if (segment === "COMBO") {
+      if (!comboParams) { setComboOpen(true); return; }
+      fetchChart();
+      return;
+    }
     if (!symbol) { toast.error("Pick an instrument first."); return; }
     if ((segment === "FUT" || segment === "OPT") && !expiry) { toast.error("Pick an expiry."); return; }
     if (segment === "OPT" && !strike) { toast.error("Pick a strike."); return; }
@@ -1333,9 +1367,20 @@ const PnfChart = forwardRef(({ embedded = false, controlled = false, onPlotted, 
       <div className="shrink-0 border-b border-white/10 bg-[#0B1220] px-3 sm:px-4 py-2.5">
         <div className="flex flex-wrap items-center gap-2">
           <select className={compactField} value={segment} onChange={(e) => { setSegment(e.target.value); setSymbol(""); }}>
-            {SEGMENTS.map((s) => <option key={s.key} value={s.key}>{s.label}</option>)}
+            {STANDALONE_SEGMENTS.map((s) => <option key={s.key} value={s.key}>{s.label}</option>)}
           </select>
 
+          {segment === "COMBO" ? (
+            <button
+              onClick={() => setComboOpen(true)}
+              className={compactField + " hover:border-sapphire-light transition-colors"}
+            >
+              {comboParams
+                ? `${comboParams.op.toUpperCase()}: ${comboParams.legA.symbol} / ${comboParams.legB.symbol}`
+                : "Configure legs…"}
+            </button>
+          ) : (
+          <>
           <div className="relative">
             <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-3 h-3 text-slate-500" />
             <input
@@ -1365,6 +1410,8 @@ const PnfChart = forwardRef(({ embedded = false, controlled = false, onPlotted, 
                 <option value="CE">CE</option><option value="PE">PE</option>
               </select>
             </>
+          )}
+          </>
           )}
 
           <select className={compactField} value={interval} onChange={(e) => setIntervalKey(e.target.value)}>
@@ -1400,6 +1447,12 @@ const PnfChart = forwardRef(({ embedded = false, controlled = false, onPlotted, 
 
       </div>
       )}
+
+      <PnfComboModal
+        open={comboOpen}
+        onClose={() => setComboOpen(false)}
+        onApply={(params) => setComboParams(params)}
+      />
 
       {/* Compact instrument/stat readout — just identity + price + bias;
           everything else here (bull/bear standing, Cont./Rev., cols/bars/

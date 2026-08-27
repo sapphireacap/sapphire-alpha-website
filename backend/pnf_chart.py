@@ -403,6 +403,41 @@ async def fetch_bars(definedge, segment: str, token: str, interval: str,
     return aggregate_minutes(bars, minutes)
 
 
+def combine_bars(bars_a: list, bars_b: list, op: str) -> list:
+    """Synthesizes one close-only bar series from two independently-fetched
+    instruments -- backs RS (op="ratio": leg_a / leg_b) and Straddle/
+    Strangle (op="sum": leg_a premium + leg_b premium) charts. build_chart
+    only ever reads a bar's "close" and its label (see its own docstring),
+    so a combined bar needs nothing else.
+
+    Aligned by label (the "date" or "ts" key, whichever the bars use) --
+    two different instruments rarely share an identical bar count (one
+    side's listing history, or an odd missing tick, differs from the
+    other's), so this pairs up only the labels present on BOTH sides
+    rather than guessing a value for a gap."""
+    if not bars_a or not bars_b:
+        return []
+    key = "date" if "date" in bars_a[0] else "ts"
+    by_label_b = {b.get(key): b.get("close") for b in bars_b if b.get(key) is not None}
+    out = []
+    for b in bars_a:
+        label = b.get(key)
+        close_a = b.get("close")
+        close_b = by_label_b.get(label)
+        if label is None or close_a is None or close_b is None:
+            continue
+        if op == "ratio":
+            if close_b == 0:
+                continue
+            combined = close_a / close_b
+        elif op == "sum":
+            combined = close_a + close_b
+        else:
+            raise PnfError(f"Unknown combine op '{op}'.")
+        out.append({key: label, "close": combined})
+    return out
+
+
 async def chart_for_instrument(definedge, segment: str, token: str,
                                interval: str = "daily", **kwargs) -> dict:
     if interval not in VALID_INTERVALS:
