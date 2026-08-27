@@ -1162,12 +1162,12 @@ const PnfChart = forwardRef(({ embedded = false, controlled = false, onPlotted, 
       expiry: override?.expiry ?? expiry, strike: override?.strike ?? strike,
       optionType: override?.optionType ?? optionType,
     };
-    if (p.segment === "COMBO" ? !comboParams : !p.symbol) return;
+    const cp = override?.comboParams ?? comboParams;
+    if (p.segment === "COMBO" ? !cp : !p.symbol) return;
     if (!silent) { setLoading(true); }
     try {
       let d;
       if (p.segment === "COMBO") {
-        const cp = comboParams;
         ({ data: d } = await axios.get(`${API}/pnf/chart/combo`, {
           params: {
             op: cp.op, interval: p.interval, box_pct: p.boxPct,
@@ -1228,6 +1228,17 @@ const PnfChart = forwardRef(({ embedded = false, controlled = false, onPlotted, 
       if (instrument.interval) setIntervalKey(instrument.interval);
       if (instrument.boxPct != null) setBoxPct(instrument.boxPct);
       fetchChart({ override: instrument });
+    },
+    // RS/Straddle/Strangle -- PnfWorkspace's own shared controller (the
+    // only place a real user reaches this from) has no single-instrument
+    // shape to hand plotInstrument, so this is a separate imperative
+    // entry point mirroring it for the two-leg case.
+    plotCombo: (comboParams, opts = {}) => {
+      setSegment("COMBO");
+      setComboParams(comboParams);
+      if (opts.interval) setIntervalKey(opts.interval);
+      if (opts.boxPct != null) setBoxPct(opts.boxPct);
+      fetchChart({ override: { segment: "COMBO", comboParams, interval: opts.interval, boxPct: opts.boxPct } });
     },
     setLive: (v) => setLive(v),
     setOverlay: (key, value) => {

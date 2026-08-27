@@ -2,7 +2,8 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import axios from "axios";
 import { toast } from "sonner";
 import { LayoutGrid, Rows2, Square, Search, Crosshair, Loader2, Radio } from "lucide-react";
-import PnfChart, { SEGMENTS, INTERVALS, BOX_SIZES, ToolRail } from "./PnfChart";
+import PnfChart, { STANDALONE_SEGMENTS, INTERVALS, BOX_SIZES, ToolRail } from "./PnfChart";
+import { PnfComboModal } from "./PnfComboModal";
 import { TRADER_TOKEN_KEY } from "../Auth";
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
@@ -117,6 +118,8 @@ const PnfWorkspace = () => {
   const [interval, setIntervalKey] = useState("daily");
   const [boxPct, setBoxPct] = useState(0.25);
   const [plotting, setPlotting] = useState(false);
+  const [comboOpen, setComboOpen] = useState(false);
+  const [comboParams, setComboParams] = useState(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -144,6 +147,16 @@ const PnfWorkspace = () => {
   }, [symbol, expiry, segment]);
 
   const plot = async () => {
+    if (segment === "COMBO") {
+      if (!comboParams) { setComboOpen(true); return; }
+      setPlotting(true);
+      try {
+        cellRefs[activeCell].current?.plotCombo(comboParams, { interval, boxPct });
+      } finally {
+        setPlotting(false);
+      }
+      return;
+    }
     if (!symbol) { toast.error("Pick an instrument first."); return; }
     if ((segment === "FUT" || segment === "OPT") && !expiry) { toast.error("Pick an expiry."); return; }
     if (segment === "OPT" && !strike) { toast.error("Pick a strike."); return; }
@@ -184,9 +197,20 @@ const PnfWorkspace = () => {
       <div className="shrink-0 border-b border-white/10 bg-[#0B1220] px-2 sm:px-4 py-2 sm:py-2.5">
         <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
           <select className={compactField} value={segment} onChange={(e) => { setSegment(e.target.value); setSymbol(""); }}>
-            {SEGMENTS.map((s) => <option key={s.key} value={s.key}>{s.label}</option>)}
+            {STANDALONE_SEGMENTS.map((s) => <option key={s.key} value={s.key}>{s.label}</option>)}
           </select>
 
+          {segment === "COMBO" ? (
+            <button
+              onClick={() => setComboOpen(true)}
+              className={compactField + " hover:border-sapphire-light transition-colors"}
+            >
+              {comboParams
+                ? `${comboParams.op.toUpperCase()}: ${comboParams.legA.symbol} / ${comboParams.legB.symbol}`
+                : "Configure legs…"}
+            </button>
+          ) : (
+          <>
           <div className="relative">
             <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-3 h-3 text-slate-500" />
             <input
@@ -216,6 +240,8 @@ const PnfWorkspace = () => {
                 <option value="CE">CE</option><option value="PE">PE</option>
               </select>
             </>
+          )}
+          </>
           )}
 
           <select className={compactField} value={interval} onChange={(e) => setIntervalKey(e.target.value)}>
@@ -316,6 +342,12 @@ const PnfWorkspace = () => {
           })}
         </div>
       </div>
+
+      <PnfComboModal
+        open={comboOpen}
+        onClose={() => setComboOpen(false)}
+        onApply={(params) => setComboParams(params)}
+      />
     </div>
   );
 };
