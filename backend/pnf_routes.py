@@ -424,14 +424,27 @@ def create_pnf_router(db, definedge, get_current_subscriber, get_current_subscri
             found = await _resolve(segment, symbol, expiry, strike, option_type)
             source = definedge
 
-        try:
-            payload = await pnf_chart.chart_for_instrument(
-                source, found["segment"], found["token"], interval,
+        async def _build(src, fnd):
+            return await pnf_chart.chart_for_instrument(
+                src, fnd["segment"], fnd["token"], interval,
                 box_pct=box_pct, box_value=box_value,
                 reversal=pnf_chart.DEFAULT_REVERSAL,
                 cfg=cfg, xo_lookback=xo_lookback, ma_period=ma_period,
                 years=years, days=days,
             )
+
+        try:
+            try:
+                payload = await _build(source, found)
+            except pnf_chart.PnfError:
+                raise
+            except Exception as e:  # noqa: BLE001 — Dhan data failure (lapsed plan, expired token, outage)
+                if bar_source != "dhan":
+                    raise
+                logger.warning("Dhan bar fetch failed for %s/%s (%s) — falling back to Definedge.", segment, symbol, e)
+                bar_source = "definedge"
+                found = await _resolve(segment, symbol, expiry, strike, option_type)
+                payload = await _build(definedge, found)
         except pnf_chart.PnfError as e:
             raise HTTPException(status_code=400, detail=str(e))
         except DefinedgeError as e:
@@ -494,7 +507,15 @@ def create_pnf_router(db, definedge, get_current_subscriber, get_current_subscri
 
         async def _leg(segment, symbol, expiry, strike, option_type):
             source, found, bar_source = await _resolve_bar_source(segment, symbol, expiry, strike, option_type)
-            bars = await pnf_chart.fetch_bars(source, found["segment"], found["token"], interval, years=years, days=days)
+            try:
+                bars = await pnf_chart.fetch_bars(source, found["segment"], found["token"], interval, years=years, days=days)
+            except Exception as e:  # noqa: BLE001 — Dhan data failure (lapsed plan, expired token, outage)
+                if bar_source != "dhan":
+                    raise
+                logger.warning("Dhan bar fetch failed for %s/%s (%s) — falling back to Definedge.", segment, symbol, e)
+                found = await _resolve(segment, symbol, expiry, strike, option_type)
+                bar_source = "definedge"
+                bars = await pnf_chart.fetch_bars(definedge, found["segment"], found["token"], interval, years=years, days=days)
             return bars, found, bar_source
 
         try:
