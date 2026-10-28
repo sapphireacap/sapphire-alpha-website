@@ -23,6 +23,7 @@ from fastapi import APIRouter, Depends, HTTPException, WebSocket, WebSocketDisco
 from pydantic import BaseModel
 
 import alpaca_client as ac
+import dhan_health
 import dhan_history
 import dhan_master
 import binance_client as bn
@@ -102,7 +103,7 @@ def create_pnf_router(db, definedge, get_current_subscriber, get_current_subscri
         below (which resolves TWO independent legs) doesn't need a third
         copy of it. Returns (source, found, bar_source)."""
         try:
-            dhan_found = await dhan_master.resolve(segment, symbol, expiry, strike, option_type, db=db)
+            dhan_found = await dhan_master.resolve(segment, symbol, expiry, strike, option_type, db=db) if dhan_health.available() else None
             if dhan_found:
                 found = {"segment": dhan_found["exchange_segment"], "token": dhan_found["security_id"],
                           "tradingsymbol": dhan_found["tradingsymbol"]}
@@ -411,7 +412,7 @@ def create_pnf_router(db, definedge, get_current_subscriber, get_current_subscri
         bar_source = "dhan"
         source = None
         try:
-            dhan_found = await dhan_master.resolve(segment, symbol, expiry, strike, option_type, db=db)
+            dhan_found = await dhan_master.resolve(segment, symbol, expiry, strike, option_type, db=db) if dhan_health.available() else None
             if dhan_found:
                 found = {"segment": dhan_found["exchange_segment"], "token": dhan_found["security_id"],
                           "tradingsymbol": dhan_found["tradingsymbol"]}
@@ -442,6 +443,8 @@ def create_pnf_router(db, definedge, get_current_subscriber, get_current_subscri
                 if bar_source != "dhan":
                     raise
                 logger.warning("Dhan bar fetch failed for %s/%s (%s) — falling back to Definedge.", segment, symbol, e)
+                if dhan_health.is_access_failure(e):
+                    dhan_health.mark_failed()
                 bar_source = "definedge"
                 found = await _resolve(segment, symbol, expiry, strike, option_type)
                 payload = await _build(definedge, found)
@@ -513,6 +516,8 @@ def create_pnf_router(db, definedge, get_current_subscriber, get_current_subscri
                 if bar_source != "dhan":
                     raise
                 logger.warning("Dhan bar fetch failed for %s/%s (%s) — falling back to Definedge.", segment, symbol, e)
+                if dhan_health.is_access_failure(e):
+                    dhan_health.mark_failed()
                 found = await _resolve(segment, symbol, expiry, strike, option_type)
                 bar_source = "definedge"
                 bars = await pnf_chart.fetch_bars(definedge, found["segment"], found["token"], interval, years=years, days=days)
@@ -608,7 +613,7 @@ def create_pnf_router(db, definedge, get_current_subscriber, get_current_subscri
         bar_source = "dhan"
         source = None
         try:
-            dhan_found = await dhan_master.resolve(segment, symbol, expiry, strike, option_type, db=db)
+            dhan_found = await dhan_master.resolve(segment, symbol, expiry, strike, option_type, db=db) if dhan_health.available() else None
             if dhan_found:
                 found = {"segment": dhan_found["exchange_segment"], "token": dhan_found["security_id"]}
                 source = dhan_history.DhanBarSource(db, instrument=dhan_found["instrument"])

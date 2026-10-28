@@ -49,6 +49,7 @@ from typing import Callable
 import websockets
 
 import dhan_auth
+import dhan_health
 
 logger = logging.getLogger(__name__)
 
@@ -127,6 +128,9 @@ class DhanStream:
         backoff = MIN_BACKOFF_SECONDS
         force_token = False
         while not self._stopping:
+            if not dhan_health.available():
+                await asyncio.sleep(NO_CREDENTIALS_RETRY_SECONDS)
+                continue
             if not dhan_auth.configured():
                 logger.info("Dhan stream: not configured (missing DHAN_CLIENT_ID/PIN/TOTP) — retrying.")
                 await asyncio.sleep(NO_CREDENTIALS_RETRY_SECONDS)
@@ -165,6 +169,8 @@ class DhanStream:
             code = struct.unpack("<H", raw[8:10])[0] if len(raw) >= 10 else None
             reason = DISCONNECT_REASON.get(code, f"code {code}")
             logger.warning("Dhan stream: server disconnected us (%s).", reason)
+            if code in (806, 808, 809):
+                dhan_health.mark_failed()
             return code == 807
         if first_byte == TICKER_RESPONSE_BYTE:
             if len(raw) < 16:
