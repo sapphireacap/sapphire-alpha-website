@@ -1,4 +1,8 @@
 User-agent: *
 Allow: /
+Disallow: /admin33
+Disallow: /reset-password
+Disallow: /verify-email
+Disallow: /not-available
 
 Sitemap: https://www.sapphirealphacapital.com/sitemap.xml
