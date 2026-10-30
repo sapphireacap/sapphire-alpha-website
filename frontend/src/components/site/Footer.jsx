@@ -1,13 +1,14 @@
 import { Link } from "react-router-dom";
 import { Linkedin, Twitter, Instagram, Send } from "lucide-react";
-import { scrollToId } from "./SmoothScroll";
+import { SITE, FOOTER } from "@/content/homepage";
+import SectionLink from "./SectionLink";
 import LOGO from "../../assets/sac-logo-mark.svg";
 
 const NAV = [
   { label: "About", id: "about" },
-  { label: "Research", id: "research" },
+  { label: "Alpha Terminal", to: "/alpha-terminal" },
   { label: "The Black Box", to: "/black-box" },
-  { label: "Investing", id: "investing" },
+  { label: "Pricing", to: "/pricing" },
   { label: "Contact", id: "contact" },
 ];
 
@@ -17,102 +18,88 @@ const LEGAL = [
   { label: "Disclaimer", to: "/disclaimer" },
 ];
 
-const SOCIAL = [
-  { icon: Linkedin, label: "LinkedIn", href: "https://www.linkedin.com/company/sapphirealphacapital" },
-  { icon: Twitter, label: "X / Twitter", href: "https://x.com/sapphireacap" },
-  { icon: Instagram, label: "Instagram", href: "https://www.instagram.com/sapphireacap/" },
-  { icon: Send, label: "Telegram", href: "https://t.me/sapphireacap" },
-];
+const ICONS = { LinkedIn: Linkedin, "X / Twitter": Twitter, Instagram, Telegram: Send };
 
-export const Footer = () => {
-  return (
-    <footer className="relative pt-28 md:pt-36 overflow-hidden" data-testid="site-footer">
-      <div className="container-x">
-        <div className="flex flex-col md:grid md:grid-cols-12 gap-x-8 gap-y-12 pb-24">
-          <div className="md:col-span-4">
-            <div className="flex items-center gap-3.5 mb-6">
-              <span className="logo-pill p-1 flex items-center justify-center">
-                <img src={LOGO} alt="Sapphire Alpha Capital" className="h-10 w-10 object-contain" />
-              </span>
-              <span className="font-display font-extrabold text-white text-lg tracking-tight">SAPPHIRE ALPHA CAPITAL</span>
-            </div>
-            <p className="text-sm font-light text-slate-400 leading-relaxed max-w-sm">
-              Building a research-first platform focused on systematic investing,
-              financial markets, and quantitative analysis.
-            </p>
-            <div className="flex items-center gap-3 mt-8">
-              {SOCIAL.map((s) => {
-                const Icon = s.icon;
-                return (
+const linkClass =
+  "inline-flex min-h-[44px] min-w-[44px] items-center text-sm text-bone/75 hover:text-white transition-colors duration-200";
+
+export const Footer = () => (
+  <footer className="relative pt-24 md:pt-32 overflow-hidden" data-testid="site-footer">
+    <div className="container-x">
+      <div className="flex flex-col md:grid md:grid-cols-12 gap-x-8 gap-y-12 pb-16">
+        <div className="md:col-span-5">
+          <div className="flex items-center gap-3.5 mb-6">
+            <span className="logo-pill p-1 flex items-center justify-center">
+              <img src={LOGO} alt="" width="40" height="40" className="h-10 w-10 object-contain" />
+            </span>
+            <span className="font-display font-extrabold text-white text-lg tracking-tight">SAPPHIRE ALPHA CAPITAL</span>
+          </div>
+          <p className="text-sm font-light text-bone/75 leading-relaxed max-w-sm">{FOOTER.blurb}</p>
+          <a
+            href={`mailto:${SITE.email}`}
+            className="mt-5 inline-flex min-h-[44px] items-center font-mono-ui text-sm text-sapphire-light hover:text-white transition-colors duration-200"
+            data-testid="footer-email"
+          >
+            {SITE.email}
+          </a>
+          <ul className="flex items-center gap-3 mt-4">
+            {SITE.social.map((s) => {
+              const Icon = ICONS[s.label];
+              return (
+                <li key={s.label}>
                   <a
-                    key={s.label}
-                    href={s.href || "#"}
-                    target={s.href ? "_blank" : undefined}
-                    rel={s.href ? "noopener noreferrer" : undefined}
+                    href={s.href}
+                    target="_blank"
+                    rel="noopener noreferrer"
                     aria-label={s.label}
-                    className="h-11 w-11 rounded-full border border-white/10 flex items-center justify-center text-slate-400 hover:text-white hover:border-sapphire-light hover:bg-sapphire/10 hover:scale-105 transition-all duration-300"
+                    className="h-11 w-11 rounded-full border border-white/15 flex items-center justify-center text-bone/75 hover:text-white hover:border-sapphire-light hover:bg-sapphire/10 transition-colors duration-200"
                     data-testid={`social-${s.label.split(" ")[0].toLowerCase()}`}
                   >
-                    <Icon size={16} />
+                    <Icon size={16} aria-hidden="true" />
                   </a>
-                );
-              })}
-            </div>
-          </div>
-
-          <div className="flex gap-8 md:contents">
-            <div className="flex-1 md:flex-none md:col-span-3 md:col-start-7">
-              <p className="label-mono !text-slate-500 mb-7">Navigation</p>
-              <ul className="space-y-4">
-                {NAV.map((n) => (
-                  <li key={n.id || n.to}>
-                    {n.to ? (
-                      <Link
-                        to={n.to}
-                        className="inline-block text-sm text-slate-400 hover:text-white hover:translate-x-0.5 transition-all duration-200"
-                        data-testid={`footer-nav-${n.to.slice(1)}`}
-                      >
-                        {n.label}
-                      </Link>
-                    ) : (
-                      <button
-                        onClick={() => scrollToId(n.id)}
-                        className="inline-block text-sm text-slate-400 hover:text-white hover:translate-x-0.5 transition-all duration-200"
-                        data-testid={`footer-nav-${n.id}`}
-                      >
-                        {n.label}
-                      </button>
-                    )}
-                  </li>
-                ))}
-              </ul>
-            </div>
-
-            <div className="flex-1 md:flex-none md:col-span-2 md:col-start-10">
-              <p className="label-mono !text-slate-500 mb-7">Legal</p>
-              <ul className="space-y-4">
-                {LEGAL.map((l) => (
-                  <li key={l.to}>
-                    <Link
-                      to={l.to}
-                      className="inline-block text-sm text-slate-400 hover:text-white hover:translate-x-0.5 transition-all duration-200"
-                      data-testid={`footer-legal-${l.to.slice(1)}`}
-                    >
-                      {l.label}
-                    </Link>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          </div>
+                </li>
+              );
+            })}
+          </ul>
         </div>
 
-        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 py-8">
-          <p className="font-mono-ui text-xs text-slate-500">© 2026 Sapphire Alpha Capital. All rights reserved.</p>
-        </div>
+        <nav aria-label="Footer" className="flex gap-8 md:contents">
+          <div className="flex-1 md:flex-none md:col-span-3 md:col-start-7">
+            <p className="label-mono mb-4">Navigation</p>
+            <ul>
+              {NAV.map((n) => (
+                <li key={n.id || n.to}>
+                  {n.to ? (
+                    <Link to={n.to} className={linkClass} data-testid={`footer-nav-${n.to.slice(1)}`}>{n.label}</Link>
+                  ) : (
+                    <SectionLink id={n.id} className={linkClass} data-testid={`footer-nav-${n.id}`}>{n.label}</SectionLink>
+                  )}
+                </li>
+              ))}
+            </ul>
+          </div>
+
+          <div className="flex-1 md:flex-none md:col-span-3 md:col-start-10">
+            <p className="label-mono mb-4">Legal</p>
+            <ul>
+              {LEGAL.map((l) => (
+                <li key={l.to}>
+                  <Link to={l.to} className={linkClass} data-testid={`footer-legal-${l.to.slice(1)}`}>{l.label}</Link>
+                </li>
+              ))}
+            </ul>
+          </div>
+        </nav>
       </div>
-    </footer>
-  );
-};
+
+      <div className="border-t border-white/10 py-8 space-y-4">
+        <p className="max-w-3xl text-xs leading-relaxed text-bone/70" data-testid="footer-disclaimer">{FOOTER.disclaimer}</p>
+        <p className="font-mono-ui text-xs text-bone/70">
+          © {SITE.year} {SITE.name}. {FOOTER.rights}
+        </p>
+      </div>
+    </div>
+  </footer>
+);
 
 export default Footer;
