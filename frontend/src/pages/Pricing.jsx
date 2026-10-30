@@ -79,7 +79,7 @@ const PricingCard = ({ plan, cycle, onCta }) => {
       }`}
       data-testid={`pricing-card-${plan.key}`}
     >
-      <h3 className="text-xl font-bold text-white tracking-tight">{plan.name}</h3>
+      <h2 className="text-xl font-bold text-white tracking-tight">{plan.name}</h2>
       {plan.tagline && (
         <p className="mt-1.5 font-mono-ui text-[11px] uppercase tracking-[0.1em] text-sapphire-light">{plan.tagline}</p>
       )}
@@ -96,9 +96,9 @@ const PricingCard = ({ plan, cycle, onCta }) => {
         >
           {fmtCents(perMonth)}
         </motion.span>
-        <span className="text-sm text-slate-500 mb-1.5">/mo</span>
+        <span className="text-sm text-slate-400 mb-1.5">/mo</span>
       </div>
-      <p className="mt-1.5 font-mono-ui text-[11px] text-slate-500">
+      <p className="mt-1.5 font-mono-ui text-[11px] text-slate-400">
         {billedLabel(cycle, price)}
         {savingsPct > 0 && <span className="text-emerald-400 ml-2">save {savingsPct}%</span>}
       </p>
