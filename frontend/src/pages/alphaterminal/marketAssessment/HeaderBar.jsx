@@ -1,6 +1,4 @@
 import { useEffect, useState } from "react";
-import { Link } from "react-router-dom";
-import { ArrowLeft } from "lucide-react";
 
 // Ticks its own clock every second, independent of the 1-minute data
 // poll -- isolated in a leaf component so the second-hand doesn't
@@ -22,16 +20,6 @@ const Clock = () => {
 const HeaderBar = ({ live }) => (
   <div className="flex items-center justify-between px-3 py-2 border-b term-panel-head" style={{ borderColor: "var(--term-border)" }} data-testid="mkt-header-bar">
     <div className="flex items-center gap-3 text-[13px]">
-      <Link
-        to="/"
-        className="flex items-center gap-1.5 px-2 py-1 border term-amber hover:brightness-125 transition-[filter]"
-        style={{ borderColor: "var(--term-amber)" }}
-        title="Back to Sapphire Alpha Capital"
-        data-testid="mkt-home-link"
-      >
-        <ArrowLeft size={13} />
-        <span className="font-bold">SAC HOME</span>
-      </Link>
       <span className="term-cyan">&lt;MKT&gt;</span>
       <span className="term-grey">MARKET ASSESSMENT</span>
     </div>

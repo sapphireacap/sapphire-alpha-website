@@ -28,7 +28,7 @@ const EASE = [0.16, 1, 0.3, 1];
 // top-level link.
 const PRIMARY_LINKS = [
   { label: "Lattice", to: "/lattice" },
-  { label: "Market", to: "/market" },
+  { label: "Market", to: "/market", newTab: true },
   { label: "Alpha Terminal", to: "/alpha-terminal" },
   { label: "The Black Box", to: "/black-box" },
   { label: "Pricing", to: "/pricing" },
@@ -103,7 +103,8 @@ export const Navbar = () => {
     setOpen(false);
     setMoreOpen(false);
     setChartingOpen(false);
-    if (l.to) navigate(l.to);
+    if (l.newTab) window.open(l.to, "_blank", "noopener");
+    else if (l.to) navigate(l.to);
     else goSection(l.id);
   };
 
