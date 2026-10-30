@@ -6,6 +6,7 @@ import os
 import re
 import logging
 import asyncio
+import html
 import bisect
 import hashlib
 import hmac
@@ -227,10 +228,15 @@ class Waitlist(BaseModel):
 
 
 class ContactCreate(BaseModel):
-    name: str
+    name: str = Field(min_length=1, max_length=120)
     email: EmailStr
-    message: str
-    company: Optional[str] = None
+    message: str = Field(min_length=1, max_length=4000)
+    company: Optional[str] = Field(default=None, max_length=160)
+    # Spam traps. `website` is a field real visitors never see or fill (the
+    # form hides it); `elapsed_ms` is how long the form was open before it
+    # was submitted. Neither is stored.
+    website: Optional[str] = None
+    elapsed_ms: Optional[int] = None
 
 
 class Contact(BaseModel):
@@ -240,7 +246,12 @@ class Contact(BaseModel):
     email: EmailStr
     message: str
     company: Optional[str] = None
+    ip: Optional[str] = None
     created_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+
+
+CONTACT_MAX_PER_HOUR = 5
+CONTACT_MIN_FILL_MS = 2500
 
 
 # ---------------------------------------------------------------------------
@@ -336,20 +347,38 @@ async def waitlist_count():
     return {"count": count + WAITLIST_COUNT_OFFSET}
 
 
-@api_router.post("/contact", response_model=Contact)
-async def create_contact(payload: ContactCreate):
-    entry = Contact(**payload.model_dump())
+@api_router.post("/contact", response_model=Contact, response_model_exclude={"ip"})
+async def create_contact(payload: ContactCreate, request: Request):
+    ip = request.client.host if request.client else "unknown"
+    fields = payload.model_dump(exclude={"website", "elapsed_ms"})
+
+    # Bots get a normal-looking success and nothing is stored or sent, so
+    # they have no signal to adapt to.
+    if payload.website or (payload.elapsed_ms is not None and payload.elapsed_ms < CONTACT_MIN_FILL_MS):
+        return Contact(**fields)
+
+    cutoff = (datetime.now(timezone.utc) - timedelta(hours=1)).isoformat()
+    if await db.contacts.count_documents({"ip": ip, "created_at": {"$gte": cutoff}}) >= CONTACT_MAX_PER_HOUR:
+        raise HTTPException(status_code=429, detail="Too many messages from this connection. Please try again later.")
+
+    entry = Contact(**fields, ip=ip)
     await db.contacts.insert_one(entry.model_dump())
+
+    # Visitor-supplied text goes into HTML email bodies, so it is escaped.
+    name = html.escape(payload.name)
+    company = html.escape(payload.company) if payload.company else "—"
+    message = html.escape(payload.message).replace(chr(10), "<br/>")
+    subject_name = " ".join(payload.name.split())[:80]
 
     asyncio.create_task(send_email(
         recipient=NOTIFY_EMAIL,
-        subject=f"New enquiry from {payload.name}",
+        subject=f"New enquiry from {subject_name}",
         html=_wrap_email(
             "New contact enquiry",
-            f"<strong>Name:</strong> {payload.name}<br/>"
-            f"<strong>Email:</strong> {payload.email}<br/>"
-            f"<strong>Company:</strong> {payload.company or '—'}<br/><br/>"
-            f"<strong>Message:</strong><br/>{payload.message}"
+            f"<strong>Name:</strong> {name}<br/>"
+            f"<strong>Email:</strong> {html.escape(payload.email)}<br/>"
+            f"<strong>Company:</strong> {company}<br/><br/>"
+            f"<strong>Message:</strong><br/>{message}"
         ),
         reply_to=payload.email,
     ))
@@ -358,7 +387,7 @@ async def create_contact(payload: ContactCreate):
         subject="We received your message — Sapphire Alpha Capital",
         html=_wrap_email(
             "Thank you for reaching out.",
-            f"Hi {payload.name},<br/><br/>We've received your message and will respond shortly. "
+            f"Hi {name},<br/><br/>We've received your message and will respond shortly. "
             "We appreciate your interest in Sapphire Alpha Capital."
         ),
     ))
