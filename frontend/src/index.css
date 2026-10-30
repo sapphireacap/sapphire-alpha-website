@@ -1,7 +1,6 @@
 /* Bodoni Moda, Archivo and JetBrains Mono are self-hosted (imported in
-   index.js via @fontsource-variable). Inter and IBM Plex Mono, used only by
-   the Quant tool pages and toasts, load from a non-blocking <link> in
-   public/index.html. */
+   index.js via @fontsource-variable). Inter and IBM Plex Mono (Quant tool pages only) are self-hosted
+   too, imported in quantDesignTokens.js so they ship in that chunk. */
 
 @tailwind base;
 @tailwind components;
@@ -226,7 +225,7 @@ body {
        after components, the utility always won and drew an unintended rule
        above every label using the class. */
     .label-mono {
-        @apply font-mono-ui text-[11px] md:text-xs uppercase tracking-[0.28em] text-bone/55 font-medium;
+        @apply font-mono-ui text-[11px] md:text-xs uppercase tracking-[0.28em] text-bone/70 font-medium;
     }
 
     .container-x {
@@ -326,3 +325,52 @@ body {
     border-radius: 10px;
 }
 
+
+
+/* ---- Accessibility base ------------------------------------------------ */
+
+/* Visible keyboard focus everywhere, never on mouse click. */
+:focus-visible {
+    outline: 2px solid #8fb2f5;
+    outline-offset: 3px;
+    border-radius: 2px;
+}
+
+/* Skip link: first focusable element on every page that renders it. */
+.skip-link {
+    position: absolute;
+    left: 1rem;
+    top: -4rem;
+    z-index: 100;
+    padding: 0.75rem 1rem;
+    background: #e8e4d9;
+    color: #060b18;
+    font-size: 0.875rem;
+    font-weight: 600;
+    transition: top 0.15s ease;
+}
+.skip-link:focus { top: 1rem; }
+
+/* Reduced motion: no reveals, no smooth scrolling, no hover travel. */
+@media (prefers-reduced-motion: reduce) {
+    [data-reveal] {
+        opacity: 1 !important;
+        transform: none !important;
+        transition: none !important;
+    }
+    html { scroll-behavior: auto !important; }
+    *, *::before, *::after {
+        animation-duration: 0.001ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.001ms !important;
+    }
+}
+
+/* Section rhythm for the landing page: one vertical scale instead of
+   per-section padding guesses. */
+.section-y { padding-block: clamp(4.5rem, 9vw, 8rem); }
+
+/* The landing page embeds the Market Dashboard's own terminal components.
+   The terminal's muted label grey (#64748b) is 4.1:1 on the plate, below
+   AA for small text, so inside the landing page it is lifted to slate-400. */
+.mkt-terminal.landing-product { --term-grey: #94a3b8; }

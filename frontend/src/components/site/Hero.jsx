@@ -2,110 +2,104 @@ import { motion } from "framer-motion";
 import { ArrowUpRight } from "lucide-react";
 import { Link } from "react-router-dom";
 import { MODULES } from "@/pages/alphaterminal/modules";
-import { scrollToId } from "./SmoothScroll";
-
-const EASE = [0.16, 1, 0.3, 1];
+import { HERO } from "@/content/homepage";
+import { EASE, SKIP_INTRO } from "@/lib/motion";
 
 const liveCount = MODULES.filter((m) => m.live).length;
+
+// Above-the-fold content renders in its final state when prerendered
+// (SKIP_INTRO) so the first paint is the real page, not text waiting on an
+// animation. In dev, where nothing is prerendered, it still fades up.
+const rise = (delay) =>
+  SKIP_INTRO
+    ? { initial: false }
+    : {
+        initial: { opacity: 0, y: 14 },
+        animate: { opacity: 1, y: 0 },
+        transition: { duration: 0.9, ease: EASE, delay },
+      };
 
 export const Hero = () => (
   <section
     id="home"
-    className="relative min-h-screen flex items-center overflow-hidden"
+    aria-labelledby="hero-heading"
+    className="relative min-h-[100svh] flex items-center overflow-hidden"
     data-testid="hero-section"
   >
-    <div className="container-x relative z-10 w-full pt-28 pb-24 md:pt-32 md:pb-28">
+    <div className="container-x relative z-10 w-full pt-32 pb-20 md:pt-40 md:pb-28">
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-14 lg:gap-16 items-start">
         <div className="lg:col-span-7">
           <motion.h1
-            initial={{ opacity: 0, y: 14 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 1, ease: EASE }}
-            className="font-display text-bone leading-[1.02] tracking-[-0.02em] text-[2.75rem] sm:text-6xl lg:text-[4.25rem]"
+            id="hero-heading"
+            {...rise(0)}
+            className="font-display text-bone leading-[1.04] tracking-[-0.02em] text-[2.75rem] sm:text-6xl lg:text-[4.25rem]"
           >
-            Built on Research.
+            {HERO.headline[0]}
             <br />
-            Driven by Alpha.
+            {HERO.headline[1]}
           </motion.h1>
 
           <motion.p
-            initial={{ opacity: 0, y: 14 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 1, ease: EASE, delay: 0.12 }}
-            className="mt-8 max-w-[62ch] text-[15px] md:text-base leading-relaxed text-bone/65"
+            {...rise(0.1)}
+            className="mt-8 max-w-[60ch] text-base md:text-[17px] leading-relaxed text-bone/80"
             data-testid="hero-description"
           >
-            Sapphire Alpha Capital is building a quantitative research platform
-            focused on research, technology and analytical tools for the capital
-            markets. Currently under development. More to come.
+            {HERO.sub}
+          </motion.p>
+
+          <motion.p
+            {...rise(0.16)}
+            className="mt-5 max-w-[60ch] text-base md:text-[17px] leading-relaxed text-bone"
+            data-testid="hero-what-it-does"
+          >
+            {HERO.whatItDoes}
           </motion.p>
 
           <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            transition={{ duration: 1, ease: EASE, delay: 0.24 }}
-            className="mt-12 flex flex-col sm:flex-row sm:items-stretch gap-8 sm:gap-12"
+            {...rise(0.22)}
+            className="mt-12 flex flex-col items-start gap-6 sm:flex-row sm:items-center sm:gap-8"
           >
             <Link
               to="/alpha-terminal"
-              className="group border-t border-bone/30 pt-3.5 transition-colors duration-300 hover:border-bone/70"
+              className="group inline-flex min-h-[52px] items-center gap-2.5 bg-bone px-7 py-3.5 text-[15px] font-semibold text-plate transition-colors duration-200 hover:bg-white"
               data-testid="hero-terminal-btn"
             >
-              <span className="flex items-center gap-2 text-bone text-sm">
-                Open Alpha Terminal
-                <ArrowUpRight
-                  size={15}
-                  className="transition-transform duration-300 group-hover:translate-x-0.5 group-hover:-translate-y-0.5"
-                />
-              </span>
-              <span className="mt-1 block font-mono text-[10.5px] uppercase tracking-[0.16em] text-bone/60">
-                {liveCount} engines live
-              </span>
+              {HERO.ctaPrimary}
+              <ArrowUpRight
+                size={17}
+                aria-hidden="true"
+                className="transition-transform duration-200 group-hover:translate-x-0.5 group-hover:-translate-y-0.5"
+              />
             </Link>
-
-            <button
-              onClick={() => scrollToId("about")}
-              className="group text-left border-t border-bone/15 pt-3.5 transition-colors duration-300 hover:border-bone/45"
-              data-testid="hero-learn-btn"
+            <Link
+              to="/signup"
+              className="inline-flex min-h-[44px] items-center text-[15px] text-bone underline decoration-bone/40 underline-offset-[6px] transition-colors duration-200 hover:decoration-bone"
+              data-testid="hero-signup-btn"
             >
-              <span className="block text-bone/80 text-sm group-hover:text-bone transition-colors duration-300">
-                How a read is built
-              </span>
-              <span className="mt-1 block font-mono text-[10.5px] uppercase tracking-[0.16em] text-bone/60">
-                Method and limits
-              </span>
-            </button>
+              {HERO.ctaSecondary}
+            </Link>
           </motion.div>
+          <p className="mt-4 font-mono text-[11px] uppercase tracking-[0.16em] text-bone/70">
+            {HERO.ctaPrimaryNote(liveCount)}
+          </p>
         </div>
 
         {/* The plate's margin: where an atlas records how the reading was made
             and what it cannot tell you. */}
         <motion.aside
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          transition={{ duration: 1.1, ease: EASE, delay: 0.36 }}
-          className="lg:col-span-4 lg:col-start-9 lg:border-l lg:border-bone/12 lg:pl-8"
+          {...(SKIP_INTRO ? { initial: false } : { initial: { opacity: 0 }, animate: { opacity: 1 }, transition: { duration: 1, ease: EASE, delay: 0.3 } })}
+          aria-label="Method and limits"
+          className="lg:col-span-4 lg:col-start-9 lg:border-l lg:border-bone/15 lg:pl-8"
         >
           <dl className="space-y-7">
-            <div>
-              <dt className="font-mono text-[10.5px] uppercase tracking-[0.18em] text-bone/60">
-                Method
-              </dt>
-              <dd className="mt-2.5 text-[13.5px] leading-relaxed text-bone/70">
-                Each engine computes independently from exchange data. None of them
-                sees another's output, so agreement between them is evidence rather
-                than an average.
-              </dd>
-            </div>
-            <div>
-              <dt className="font-mono text-[10.5px] uppercase tracking-[0.18em] text-bone/60">
-                Limits
-              </dt>
-              <dd className="mt-2.5 text-[13.5px] leading-relaxed text-bone/70">
-                Nothing here forecasts price and nothing here is advice. Where an
-                engine has no reading, it says so instead of estimating one.
-              </dd>
-            </div>
+            {[HERO.method, HERO.limits].map((item) => (
+              <div key={item.label}>
+                <dt className="font-mono text-[11px] uppercase tracking-[0.18em] text-bone/70">
+                  {item.label}
+                </dt>
+                <dd className="mt-2.5 text-sm leading-relaxed text-bone/80">{item.text}</dd>
+              </div>
+            ))}
           </dl>
         </motion.aside>
       </div>
