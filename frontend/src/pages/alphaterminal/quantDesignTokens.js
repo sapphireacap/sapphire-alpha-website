@@ -3,7 +3,12 @@
 // two modules read as one system. Scoped to these pages only -- neither
 // the font choices nor the hex palette touch the site's own
 // font-sans/font-mono tokens or any other module's styling.
-export const F_UI = "'Inter', sans-serif";
+import "@fontsource-variable/inter";
+import "@fontsource/ibm-plex-mono/400.css";
+import "@fontsource/ibm-plex-mono/500.css";
+import "@fontsource/ibm-plex-mono/600.css";
+
+export const F_UI = "'Inter Variable', 'Inter', sans-serif";
 export const F_MONO = "'IBM Plex Mono', monospace";
 
 export const T = {

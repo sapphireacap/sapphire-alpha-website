@@ -5,7 +5,8 @@ import { Link, useNavigate, useSearchParams, useLocation } from "react-router-do
 import { Loader2, ShieldCheck, ArrowLeft, Mail, KeyRound, UserPlus } from "lucide-react";
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
-export const TRADER_TOKEN_KEY = "sac_trader_token";
+import { TRADER_TOKEN_KEY } from "@/lib/tokenKeys";
+export { TRADER_TOKEN_KEY };
 
 const field =
   "w-full bg-transparent border-b border-white/15 focus:border-sapphire-light outline-none text-white font-light py-3 placeholder:text-slate-600 transition-colors duration-300";

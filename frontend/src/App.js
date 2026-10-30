@@ -5,19 +5,15 @@ import { Toaster } from "sonner";
 
 import { ThemeProvider, useTheme } from "@/contexts/ThemeContext";
 import SmoothScroll from "@/components/site/SmoothScroll";
-import Navbar from "@/components/site/Navbar";
-import Hero from "@/components/site/Hero";
-import ParticleField from "@/components/site/ParticleField";
+import Landing from "@/pages/Landing";
+import RouteMeta from "@/components/site/RouteMeta";
 import PausedFeature from "@/components/site/PausedFeature";
-import About from "@/components/site/About";
 import NotAvailablePage from "@/components/site/NotAvailablePage";
-import Contact from "@/components/site/Contact";
-import Footer from "@/components/site/Footer";
 import LegalPage from "@/components/site/LegalPage";
 import NotFound from "@/components/site/NotFound";
 import LoadingBar from "@/components/site/LoadingBar";
 import { installAuthInterceptor, RequirePnfAccess, RequireAuth } from "@/lib/auth";
-import { TRADER_TOKEN_KEY } from "@/pages/Auth";
+import { TRADER_TOKEN_KEY } from "@/lib/tokenKeys";
 
 // Everything below is only needed once a visitor navigates to that specific
 // route, so it's code-split out of the initial bundle instead of shipping
@@ -46,26 +42,9 @@ const ForgotPasswordPage = lazy(() => import("@/pages/Auth").then((m) => ({ defa
 const ResetPasswordPage = lazy(() => import("@/pages/Auth").then((m) => ({ default: m.ResetPasswordPage })));
 const VerifyEmailPage = lazy(() => import("@/pages/Auth").then((m) => ({ default: m.VerifyEmailPage })));
 
-const Landing = () => (
-  // One continuous ground for the whole landing page. The particle field is
-  // fixed behind every section rather than living inside the hero, so the
-  // plate colour runs unbroken from the first viewport through the footer
-  // instead of seaming where the hero ends.
-  <div className="relative bg-plate">
-    <div className="fixed inset-0 pointer-events-none" aria-hidden="true">
-      <ParticleField />
-    </div>
-    <Navbar />
-    <main className="relative">
-      <Hero />
-      <About />
-      <Contact />
-    </main>
-    <Footer />
-  </div>
-);
-
-const AppShell = () => {
+// `Router` is injectable so the build-time prerender can render this exact
+// tree under a StaticRouter; in the browser it is always BrowserRouter.
+export const AppShell = ({ Router = BrowserRouter, routerProps = {} }) => {
   useEffect(() => { installAuthInterceptor(); }, []);
   const { theme } = useTheme();
   const isDark = theme === "dark";
@@ -73,8 +52,9 @@ const AppShell = () => {
   return (
     <div className="App bg-void text-white">
       <div className="grain" />
-      <BrowserRouter>
+      <Router {...routerProps}>
         <SmoothScroll>
+          <RouteMeta />
           <Suspense fallback={<LoadingBar />}>
           <Routes>
             <Route path="/" element={<Landing />} />
@@ -131,14 +111,14 @@ const AppShell = () => {
           </Routes>
           </Suspense>
         </SmoothScroll>
-      </BrowserRouter>
+      </Router>
       <Toaster
         position="bottom-right"
         theme={theme}
         toastOptions={{
           style: isDark
-            ? { background: "#0A0D18", border: "1px solid rgba(255,255,255,0.1)", color: "#fff", fontFamily: "'Inter', sans-serif" }
-            : { background: "#ffffff", border: "1px solid rgba(10,15,31,0.1)", color: "#0a0f1f", fontFamily: "'Inter', sans-serif" },
+            ? { background: "#0A0D18", border: "1px solid rgba(255,255,255,0.1)", color: "#fff", fontFamily: "'Archivo Variable', 'Archivo', sans-serif" }
+            : { background: "#ffffff", border: "1px solid rgba(10,15,31,0.1)", color: "#0a0f1f", fontFamily: "'Archivo Variable', 'Archivo', sans-serif" },
         }}
       />
     </div>

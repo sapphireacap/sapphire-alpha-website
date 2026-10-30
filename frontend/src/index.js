@@ -1,5 +1,5 @@
 import React from "react";
-import ReactDOM from "react-dom/client";
+import { createRoot, hydrateRoot } from "react-dom/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import "@fontsource-variable/bodoni-moda/opsz.css";
 import "@fontsource-variable/archivo";
@@ -19,11 +19,21 @@ const queryClient = new QueryClient({
   },
 });
 
-const root = ReactDOM.createRoot(document.getElementById("root"));
-root.render(
+const tree = (
   <React.StrictMode>
     <QueryClientProvider client={queryClient}>
       <App />
     </QueryClientProvider>
-  </React.StrictMode>,
+  </React.StrictMode>
 );
+
+// The landing page ships prerendered (scripts/prerender.mjs) so its copy is
+// in the first HTML. Hydrate it rather than rebuilding it. Every other URL is
+// served the empty app shell, which mounts normally.
+const container = document.getElementById("root");
+if (container.hasAttribute("data-prerendered") && window.location.pathname === "/") {
+  hydrateRoot(container, tree);
+} else {
+  container.removeAttribute("data-prerendered");
+  createRoot(container).render(tree);
+}

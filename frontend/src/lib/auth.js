@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import axios from "axios";
 import { useNavigate } from "react-router-dom";
 import { Loader2 } from "lucide-react";
-import { TRADER_TOKEN_KEY } from "../pages/Auth";
+import { TRADER_TOKEN_KEY } from "./tokenKeys";
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 export const ADMIN_TOKEN_KEY = "sac_admin_token"; // matches Admin.jsx's local TOKEN_KEY, not exported there
