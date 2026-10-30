@@ -1,0 +1,22 @@
+# Sapphire Alpha Capital
+
+> Sapphire Alpha Capital builds quantitative research tools for the capital markets. Each tool computes from exchange data and shows its method and its limits. Nothing on the site forecasts price, and nothing on it is investment advice.
+
+Sapphire Alpha Capital is not a registered investment adviser or research analyst. The tools are for educational and informational purposes.
+
+## Tools
+
+- [Alpha Terminal](https://www.sapphirealphacapital.com/alpha-terminal): engines for index bias, key price levels, breadth, relative strength, options readings and swing setups.
+- [Market Dashboard](https://www.sapphirealphacapital.com/market): indices, sectors, advances and declines, institutional flows and global indices in one view.
+- [P&F Studio](https://www.sapphirealphacapital.com/pnf-studio): Point & Figure charting for NSE stocks and indices, with a full pattern and indicator library. Paid subscription.
+- [Renko Studio](https://www.sapphirealphacapital.com/renko-studio): Renko charting, covered by the same subscription as P&F Studio.
+- [IPOs](https://www.sapphirealphacapital.com/ipos): current and upcoming mainboard IPOs, with a short breakdown of each Red Herring Prospectus.
+- [The Black Box](https://www.sapphirealphacapital.com/black-box): a collection of systematic trading strategies, developed and validated internally.
+
+## Company
+
+- [Pricing](https://www.sapphirealphacapital.com/pricing)
+- [Privacy Policy](https://www.sapphirealphacapital.com/privacy)
+- [Terms of Use](https://www.sapphirealphacapital.com/terms)
+- [Disclaimer](https://www.sapphirealphacapital.com/disclaimer)
+- Contact: care@sapphirealphacapital.com
