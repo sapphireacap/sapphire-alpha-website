@@ -1,6 +1,7 @@
-/* Faces are loaded from a single non-blocking <link> in public/index.html
-   (Bodoni Moda, Archivo, JetBrains Mono) rather than a render-blocking
-   @import here. */
+/* Bodoni Moda, Archivo and JetBrains Mono are self-hosted (imported in
+   index.js via @fontsource-variable). Inter and IBM Plex Mono, used only by
+   the Quant tool pages and toasts, load from a non-blocking <link> in
+   public/index.html. */
 
 @tailwind base;
 @tailwind components;
@@ -184,17 +185,17 @@ body {
     margin: 0;
     background: var(--void);
     color: #ffffff;
-    font-family: 'Archivo', sans-serif;
+    font-family: 'Archivo Variable', 'Archivo', sans-serif;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
     overflow-x: hidden;
 }
 
 .font-display {
-    font-family: 'Bodoni Moda', serif;
+    font-family: 'Bodoni Moda Variable', 'Bodoni Moda', serif;
 }
 .font-mono-ui {
-    font-family: 'JetBrains Mono', monospace;
+    font-family: 'JetBrains Mono Variable', 'JetBrains Mono', monospace;
     font-variant-numeric: tabular-nums;
 }
 

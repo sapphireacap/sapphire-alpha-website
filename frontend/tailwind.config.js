@@ -11,9 +11,9 @@ module.exports = {
       // atlases were actually cut in. Archivo carries running text; the mono
       // is reserved for measured values, never for "technical" flavour.
       fontFamily: {
-        display: ["'Bodoni Moda'", 'serif'],
-        sans: ["'Archivo'", 'sans-serif'],
-        mono: ["'JetBrains Mono'", 'monospace'],
+        display: ["'Bodoni Moda Variable'", "'Bodoni Moda'", 'serif'],
+        sans: ["'Archivo Variable'", "'Archivo'", 'sans-serif'],
+        mono: ["'JetBrains Mono Variable'", "'JetBrains Mono'", 'monospace'],
       },
       borderRadius: {
         lg: 'var(--radius)',

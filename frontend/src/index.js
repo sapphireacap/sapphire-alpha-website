@@ -1,6 +1,9 @@
 import React from "react";
 import ReactDOM from "react-dom/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import "@fontsource-variable/bodoni-moda/opsz.css";
+import "@fontsource-variable/archivo";
+import "@fontsource-variable/jetbrains-mono";
 import "@/index.css";
 import App from "@/App";
 import { installChunkErrorReload } from "@/lib/chunkErrorReload";
