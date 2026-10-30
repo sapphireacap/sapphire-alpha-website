@@ -4,6 +4,8 @@ import Reveal from "./Reveal";
 
 const ICONS = [LineChart, Layers, Cpu];
 
+const SHOW_FOUNDER = !FOUNDER.name.startsWith("[TODO");
+
 export const About = () => (
   <section id="about" aria-labelledby="about-heading" className="relative section-y" data-testid="about-section">
     <div className="container-x">
@@ -45,6 +47,7 @@ export const About = () => (
       </div>
 
       <div className="mt-16 md:mt-24 grid grid-cols-1 gap-12 border-t border-bone/15 pt-12 md:grid-cols-12 md:gap-16">
+        {SHOW_FOUNDER && (
         <Reveal className="md:col-span-7" data-testid="founder-block">
           <p className="label-mono mb-5">{FOUNDER.label}</p>
           <p className="font-display text-3xl md:text-4xl text-bone leading-tight">{FOUNDER.name}</p>
@@ -66,7 +69,8 @@ export const About = () => (
             </ul>
           )}
         </Reveal>
-        <Reveal delay={0.1} className="md:col-span-5" data-testid="does-not-block">
+        )}
+        <Reveal delay={0.1} className={SHOW_FOUNDER ? "md:col-span-5" : "md:col-span-12 max-w-2xl"} data-testid="does-not-block">
           <p className="label-mono mb-5">{ABOUT.doesNotLabel}</p>
           <p className="text-base leading-relaxed text-bone/80">{ABOUT.doesNot}</p>
         </Reveal>

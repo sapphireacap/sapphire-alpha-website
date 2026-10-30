@@ -384,11 +384,10 @@ async def create_contact(payload: ContactCreate, request: Request):
     ))
     asyncio.create_task(send_email(
         recipient=payload.email,
-        subject="We received your message — Sapphire Alpha Capital",
+        subject="We received your message",
         html=_wrap_email(
             "Thank you for reaching out.",
-            f"Hi {name},<br/><br/>We've received your message and will respond shortly. "
-            "We appreciate your interest in Sapphire Alpha Capital."
+            f"Hi {name},<br/><br/>We received your message and will reply by email."
         ),
     ))
     return entry
