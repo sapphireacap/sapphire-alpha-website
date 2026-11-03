@@ -16,6 +16,8 @@ accurate, and Yahoo serves both directly.
 """
 from __future__ import annotations
 
+import json
+import zlib
 from datetime import datetime, timezone
 
 import httpx
@@ -106,6 +108,30 @@ async def daily_bars_for_ticker(yahoo_symbol: str, range_: str = "3mo") -> list:
     return await _fetch_daily(yahoo_symbol, range_)
 
 
+# The cache collections sit on a free Atlas cluster whose 512 MB quota counts
+# UNCOMPRESSED size. Each ticker holds up to ~5,000 daily bars; stored as a
+# list of dicts the repeated keys and float digits dominated it (this one
+# collection was ~109 MB and, with the rest, filled the cluster on
+# 2026-11-03, blocking every write on the site). Stored as one zlib-
+# compressed JSON blob instead it is several times smaller, and because
+# JSON round-trips Python floats exactly, the bars that come back out are
+# identical -- no history is trimmed, so P&F/Renko/RS charts are unchanged.
+def pack_bars(bars: list) -> bytes:
+    return zlib.compress(json.dumps(bars, separators=(",", ":")).encode("utf-8"), 6)
+
+
+def unpack_bars(doc) -> list:
+    """Bars from a cache doc, in either the packed (`bars_z`) or the older
+    plain-list (`bars`) layout, so existing docs keep working until they
+    are next rewritten."""
+    if not doc:
+        return []
+    packed = doc.get("bars_z")
+    if packed is not None:
+        return json.loads(zlib.decompress(packed))
+    return doc.get("bars", [])
+
+
 def _merge_bars(existing: list, fresh: list) -> list:
     """Union by date, fresh values win on overlap, sorted ascending --
     never truncated, only ever grows. Same shape as the old Alpha Vantage
@@ -129,7 +155,7 @@ async def equity_bars(db, ticker: str) -> list:
     today = datetime.now(timezone.utc).date().isoformat()
     doc = await db[CACHE_COLLECTION].find_one({"symbol": ticker})
     if doc and doc.get("last_fetched_date") == today:
-        return doc["bars"]
+        return unpack_bars(doc)
 
     # NOT "max" -- verified live (2026-08-05): Yahoo silently downsamples
     # interval=1d to ~monthly spacing once the range spans multiple
@@ -137,10 +163,10 @@ async def equity_bars(db, ticker: str) -> list:
     # over the same calendar span). 20y matches the same window
     # relative_strength_routes.py's YEARS_BACK uses for NSE symbols.
     fresh = await _fetch_daily(ticker, range_="20y")
-    merged = _merge_bars(doc["bars"] if doc else [], fresh)
+    merged = _merge_bars(unpack_bars(doc), fresh)
     await db[CACHE_COLLECTION].update_one(
         {"symbol": ticker},
-        {"$set": {"symbol": ticker, "last_fetched_date": today, "bars": merged}},
+        {"$set": {"symbol": ticker, "last_fetched_date": today, "bars_z": pack_bars(merged)}, "$unset": {"bars": ""}},
         upsert=True,
     )
     return merged
@@ -196,14 +222,14 @@ async def daily_bars(db, symbol_key: str, symbol_map: dict = None) -> list:
     today = datetime.now(timezone.utc).date().isoformat()
     doc = await db[CACHE_COLLECTION].find_one({"symbol": symbol_key})
     if doc and doc.get("last_fetched_date") == today:
-        return doc["bars"]
+        return unpack_bars(doc)
 
     yahoo_symbol = symbol_map[symbol_key]["yahoo"]
     fresh = await _fetch_daily(yahoo_symbol)
-    merged = _merge_bars(doc["bars"] if doc else [], fresh)
+    merged = _merge_bars(unpack_bars(doc), fresh)
     await db[CACHE_COLLECTION].update_one(
         {"symbol": symbol_key},
-        {"$set": {"symbol": symbol_key, "last_fetched_date": today, "bars": merged}},
+        {"$set": {"symbol": symbol_key, "last_fetched_date": today, "bars_z": pack_bars(merged)}, "$unset": {"bars": ""}},
         upsert=True,
     )
     return merged

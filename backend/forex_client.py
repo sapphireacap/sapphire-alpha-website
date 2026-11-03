@@ -32,6 +32,8 @@ from __future__ import annotations
 from datetime import datetime, timezone
 
 from yahoo_finance_client import (
+    pack_bars,
+    unpack_bars,
     YahooFinanceError,
     _fetch_daily,
     _merge_bars,
@@ -124,13 +126,13 @@ async def daily_bars(db, symbol: str) -> list:
     today = datetime.now(timezone.utc).date().isoformat()
     doc = await db[CACHE_COLLECTION].find_one({"symbol": symbol})
     if doc and doc.get("last_fetched_date") == today:
-        return doc["bars"]
+        return unpack_bars(doc)
 
     fresh = await _fetch_daily(meta["yahoo"], range_="20y")
-    merged = _merge_bars(doc["bars"] if doc else [], fresh)
+    merged = _merge_bars(unpack_bars(doc), fresh)
     await db[CACHE_COLLECTION].update_one(
         {"symbol": symbol},
-        {"$set": {"symbol": symbol, "last_fetched_date": today, "bars": merged}},
+        {"$set": {"symbol": symbol, "last_fetched_date": today, "bars_z": pack_bars(merged)}, "$unset": {"bars": ""}},
         upsert=True,
     )
     return merged
