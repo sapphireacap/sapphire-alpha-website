@@ -19,7 +19,7 @@ const PRIMARY = [
   ] },
   { label: "Alpha Terminal", to: "/alpha-terminal" },
   { label: "The Black Box", to: "/black-box" },
-  { label: "Pricing", to: "/pricing" },
+  { label: "Pricing", to: "/pricing", comingSoon: true },
   { group: "More", items: [
     { label: "IPOs", to: "/ipos" },
     { label: "Research", to: "/research" },
@@ -33,8 +33,41 @@ const slug = (l) => (l.label || l.group).toLowerCase().replace(/[^a-z0-9]+/g, "-
 const linkBase =
   "inline-flex min-h-[44px] min-w-[44px] items-center whitespace-nowrap text-sm md:text-base text-bone/85 hover:text-white transition-colors duration-200";
 
+// A destination that is not open yet. Not a link and not clickable: it is
+// focusable so keyboard users can reach the same "Coming soon" tooltip that
+// mouse users get on hover. Mobile has no hover, so the label is always
+// visible there instead.
+export const LockedItem = ({ label, className, testId, mobile = false }) => {
+  const tipId = useId();
+  return (
+    <span
+      tabIndex={0}
+      aria-disabled="true"
+      aria-describedby={tipId}
+      className={`group relative cursor-not-allowed select-none text-bone/60 ${className}`}
+      data-testid={testId}
+    >
+      {label}
+      {mobile ? (
+        <span id={tipId} className="ml-2 rounded-full border border-white/15 px-2 py-0.5 text-[10px] uppercase tracking-wider text-bone/70">
+          Coming soon
+        </span>
+      ) : (
+        <span
+          id={tipId}
+          role="tooltip"
+          className="pointer-events-none absolute left-1/2 top-full z-10 mt-1 -translate-x-1/2 whitespace-nowrap rounded-full border border-white/15 bg-void px-3 py-1 text-[11px] uppercase tracking-wider text-bone opacity-0 transition-opacity duration-150 group-hover:opacity-100 group-focus-visible:opacity-100"
+        >
+          Coming soon
+        </span>
+      )}
+    </span>
+  );
+};
+
 const NavLink = ({ item, className = linkBase, onNavigate, testPrefix = "nav" }) => {
   const common = { className, "data-testid": `${testPrefix}-${slug(item)}-link`, onClick: onNavigate };
+  if (item.comingSoon) return <LockedItem label={item.label} className={className} testId={common["data-testid"]} mobile={testPrefix.startsWith("nav-mobile")} />;
   if (item.id) return <SectionLink id={item.id} onNavigate={onNavigate} className={className} data-testid={common["data-testid"]}>{item.label}</SectionLink>;
   if (item.newTab) {
     return (

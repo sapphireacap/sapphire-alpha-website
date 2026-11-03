@@ -120,7 +120,7 @@ fs.writeFileSync(shellPath, page);
 
 // ---- sitemap -----------------------------------------------------------
 const today = new Date().toISOString().slice(0, 10);
-const paths = ["/", "/alpha-terminal", "/black-box", "/pricing", "/pnf-studio", "/renko-studio", "/market", "/ipos", "/research", "/privacy", "/terms", "/disclaimer"];
+const paths = ["/", "/alpha-terminal", "/black-box", "/pnf-studio", "/renko-studio", "/market", "/ipos", "/research", "/privacy", "/terms", "/disclaimer"];
 const urls = paths.map((p) => `  <url>\n    <loc>${SITE.url}${p === "/" ? "/" : p}</loc>\n    <lastmod>${today}</lastmod>\n  </url>`).join("\n");
 fs.writeFileSync(path.join(BUILD, "sitemap.xml"), `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${urls}\n</urlset>\n`);
 

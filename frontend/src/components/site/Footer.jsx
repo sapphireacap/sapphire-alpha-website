@@ -2,13 +2,14 @@ import { Link } from "react-router-dom";
 import { Linkedin, Twitter, Instagram, Send } from "lucide-react";
 import { SITE, FOOTER } from "@/content/homepage";
 import SectionLink from "./SectionLink";
+import { LockedItem } from "./Navbar";
 import LOGO from "../../assets/sac-logo-mark.svg";
 
 const NAV = [
   { label: "About", id: "about" },
   { label: "Alpha Terminal", to: "/alpha-terminal" },
   { label: "The Black Box", to: "/black-box" },
-  { label: "Pricing", to: "/pricing" },
+  { label: "Pricing", to: "/pricing", comingSoon: true },
   { label: "Contact", id: "contact" },
 ];
 
@@ -69,7 +70,9 @@ export const Footer = () => (
             <ul>
               {NAV.map((n) => (
                 <li key={n.id || n.to}>
-                  {n.to ? (
+                  {n.comingSoon ? (
+                    <LockedItem label={n.label} className={linkClass} testId={`footer-nav-${n.to.slice(1)}`} mobile />
+                  ) : n.to ? (
                     <Link to={n.to} className={linkClass} data-testid={`footer-nav-${n.to.slice(1)}`}>{n.label}</Link>
                   ) : (
                     <SectionLink id={n.id} className={linkClass} data-testid={`footer-nav-${n.id}`}>{n.label}</SectionLink>

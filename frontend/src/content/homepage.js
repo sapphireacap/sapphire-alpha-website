@@ -141,10 +141,7 @@ export const ROUTE_META = {
     title: T("The Black Box"),
     description: "The Black Box is Sapphire Alpha Capital's collection of systematic trading strategies, developed and validated internally.",
   },
-  "/pricing": {
-    title: T("Pricing"),
-    description: "Pricing for P&F Studio, which charts NSE stocks and indices with a full Point & Figure pattern and indicator library.",
-  },
+  "/pricing": { title: T("Pricing"), description: "", private: true },
   "/pnf-studio": {
     title: T("P&F Studio"),
     description: "Point & Figure charting for NSE stocks and indices, with the full pattern and indicator library on every chart.",
@@ -172,7 +169,7 @@ export const ROUTE_META = {
   "/login": { title: T("Log In"), description: "", private: true },
   "/signup": { title: T("Sign Up"), description: "", private: true },
 };
-export const PRIVATE_PREFIXES = ["/admin33", "/login", "/signup", "/forgot-password", "/reset-password", "/verify-email", "/not-available", "/lattice", "/journal", "/alpha-terminal/pnf", "/alpha-terminal/renko"];
+export const PRIVATE_PREFIXES = ["/pricing", "/admin33", "/login", "/signup", "/forgot-password", "/reset-password", "/verify-email", "/not-available", "/lattice", "/journal", "/alpha-terminal/pnf", "/alpha-terminal/renko"];
 
 // Legal pages. Drafted in plain language from what the code actually does
 // (what is stored, which services process it). FLAGGED FOR LEGAL REVIEW

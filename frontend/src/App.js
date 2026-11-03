@@ -75,7 +75,8 @@ export const AppShell = ({ Router = BrowserRouter, routerProps = {} }) => {
             {/* Shared placeholder for every nav entry that isn't public yet
                 (P&F Studio, Log In / Sign Up) -- see NotAvailablePage. */}
             <Route path="/not-available" element={<NotAvailablePage />} />
-            <Route path="/pricing" element={<Pricing />} />
+            {/* Locked: pricing is not open yet. The real Pricing page component is untouched; swap this line back to <Pricing /> to open it. */}
+            <Route path="/pricing" element={<PausedFeature title="Pricing" description="Pricing is coming soon." />} />
             <Route path="/ipos" element={<Ipos />} />
             <Route path="/ipos/:id" element={<IpoDetail />} />
             {/* Research (Aurora/FacetView) restored 2026-08-05 -- was paused
