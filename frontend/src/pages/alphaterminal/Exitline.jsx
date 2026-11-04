@@ -53,13 +53,14 @@ const formatIstHm = (time) => {
 // full H5-H4-H3-Pivot-L3-L4-L5 ladder.
 const VISIBLE_LEVELS = ["H5", "H4", "H3", "Pivot", "L3", "L4", "L5"];
 
-// The CHART draws Pivot/PZ and H4/H3 excluded -- Pivot dropped 2026-08-12
-// ("completely remove the pz name and line from the chart"), H4/H3 (S4/S3)
-// dropped 2026-08-20 by explicit request, keeping only the outer S5 and the
-// full V3/V4/V5 support ladder on the candles themselves. Scoped to the
-// chart deliberately -- VISIBLE_LEVELS still drives the live levels panel
-// below it, which continues to list every level including S4/S3/PZ.
-const CHART_LEVELS = ["H5", "L3", "L4", "L5"];
+// The CHART draws Pivot/PZ and H4 excluded -- Pivot dropped 2026-08-12
+// ("completely remove the pz name and line from the chart"), H4 (S4)
+// dropped 2026-08-20 by explicit request. H3 (S3) was dropped with H4 that
+// day and put back by request afterwards, so the candles carry S5, S3 and
+// the full V3/V4/V5 support ladder. Scoped to the chart deliberately --
+// VISIBLE_LEVELS still drives the live levels panel below it, which
+// continues to list every level including S4/PZ.
+const CHART_LEVELS = ["H5", "H3", "L3", "L4", "L5"];
 
 // Matches the reference: all H-levels (S-series, resistance overhead) red,
 // Pivot cyan, all L-levels (V-series, support below) green.
