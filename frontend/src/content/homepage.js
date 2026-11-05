@@ -9,7 +9,7 @@
 export const SITE = {
   name: "Sapphire Alpha Capital",
   url: "https://www.sapphirealphacapital.com",
-  email: "care@sapphirealphacapital.com",
+  email: "care@sapphirealpha.com",
   year: 2026,
   social: [
     { label: "LinkedIn", href: "https://www.linkedin.com/company/sapphirealphacapital" },
