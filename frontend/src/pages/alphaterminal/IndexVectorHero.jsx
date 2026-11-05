@@ -226,9 +226,13 @@ const ThresholdSpectrum = ({ flip, spot, tone }) => {
 export const IndexIntelligenceCard = ({ signal, index }) => {
   const s = signal || {};
   const bias = s.bias || "Neutral";
-  const tone = BIAS_TONE[bias] || BIAS_TONE.Neutral;
-  const label = INDEX_LABELS[index] || index;
   const sessionLive = useSessionLive();
+  // Outside market hours there is no active intraday signal to show: the
+  // last stored reading is hours old, so the card says so instead of
+  // presenting yesterday's bias as if it were current.
+  const closed = !sessionLive;
+  const tone = closed ? BIAS_TONE.Neutral : (BIAS_TONE[bias] || BIAS_TONE.Neutral);
+  const label = INDEX_LABELS[index] || index;
 
   const [liveSpot, setLiveSpot] = useState(null);
   useEffect(() => {
@@ -286,6 +290,18 @@ export const IndexIntelligenceCard = ({ signal, index }) => {
         )}
       </div>
 
+      {closed ? (
+        <div className="px-6 pt-6 pb-8" data-testid={`vector-no-signal-${index}`}>
+          <p className="mb-3" style={microLabel}>Directional Bias</p>
+          <p style={{ fontFamily: F_UI, fontWeight: 600, fontSize: 28, letterSpacing: "-0.01em", color: T.textSecondary }}>
+            NO ACTIVE SIGNAL
+          </p>
+          <p className="mt-3" style={ui(14, 400, T.textMuted)}>
+            Intraday signals are unavailable outside market hours.
+          </p>
+        </div>
+      ) : (
+      <>
       {/* Directional bias */}
       <div className="px-6 pt-6 pb-5">
         <p className="mb-3" style={microLabel}>Directional Bias</p>
@@ -325,6 +341,8 @@ export const IndexIntelligenceCard = ({ signal, index }) => {
           </div>
           {numericSpot != null && <ThresholdSpectrum flip={s.flip} spot={numericSpot} tone={tone} />}
         </div>
+      )}
+      </>
       )}
 
       {/* Footer -- mt-auto so it always sits at the card's bottom edge even

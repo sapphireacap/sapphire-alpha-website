@@ -5,6 +5,7 @@ import axios from "axios";
 import IndexStrip from "@/pages/alphaterminal/marketAssessment/IndexStrip";
 import "@/pages/alphaterminal/marketAssessment/terminal.css";
 import { PRODUCT } from "@/content/homepage";
+import { isNseSessionLive } from "@/lib/nseSession";
 import Reveal from "./Reveal";
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api/terminal`;
@@ -25,6 +26,14 @@ export const ProductReading = () => {
   const [indicesAsOf, setIndicesAsOf] = useState(null);
   const [failed, setFailed] = useState(false);
   const [wide, setWide] = useState(true);
+  const [marketLive, setMarketLive] = useState(false);
+
+  useEffect(() => {
+    const tick = () => setMarketLive(isNseSessionLive());
+    tick();
+    const id = setInterval(tick, 30000);
+    return () => clearInterval(id);
+  }, []);
 
   useEffect(() => {
     const el = ref.current;
@@ -93,6 +102,12 @@ export const ProductReading = () => {
                 )}
                 <div className="p-4 md:p-6">
                   <p className="text-[11px] uppercase tracking-[0.14em] term-grey">{PRODUCT.vectorCaption}</p>
+                  {!marketLive ? (
+                    <div className="mt-4" data-testid="product-no-signal">
+                      <p className="text-2xl text-bone/80">{PRODUCT.noSignal}</p>
+                      <p className="mt-2 text-sm text-bone/70">{PRODUCT.noSignalNote}</p>
+                    </div>
+                  ) : (
                   <div className="mt-4 grid grid-cols-2 gap-x-6 gap-y-5 md:grid-cols-4">
                     <div>
                       <p className="term-label">{PRODUCT.labels.bias}</p>
@@ -111,6 +126,7 @@ export const ProductReading = () => {
                       <p className="mt-1 text-2xl term-red">{fmt(vector.flip?.bearish?.flip_level)}</p>
                     </div>
                   </div>
+                  )}
                   {vector.updated_label && (
                     <p className="mt-6 text-[11px] uppercase tracking-[0.14em] term-grey">
                       {PRODUCT.asOf} {vector.updated_label}

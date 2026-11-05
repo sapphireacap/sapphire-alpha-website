@@ -61,6 +61,8 @@ export const PRODUCT = {
     none: "No reading",
   },
   openLabel: "Open Alpha Terminal",
+  noSignal: "NO ACTIVE SIGNAL",
+  noSignalNote: "Intraday signals are unavailable outside market hours.",
 };
 
 export const ABOUT = {
