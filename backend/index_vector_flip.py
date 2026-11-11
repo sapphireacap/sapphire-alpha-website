@@ -158,20 +158,32 @@ def index_flip_summary(leg_results: dict, spot: float) -> dict:
         if not misaligned:
             return {"reachable": True, "already_aligned": True, "flip_level": None}
 
-        flip_spots = []
+        # The card promises a direction: a Bullish level sits ABOVE spot and
+        # a Bearish level BELOW it ("> level" / "< level" under the bar). A
+        # straddle leg has a flip level on each side of its strike, and the
+        # old "nearest to spot" choice swapped sides between readings when
+        # spot sat midway -- showing, for example, a Bearish level above
+        # spot with a Bullish level overlapping it. So each leg contributes
+        # its nearest level on the REQUIRED side only, and the whole
+        # confluence completes at the farthest of those (every leg has to
+        # have flipped by then).
+        want_up = target_bias == "Bullish"
+        chosen = []
         for name in misaligned:
-            fs = leg_results[name].get("flip_spot")
-            if fs is None:
+            leg = leg_results[name]
+            roots = [r for r in (leg.get("flip_spot"), leg.get("flip_spot_alt")) if r is not None]
+            if not roots:
                 return {"reachable": False, "reason": f"{name} can't reach the required premium via spot movement alone at the current implied vol"}
-            flip_spots.append((name, fs))
+            on_side = [r for r in roots if (r > spot if want_up else r < spot)]
+            if not on_side:
+                return {
+                    "reachable": False,
+                    "reason": f"{name} has no flip level {'above' if want_up else 'below'} the current spot",
+                    "legs": {name: roots},
+                }
+            chosen.append((name, min(on_side) if want_up else max(on_side)))
 
-        signs = {1 if fs > spot else (-1 if fs < spot else 0) for _, fs in flip_spots}
-        signs.discard(0)
-        if len(signs) > 1:
-            return {"reachable": False, "reason": "misaligned legs require spot moves in opposite directions", "legs": dict(flip_spots)}
-
-        sign = signs.pop() if signs else 0
-        binding = max(flip_spots, key=lambda x: x[1]) if sign >= 0 else min(flip_spots, key=lambda x: x[1])
-        return {"reachable": True, "already_aligned": False, "flip_level": binding[1], "binding_leg": binding[0], "legs": dict(flip_spots)}
+        binding = max(chosen, key=lambda x: x[1]) if want_up else min(chosen, key=lambda x: x[1])
+        return {"reachable": True, "already_aligned": False, "flip_level": binding[1], "binding_leg": binding[0], "legs": dict(chosen)}
 
     return {"bullish": summarize_for("Bullish"), "bearish": summarize_for("Bearish")}
