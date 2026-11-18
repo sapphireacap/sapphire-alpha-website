@@ -12,10 +12,10 @@ FREE (Standard) plan facts this is built around
 So: fetch history ONCE a day and cache it, take live prices from the WebSocket, and cache
 the option chain for 30-60 s. Do not call this per visitor request.
 
-UNVERIFIED until the first live run (scripts/fyers_check.py): the REST paths below follow
-FYERS' v3 docs and SDK; the per-request history windows (INTRADAY_CHUNK_DAYS /
-DAILY_CHUNK_DAYS) are the commonly reported limits; and the unit of the option-chain `iv`
-(percent vs decimal) is not documented, so it is returned raw as `iv_raw`.
+VERIFIED live on the free plan (2026-11-19, fyers_check.py): index price, daily history (248 days),
+1-minute history (and 11 months back), and the option chain WITH greeks and IV (IV in percent).
+Still unverified: the exact per-request history windows (INTRADAY_CHUNK_DAYS / DAILY_CHUNK_DAYS are
+the commonly reported limits).
 """
 import logging
 import time
@@ -138,10 +138,11 @@ class FyersClient:
 
     # ---- option chain with greeks and IV ---------------------------------------------------
     async def option_chain(self, symbol: str, strikecount: int = 10, greeks: bool = True) -> dict:
-        """{spot, expiries, strikes: {strike: {"ce": side, "pe": side}}} where side holds ltp, oi, volume,
-        delta, gamma, theta, vega and `iv_raw` (UNIT UNVERIFIED: print it with fyers_check before
-        converting). `symbol` is the underlying, e.g. NSE:NIFTY50-INDEX. One call covers every strike,
-        so cache the result 30-60 s. Whether free accounts receive greeks is confirmed on the first run."""
+        """{spot, vix, expiries, strikes: {strike: {"ce": side, "pe": side}}} where side holds ltp, oi,
+        volume, delta, gamma, theta, vega, iv_pct (percent, e.g. 13.38) and iv (decimal, 0.1338).
+        CONFIRMED live on the free plan 2026-11-19: greeks and IV are returned (nested under `greeks`
+        when greeks=1), IV is in percent. `symbol` is the underlying, e.g. NSE:NIFTY50-INDEX. One call
+        covers every strike, so cache the result 30-60 s."""
         params = {"symbol": symbol, "strikecount": min(int(strikecount), 50)}
         if greeks:
             params["greeks"] = "1"
@@ -156,13 +157,17 @@ class FyersClient:
             strike = row.get("strike_price")
             if strike is None or float(strike) <= 0:
                 continue
+            g = row.get("greeks") or {}                # nested; present when greeks=1 (confirmed on the free plan)
+            iv_pct = g.get("iv")
             strikes.setdefault(float(strike), {"ce": None, "pe": None})[kind.lower()] = {
                 "symbol": row.get("symbol"), "ltp": row.get("ltp"), "oi": row.get("oi"), "volume": row.get("volume"),
-                "delta": row.get("delta"), "gamma": row.get("gamma"), "theta": row.get("theta"), "vega": row.get("vega"),
-                "iv_raw": row.get("iv")}
+                "delta": g.get("delta"), "gamma": g.get("gamma"), "theta": g.get("theta"), "vega": g.get("vega"),
+                "iv_pct": iv_pct,                                              # e.g. 13.38
+                "iv": (iv_pct / 100.0) if isinstance(iv_pct, (int, float)) and iv_pct else None}   # decimal, e.g. 0.1338
         if not strikes:
             raise FyersError(f"FYERS returned an empty option chain for {symbol}.")
-        return {"spot": spot, "expiries": data.get("expiryData") or [], "strikes": strikes,
+        vix = (data.get("indiavixData") or {}).get("ltp")
+        return {"spot": spot, "vix": vix, "expiries": data.get("expiryData") or [], "strikes": strikes,
                 "fetched_at": datetime.now(timezone.utc).isoformat()}
 
 

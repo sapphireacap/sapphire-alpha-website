@@ -71,7 +71,10 @@ async def main() -> int:
         print("Add them to backend/.env (names only listed above), then run again.")
         return 1
     db = MemDb()
-    token = await step("login", fyers_auth.get_access_token(db))
+    async def login():
+        await fyers_auth.get_access_token(db)
+        return "token obtained (value not shown)"
+    token = await step("login", login())
     if token is None:
         print("\nLogin failed. Send me the FAIL line (it contains no secrets). Do not retry more than once or twice: "
               "failed TOTP attempts count against the account.")
@@ -102,9 +105,10 @@ async def main() -> int:
         ch = await c.option_chain(sym, strikecount=6, greeks=True)
         k = min(ch["strikes"], key=lambda s: abs(s - (ch["spot"] or 0)))
         ce = ch["strikes"][k]["ce"] or {}
-        have = {x: ce.get(x) is not None for x in ("delta", "gamma", "theta", "vega", "iv_raw")}
-        return (f"spot {ch['spot']}, {len(ch['strikes'])} strikes, ATM {k:.0f} CE ltp {ce.get('ltp')} | present: {have} | "
-                f"iv_raw {ce.get('iv_raw')} (a value like 14 means percent, like 0.14 means decimal)")
+        pe = ch["strikes"][k]["pe"] or {}
+        have = {x: ce.get(x) is not None for x in ("delta", "gamma", "theta", "vega", "iv")}
+        return (f"spot {ch['spot']}, VIX {ch.get('vix')}, {len(ch['strikes'])} strikes, ATM {k:.0f}: CE ltp {ce.get('ltp')} delta {ce.get('delta')} "
+                f"| PE ltp {pe.get('ltp')} delta {pe.get('delta')} | IV {ce.get('iv_pct')}% | all present: {all(have.values())}")
     await step("option chain (greeks + IV)", chain())
     print("\nbudget:", budget.snapshot())
     print("All steps passed." if not FAILS else f"{len(FAILS)} step(s) failed: {', '.join(FAILS)}")

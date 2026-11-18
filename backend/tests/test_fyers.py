@@ -416,20 +416,26 @@ def test_budget_refusal_stops_the_request_before_it_is_sent(monkeypatch):
     assert n["calls"] == 0
 
 
-def test_option_chain_is_normalised_and_iv_unit_is_left_raw(monkeypatch):
-    payload = {"s": "ok", "data": {"expiryData": [{"date": "23-11-2026", "expiry": "1795449000"}], "optionsChain": [
+def test_option_chain_reads_the_nested_greeks_and_converts_iv_percent_to_decimal(monkeypatch):
+    payload = {"s": "ok", "data": {"expiryData": [{"date": "23-11-2026", "expiry": "1795449000"}],
+                                   "indiavixData": {"ltp": 11.5, "symbol": "NSE:INDIAVIX-INDEX"}, "optionsChain": [
         {"symbol": "NSE:NIFTY50-INDEX", "ltp": 25228.0, "option_type": "", "strike_price": -1},
-        {"symbol": "NSE:NIFTY2612325200CE", "ltp": 120.5, "option_type": "CE", "strike_price": 25200, "oi": 900, "volume": 50,
-         "delta": 0.55, "gamma": 0.002, "theta": -12.5, "vega": 8.1, "iv": 14.2},
-        {"symbol": "NSE:NIFTY2612325200PE", "ltp": 95.0, "option_type": "PE", "strike_price": 25200, "iv": 15.0, "delta": -0.45}]}}
+        {"symbol": "NSE:NIFTY2612325250CE", "ltp": 150.1, "option_type": "CE", "strike_price": 25250, "oi": 900, "volume": 50,
+         "greeks": {"delta": 0.49, "gamma": 0.001, "theta": -15.75, "vega": 11.78, "iv": 13.38}},
+        {"symbol": "NSE:NIFTY2612325250PE", "ltp": 175.8, "option_type": "PE", "strike_price": 25250,
+         "greeks": {"delta": -0.51, "gamma": 0.001, "theta": -15.75, "vega": 11.78, "iv": 13.38}},
+        {"symbol": "NSE:NIFTY2612325300CE", "ltp": 120.0, "option_type": "CE", "strike_price": 25300}]}}   # no greeks block
     seen = []
     c, _ = client_with(monkeypatch, lambda r: seen.append(dict(r.url.params)) or httpx.Response(200, json=payload))
     ch = run(c.option_chain("NSE:NIFTY50-INDEX", strikecount=500))
     assert seen[0]["strikecount"] == "50" and seen[0]["greeks"] == "1"           # capped at 50, greeks requested
-    assert ch["spot"] == 25228.0 and set(ch["strikes"]) == {25200.0}
-    ce = ch["strikes"][25200.0]["ce"]
-    assert (ce["delta"], ce["vega"], ce["iv_raw"]) == (0.55, 8.1, 14.2) and "iv" not in ce
-    assert ch["strikes"][25200.0]["pe"]["delta"] == -0.45
+    assert ch["spot"] == 25228.0 and ch["vix"] == 11.5 and set(ch["strikes"]) == {25250.0, 25300.0}
+    ce = ch["strikes"][25250.0]["ce"]
+    assert (ce["delta"], ce["gamma"], ce["theta"], ce["vega"]) == (0.49, 0.001, -15.75, 11.78)
+    assert ce["iv_pct"] == 13.38 and ce["iv"] == pytest.approx(0.1338)
+    assert ch["strikes"][25250.0]["pe"]["delta"] == -0.51
+    bare = ch["strikes"][25300.0]["ce"]                                          # a strike without greeks must not crash
+    assert bare["delta"] is None and bare["iv"] is None and bare["ltp"] == 120.0
 
 
 def test_empty_chain_is_an_error(monkeypatch):
