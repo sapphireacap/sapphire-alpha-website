@@ -901,7 +901,9 @@ class DefinedgeService:
         return [{"t": label(t), "v": closes[t]} for t in stamps]
 
     # ---- orchestration -------------------------------------------------
-    async def compute_vector(self, index_key: str = "NIFTY"):
+    SOURCE = "definedge"   # label stored on each signal; a subclass for another data vendor overrides it
+
+    async def compute_vector(self, index_key: str = "NIFTY", write_history: bool = True):
         """Runs the Index Vector for one index. chart_mode "6" (NIFTY)
         reads weekly+monthly straddles plus monthly ATM CE/PE; chart_mode
         "4" (BANKNIFTY, FINNIFTY — no real weekly contract exists, see
@@ -947,7 +949,7 @@ class DefinedgeService:
             "monthly_down_trend": monthly_down_trend,
             "monthly_atm_ce_trend": monthly_atm_ce_trend,
             "monthly_atm_pe_trend": monthly_atm_pe_trend,
-            "source": "definedge",
+            "source": self.SOURCE,
             "box_size": "0.5%",
             "reversal": "3 box",
             "atm_leg_box_size": "3%",
@@ -1037,7 +1039,8 @@ class DefinedgeService:
         history_doc = dict(signal)
         history_doc.pop("chart", None)
         history_doc["id"] = str(uuid.uuid4())
-        await self.db.index_signal_history.insert_one(history_doc)
+        if write_history:
+            await self.db.index_signal_history.insert_one(history_doc)
 
         if index_key == "NIFTY":
             # Legacy mirror: journal_routes.py's straddle_regime_at_entry
@@ -1048,11 +1051,23 @@ class DefinedgeService:
             legacy = dict(signal)
             legacy["id"] = "current"
             await self.db.nifty_signal.update_one({"id": "current"}, {"$set": legacy}, upsert=True)
-            legacy_history = dict(history_doc)
-            legacy_history["id"] = str(uuid.uuid4())
-            await self.db.nifty_signal_history.insert_one(legacy_history)
+            if write_history:
+                legacy_history = dict(history_doc)
+                legacy_history["id"] = str(uuid.uuid4())
+                await self.db.nifty_signal_history.insert_one(legacy_history)
 
         return signal
+
+    async def _market_iv_strikes(self, index_key: str, expiry_iso: str) -> dict:
+        """{strike: {"ce": {"iv": decimal, ...}, "pe": {...}}} for one expiry, or {} when unavailable (the
+        legs then fall back to solving IV from their own price). Never raises: IV is an upgrade, not a
+        dependency. Overridden by a subclass that reads another vendor's option chain."""
+        try:
+            import dhan_options_client as dhan_oc
+            return (await dhan_oc.chain(self.db, index_key, expiry=expiry_iso)).get("strikes") or {}
+        except Exception as e:  # noqa: BLE001
+            logger.info("Index Vector: market IV unavailable for %s %s (%s) — falling back to computed IV.", index_key, expiry_iso, e)
+            return {}
 
     async def _compute_flip_summary(self, index_key: str, segment: str, spot: float, atm: int, tokens: dict,
                                      monthly_up_state: dict, monthly_down_state: dict,
@@ -1097,13 +1112,7 @@ class DefinedgeService:
         # leaves the values None and each leg falls back to its own solve,
         # so the module keeps working exactly as before if Dhan is down or
         # the token has lapsed.
-        iv_by_strike = {}
-        try:
-            import dhan_options_client as dhan_oc
-            chain = await dhan_oc.chain(self.db, index_key, expiry=tokens["monthly"]["expiry"])
-            iv_by_strike = chain.get("strikes") or {}
-        except Exception as e:  # noqa: BLE001 — IV is an upgrade, never a dependency
-            logger.info("Index Vector: market IV unavailable for %s (%s) — falling back to computed IV.", index_key, e)
+        iv_by_strike = await self._market_iv_strikes(index_key, tokens["monthly"]["expiry"])
 
         def market_iv(strike_value, side):
             """Market IV for one side of the LISTED strike nearest `strike_value`,
@@ -1141,12 +1150,7 @@ class DefinedgeService:
             # chain -- reusing the monthly one would apply the wrong term's
             # vol. A second call is affordable here (60s cache, and the
             # weekly path only runs for chart_mode "6" indices).
-            weekly_iv = {}
-            try:
-                import dhan_options_client as dhan_oc
-                weekly_iv = (await dhan_oc.chain(self.db, index_key, expiry=tokens["weekly"]["expiry"])).get("strikes") or {}
-            except Exception as e:  # noqa: BLE001
-                logger.info("Index Vector: weekly market IV unavailable for %s (%s).", index_key, e)
+            weekly_iv = await self._market_iv_strikes(index_key, tokens["weekly"]["expiry"])
 
             def weekly_market_iv(strike_value, side):
                 if not weekly_iv:

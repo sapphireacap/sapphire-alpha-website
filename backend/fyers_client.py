@@ -137,7 +137,7 @@ class FyersClient:
         return float(q["ltp"])
 
     # ---- option chain with greeks and IV ---------------------------------------------------
-    async def option_chain(self, symbol: str, strikecount: int = 10, greeks: bool = True) -> dict:
+    async def option_chain(self, symbol: str, strikecount: int = 10, greeks: bool = True, expiry_ts=None) -> dict:
         """{spot, vix, expiries, strikes: {strike: {"ce": side, "pe": side}}} where side holds ltp, oi,
         volume, delta, gamma, theta, vega, iv_pct (percent, e.g. 13.38) and iv (decimal, 0.1338).
         CONFIRMED live on the free plan 2026-11-19: greeks and IV are returned (nested under `greeks`
@@ -146,6 +146,8 @@ class FyersClient:
         params = {"symbol": symbol, "strikecount": min(int(strikecount), 50)}
         if greeks:
             params["greeks"] = "1"
+        if expiry_ts:                    # an expiry epoch from `expiries` (confirmed live: returns that expiry's contracts)
+            params["timestamp"] = str(expiry_ts)
         body = await self._get("options-chain-v3", params)
         data = body.get("data") or {}
         spot, strikes = None, {}

@@ -69,8 +69,11 @@ import fyers_auth
 import fyers_budget
 from fyers_client import FyersClient, INDEX_SYMBOLS as FYERS_INDEX_SYMBOLS
 from fyers_feed import FyersFeed
+from fyers_series import SeriesStore as FyersSeriesStore
+from fyers_vector import FyersVectorRunner, FyersVectorService
 
 fyers_live = None   # the FYERS price feed; created at startup only when FYERS_ENABLED=1
+fyers_vector_runner = None   # Index Vector on FYERS data (FYERS_ENABLED=1 and FYERS_INDEX_VECTOR != 0)
 import mt5_client as mt5c
 if "journal" not in DISABLED_FEATURES:
     from journal_routes import create_journal_router
@@ -1938,6 +1941,7 @@ async def fyers_status(admin: dict = Depends(get_current_admin)):
     """FYERS health for the owner: login state (no token values), live-feed state and prices, and the
     day's request budget (the free plan allows 5,000 data calls a day)."""
     return {"auth": await fyers_auth.status(db), "feed": fyers_live.snapshot() if fyers_live else None,
+            "index_vector": fyers_vector_runner.snapshot() if fyers_vector_runner else None,
             "budget": fyers_budget.budget.snapshot()}
 
 
@@ -2096,13 +2100,21 @@ async def on_startup():
     # login has been done (definedge.ws_credentials() returns None until
     # then), not a hard dependency for the rest of startup.
     definedge_stream.start()
-    global fyers_live
+    global fyers_live, fyers_vector_runner
     if fyers_auth.enabled():
         # FYERS live prices: one quotes request every FYERS_FEED_INTERVAL s (15 by default), only while the
         # NSE session is open, within the free plan's request budget (see fyers_feed.py).
         fyers_live = FyersFeed(FyersClient(db), _is_market_open)
         fyers_live.add(list(FYERS_INDEX_SYMBOLS.values()))     # NIFTY, BANKNIFTY, FINNIFTY, INDIA VIX
         fyers_live.start()
+        if os.environ.get("FYERS_INDEX_VECTOR", "1").strip().lower() not in ("0", "false", "no", "off"):
+            # Index Vector computed from FYERS data once a minute during the session (see fyers_vector.py).
+            # The Definedge/Dhan paths stay paused; this writes the same index_signal documents the page reads.
+            _fyers_client = FyersClient(db)
+            _fyers_store = FyersSeriesStore(db, _fyers_client)
+            fyers_vector_runner = FyersVectorRunner(
+                FyersVectorService(db, _fyers_client, fyers_live, _fyers_store), fyers_live, _fyers_store, _is_market_open)
+            fyers_vector_runner.start()
     await index_vector_stream.start()
     dhan_stream.start()
     # Resolving ~20 index names against Dhan's master takes a few seconds
@@ -2336,6 +2348,8 @@ app.add_middleware(
 
 @app.on_event("shutdown")
 async def shutdown_db_client():
+    if fyers_vector_runner is not None:
+        await fyers_vector_runner.stop()
     if fyers_live is not None:
         await fyers_live.stop()
     await index_vector_stream.stop()
