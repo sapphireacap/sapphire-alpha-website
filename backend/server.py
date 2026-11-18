@@ -65,6 +65,12 @@ from dhan_stream import DhanStream
 from market_dashboard_stream import MarketDashboardStreamManager
 import definedge_otp_email
 import vendor_pause
+import fyers_auth
+import fyers_budget
+from fyers_client import FyersClient, INDEX_SYMBOLS as FYERS_INDEX_SYMBOLS
+from fyers_feed import FyersFeed
+
+fyers_live = None   # the FYERS price feed; created at startup only when FYERS_ENABLED=1
 import mt5_client as mt5c
 if "journal" not in DISABLED_FEATURES:
     from journal_routes import create_journal_router
@@ -1927,6 +1933,14 @@ async def _run_auto_refresh():
     await _record_auto_refresh("error" if failed else "ok", failed or results, started)
 
 
+@api_router.get("/admin/fyers/status")
+async def fyers_status(admin: dict = Depends(get_current_admin)):
+    """FYERS health for the owner: login state (no token values), live-feed state and prices, and the
+    day's request budget (the free plan allows 5,000 data calls a day)."""
+    return {"auth": await fyers_auth.status(db), "feed": fyers_live.snapshot() if fyers_live else None,
+            "budget": fyers_budget.budget.snapshot()}
+
+
 @api_router.post("/admin/definedge/auto-refresh")
 async def definedge_auto_refresh(request: Request, background_tasks: BackgroundTasks):
     """Called by the external (cron-job.org) cron on a schedule during NSE
@@ -2082,6 +2096,13 @@ async def on_startup():
     # login has been done (definedge.ws_credentials() returns None until
     # then), not a hard dependency for the rest of startup.
     definedge_stream.start()
+    global fyers_live
+    if fyers_auth.enabled():
+        # FYERS live prices: one quotes request every FYERS_FEED_INTERVAL s (15 by default), only while the
+        # NSE session is open, within the free plan's request budget (see fyers_feed.py).
+        fyers_live = FyersFeed(FyersClient(db), _is_market_open)
+        fyers_live.add(list(FYERS_INDEX_SYMBOLS.values()))     # NIFTY, BANKNIFTY, FINNIFTY, INDIA VIX
+        fyers_live.start()
     await index_vector_stream.start()
     dhan_stream.start()
     # Resolving ~20 index names against Dhan's master takes a few seconds
@@ -2315,6 +2336,8 @@ app.add_middleware(
 
 @app.on_event("shutdown")
 async def shutdown_db_client():
+    if fyers_live is not None:
+        await fyers_live.stop()
     await index_vector_stream.stop()
     await definedge_stream.stop()
     await market_dashboard_stream.stop()
