@@ -64,6 +64,8 @@ from typing import Optional
 import httpx
 import pandas as pd
 
+import vendor_pause
+
 from index_vector_flip import compute_leg_flip, index_flip_summary
 import pnf_engine
 
@@ -243,6 +245,8 @@ class DefinedgeService:
         return bool(self.api_token and self.api_secret)
 
     async def trigger_otp(self):
+        if vendor_pause.paused():
+            raise DefinedgeError(vendor_pause.MESSAGE)
         if not self.configured():
             raise DefinedgeError("Definedge API credentials are not configured.")
         url = f"{AUTH_BASE}/login/{self.api_token}"
@@ -272,6 +276,8 @@ class DefinedgeService:
         return {"message": data.get("message", "OTP sent."), "otp_token": self._otp_token, "otp_token_present": True}
 
     async def verify_otp(self, otp: str, otp_token: str = None):
+        if vendor_pause.paused():
+            raise DefinedgeError(vendor_pause.MESSAGE)
         token = otp_token or self._otp_token
         if not token:
             raise DefinedgeError("No OTP session. Trigger OTP first.")
@@ -309,6 +315,8 @@ class DefinedgeService:
         return {"status": "connected"}
 
     async def _session_key(self):
+        if vendor_pause.paused():
+            raise DefinedgeError(vendor_pause.MESSAGE)
         doc = await self.db.definedge_session.find_one({"id": "current"}, {"_id": 0})
         if not doc or not doc.get("api_session_key"):
             raise DefinedgeError("No active Definedge session. Please complete daily OTP login.")
@@ -318,6 +326,8 @@ class DefinedgeService:
         """{"uid","actid","susertoken"} for the WebSocket login frame (see
         definedge_stream.py) -- None if any is missing (e.g. a session
         stored before this field existed, or before today's OTP login)."""
+        if vendor_pause.paused():
+            return None
         doc = await self.db.definedge_session.find_one({"id": "current"}, {"_id": 0})
         if not doc or not all(doc.get(k) for k in ("uid", "actid", "susertoken")):
             return None
@@ -369,6 +379,8 @@ class DefinedgeService:
         today = datetime.now(IST).strftime("%Y-%m-%d")
         if self._all_master_cache and self._all_master_cache[0] == today:
             return self._all_master_cache[1]
+        if vendor_pause.paused():
+            raise DefinedgeError(vendor_pause.MESSAGE)
         try:
             async with httpx.AsyncClient(timeout=60) as c:
                 r = await c.get(ALL_MASTER_URL)

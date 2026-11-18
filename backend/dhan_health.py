@@ -10,11 +10,15 @@ comes back on its own. DHAN_DISABLED=1 forces it off.
 import os
 import time
 
+import vendor_pause
+
 COOLDOWN_SECONDS = 1800
 _down_until = 0.0
 
 
 def available() -> bool:
+    if vendor_pause.paused():
+        return False
     if os.environ.get("DHAN_DISABLED", "").strip().lower() in ("1", "true", "yes"):
         return False
     return time.monotonic() >= _down_until

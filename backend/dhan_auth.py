@@ -54,6 +54,8 @@ from datetime import datetime, timedelta, timezone
 
 import httpx
 
+import vendor_pause
+
 logger = logging.getLogger(__name__)
 
 AUTH_URL = "https://auth.dhan.co/app/generateAccessToken"
@@ -141,6 +143,8 @@ async def login() -> dict:
     real upstream message rather than a generic failure -- the dhanhq SDK
     collapses auth errors into {"status": "failure"} with a null message,
     which cost real debugging time, so this module never goes through it."""
+    if vendor_pause.paused():
+        raise DhanAuthError(vendor_pause.MESSAGE)
     if not configured():
         missing = [k for k in ("DHAN_CLIENT_ID", "DHAN_PIN", "DHAN_TOTP_SECRET") if not os.environ.get(k)]
         raise DhanAuthError(f"Dhan auto-login not configured — missing {', '.join(missing)}.")
@@ -196,6 +200,10 @@ async def get_access_token(db, force: bool = False) -> str:
          TOTP misconfiguration degrades to "yesterday's manual token" for
          its remaining life instead of taking the feature down outright.
     """
+    if vendor_pause.paused():
+        # Checked BEFORE the cached token on purpose: every Dhan REST call and the
+        # WebSocket take their token from here, so refusing here stops them all.
+        raise DhanAuthError(vendor_pause.MESSAGE)
     now = datetime.now(timezone.utc)
 
     if not force:

@@ -33,6 +33,8 @@ from datetime import date, datetime
 
 import httpx
 
+import vendor_pause
+
 logger = logging.getLogger(__name__)
 
 MASTER_URL = "https://images.dhan.co/api-data/api-scrip-master.csv"
@@ -101,6 +103,8 @@ async def _load(segment: str, also: set = None) -> dict:
         for i in instruments:
             owner.setdefault(i, []).append(seg)
 
+    if vendor_pause.paused():
+        raise DhanMasterError(vendor_pause.MESSAGE)
     try:
         async with httpx.AsyncClient(timeout=180, follow_redirects=True) as c:
             r = await c.get(MASTER_URL)

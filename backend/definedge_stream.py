@@ -42,6 +42,8 @@ from typing import Callable
 
 import websockets
 
+import vendor_pause
+
 logger = logging.getLogger(__name__)
 
 WS_URL = "wss://trade.definedgesecurities.com/NorenWSTRTP/"
@@ -113,6 +115,9 @@ class DefinedgeStream:
     async def _run(self) -> None:
         backoff = MIN_BACKOFF_SECONDS
         while not self._stopping:
+            if vendor_pause.paused():
+                await asyncio.sleep(NO_CREDENTIALS_RETRY_SECONDS)   # idle: no login, no socket
+                continue
             creds = await self.definedge.ws_credentials()
             if not creds:
                 logger.info("Definedge stream: no WS credentials yet (daily OTP login not done) — retrying.")

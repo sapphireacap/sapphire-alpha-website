@@ -64,6 +64,7 @@ from index_vector_stream import IndexVectorStreamManager, broadcaster as index_v
 from dhan_stream import DhanStream
 from market_dashboard_stream import MarketDashboardStreamManager
 import definedge_otp_email
+import vendor_pause
 import mt5_client as mt5c
 if "journal" not in DISABLED_FEATURES:
     from journal_routes import create_journal_router
@@ -1952,6 +1953,8 @@ async def definedge_auto_refresh(request: Request, background_tasks: BackgroundT
     `last_auto_refresh` on GET /admin/definedge/status instead."""
     if not CRON_SECRET or request.headers.get("X-Cron-Key") != CRON_SECRET:
         raise HTTPException(status_code=401, detail="Invalid cron key")
+    if vendor_pause.paused():
+        return {"skipped": "vendor requests paused"}   # a plain 200: not a failure for the scheduler
 
     now = datetime.now(IST)
     # Outside market hours there is genuinely nothing to do -- a plain 200,
@@ -2057,6 +2060,8 @@ async def definedge_otp_auto_login(request: Request, background_tasks: Backgroun
     still the real signal."""
     if not CRON_SECRET or request.headers.get("X-Cron-Key") != CRON_SECRET:
         raise HTTPException(status_code=401, detail="Invalid cron key")
+    if vendor_pause.paused():
+        return {"skipped": "vendor requests paused"}
     if not definedge.configured():
         return {"skipped": "Definedge not configured"}
     status = await definedge.status()
