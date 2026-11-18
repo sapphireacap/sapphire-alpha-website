@@ -436,3 +436,19 @@ def test_empty_chain_is_an_error(monkeypatch):
     c, _ = client_with(monkeypatch, lambda r: httpx.Response(200, json={"s": "ok", "data": {"optionsChain": []}}))
     with pytest.raises(fyers_client.FyersError, match="empty"):
         run(c.option_chain("NSE:NIFTY50-INDEX"))
+
+def test_a_rate_limit_reply_triggers_a_long_cooldown_not_the_short_one(monkeypatch):
+    calls = []
+
+    def handler(r):
+        calls.append(r.url.path)
+        return httpx.Response(429, json={"s": "error", "code": 429, "message": "Too many requests. Please try again later."})
+
+    mock_http(monkeypatch, handler)
+    with pytest.raises(fyers_auth.FyersAuthError, match="HTTP 429"):
+        run(fyers_auth.get_access_token(FakeDb()))
+    assert fyers_auth._last_failure["wait"] == fyers_auth.RATE_LIMIT_COOLDOWN == 3600
+    n = len(calls)
+    with pytest.raises(fyers_auth.FyersAuthError, match="cooling down"):
+        run(fyers_auth.get_access_token(FakeDb()))
+    assert len(calls) == n                                   # nothing was sent while cooling down

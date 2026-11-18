@@ -19,7 +19,7 @@ from datetime import datetime, timedelta
 from dotenv import load_dotenv
 
 load_dotenv(os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env"))
-os.environ.setdefault("FYERS_ENABLED", "1")
+os.environ["FYERS_ENABLED"] = "1"   # this test runs regardless of the site switch in .env
 
 import fyers_auth  # noqa: E402
 import fyers_client  # noqa: E402

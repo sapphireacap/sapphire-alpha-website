@@ -56,6 +56,7 @@ EXPIRY_TIME = (6, 30)                     # tokens expire daily at 06:30 IST
 MARGIN = timedelta(minutes=15)            # renew this long BEFORE expiry
 REFRESH_TOKEN_DAYS = 14                   # FYERS says about 15; stop trusting one a day early
 LOGIN_COOLDOWN = 300                      # seconds to wait after a failed login attempt
+RATE_LIMIT_COOLDOWN = 3600                # after "Too many requests" (HTTP 429): hammering it only extends the block
 
 _lock = asyncio.Lock()
 _last_failure = {"at": 0.0, "message": ""}
@@ -203,8 +204,9 @@ async def get_access_token(db, force: bool = False) -> str:
         if not force and _valid(doc, now):          # another caller renewed it while we waited
             return doc["access_token"]
         since = time.monotonic() - _last_failure["at"]
-        if _last_failure["at"] and since < LOGIN_COOLDOWN:
-            raise FyersAuthError(f"FYERS login is cooling down after a failure ({int(LOGIN_COOLDOWN - since)} s left): "
+        wait = _last_failure.get("wait", LOGIN_COOLDOWN)
+        if _last_failure["at"] and since < wait:
+            raise FyersAuthError(f"FYERS login is cooling down after a failure ({int(wait - since)} s left): "
                                  f"{_last_failure['message']}")
         problems = missing_settings(for_totp=False)
         if problems:
@@ -227,10 +229,12 @@ async def get_access_token(db, force: bool = False) -> str:
                     except FyersAuthError as e:
                         errors.append(str(e))
         if result is None:
-            _last_failure.update(at=time.monotonic(), message=" | ".join(errors)[:400])
+            message = " | ".join(errors)[:400]
+            limited = "HTTP 429" in message or "Too many requests" in message
+            _last_failure.update(at=time.monotonic(), message=message, wait=RATE_LIMIT_COOLDOWN if limited else LOGIN_COOLDOWN)
             raise FyersAuthError(" | ".join(errors))
 
-        _last_failure.update(at=0.0, message="")
+        _last_failure.update(at=0.0, message="", wait=LOGIN_COOLDOWN)
         saved = {"id": "current", "access_token": result["access_token"], "refresh_token": result["refresh_token"],
                  "access_expires_at": next_expiry(now).isoformat(), "refreshed_at": now.isoformat(), "method": how,
                  "refresh_obtained_at": now.isoformat() if result["new_refresh_token"] else (doc or {}).get("refresh_obtained_at", now.isoformat())}
