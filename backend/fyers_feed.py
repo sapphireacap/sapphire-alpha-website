@@ -46,8 +46,10 @@ def _base_interval() -> float:
 
 
 class FyersFeed:
-    def __init__(self, client, is_open, budget=None, interval: float = None, now=None, sleep=asyncio.sleep):
+    def __init__(self, client, is_open, budget=None, interval: float = None, now=None, sleep=asyncio.sleep,
+                 slow_after: int = SLOW_AFTER, stop_after: int = STOP_AFTER):
         self.client = client
+        self.slow_after, self.stop_after = slow_after, stop_after     # a lower-priority feed gives up sooner than the core one
         self.is_open = is_open                    # callable(datetime_ist) -> bool
         self.budget = budget or default_budget
         self.base_interval = interval or _base_interval()
@@ -142,10 +144,10 @@ class FyersFeed:
     # ---- scheduling --------------------------------------------------------------------
     def effective_interval(self) -> float:
         used = self.budget.snapshot()["used_today"]
-        return max(self.base_interval, SLOW_INTERVAL) if used >= SLOW_AFTER else self.base_interval
+        return max(self.base_interval, SLOW_INTERVAL) if used >= self.slow_after else self.base_interval
 
     def budget_exhausted(self) -> bool:
-        return self.budget.snapshot()["used_today"] >= STOP_AFTER
+        return self.budget.snapshot()["used_today"] >= self.stop_after
 
     async def _run(self) -> None:
         while not self._stopping:

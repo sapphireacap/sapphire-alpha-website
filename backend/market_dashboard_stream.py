@@ -26,11 +26,29 @@ snapshot refresh replaces it.
 """
 import asyncio
 import logging
+import re
 
 import dhan_master
 import market_dashboard_engine as mde
 
 logger = logging.getLogger(__name__)
+
+
+# Fyers' names for the few indices whose NSE name differs, verified against Fyers' public symbol file
+# 2026-11-19. Two indices have no Fyers symbol at all and stay on the NSE poll like before.
+FYERS_INDEX_ALIAS = {
+    "NIFTY HEALTHCARE INDEX": "NIFTYHEALTHCARE", "NIFTY TOTAL MARKET": "NIFTYTOTALMKT",
+    "NIFTY PRIVATE BANK": "NIFTYPVTBANK", "NIFTY CONSUMER DURABLES": "NIFTYCONSRDURBL",
+}
+FYERS_UNAVAILABLE = {"NIFTY SMALLCAP 250", "NIFTY MIDSMALLCAP 400"}
+
+
+def fyers_symbol(name: str):
+    """'NIFTY BANK' -> 'NSE:NIFTYBANK-INDEX'; None for indices Fyers does not list."""
+    if name in FYERS_UNAVAILABLE:
+        return None
+    core = FYERS_INDEX_ALIAS.get(name) or re.sub(r"[^A-Z0-9]", "", name.upper().replace("&", "AND"))
+    return f"NSE:{core}-INDEX"
 
 
 class MarketDashboardBroadcaster:
@@ -66,11 +84,43 @@ class MarketDashboardStreamManager:
         self._latest: dict[str, dict] = {}
         self._callbacks: dict[str, callable] = {}
         self._started = False
+        self._fyers_feed = None
+        self._name_by_symbol: dict[str, str] = {}
+
+    def attach_fyers(self, feed) -> None:
+        """Take the live index prices from a FYERS feed instead of the Dhan relay (which stays untouched
+        and unused while this is attached)."""
+        self._fyers_feed = feed
+
+    def _start_fyers(self) -> None:
+        for name in sorted(set(mde.STREAMABLE_INDICES) | {"NIFTY CONSUMER DURABLES"}):
+            symbol = fyers_symbol(name)
+            if symbol:
+                self._name_by_symbol[symbol] = name
+        self._fyers_feed.add(list(self._name_by_symbol))
+        self._fyers_feed.on_tick(self._fyers_tick)
+        logger.info("Market Dashboard stream: %d indices on the FYERS feed.", len(self._name_by_symbol))
+
+    def _fyers_tick(self, msg: dict) -> None:
+        name = self._name_by_symbol.get(msg.get("tk"))
+        if name is None:
+            return
+        ltp = float(msg["lp"])
+        quote = self._fyers_feed.latest.get(msg["tk"]) or {}
+        prev_close = quote.get("prev_close") or self._prev_close.get(name)
+        change = (ltp - prev_close) if prev_close else None
+        change_pct = (change / prev_close * 100) if change is not None and prev_close else None
+        entry = {"index": name, "last": ltp, "change": change, "change_pct": change_pct}
+        self._latest[name] = entry
+        asyncio.ensure_future(broadcaster.notify(entry))
 
     async def start(self) -> None:
         if self._started:
             return
         self._started = True
+        if self._fyers_feed is not None:
+            self._start_fyers()
+            return
         resolved = 0
         for name in mde.STREAMABLE_INDICES:
             dhan_name = mde.DHAN_INDEX_ALIAS.get(name, name)

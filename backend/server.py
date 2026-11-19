@@ -74,6 +74,7 @@ from fyers_vector import FyersVectorRunner, FyersVectorService
 from fyers_exitline import ExitlineData as FyersExitlineData, MasterStore as FyersExitlineMaster
 
 fyers_live = None   # the FYERS price feed; created at startup only when FYERS_ENABLED=1
+fyers_markets_feed = None   # Markets tab live index prices on FYERS (FYERS_MARKETS != 0)
 fyers_exitline = None   # Exitline on FYERS data (FYERS_ENABLED=1 and FYERS_EXITLINE != 0): object with .master and .data
 fyers_vector_runner = None   # Index Vector on FYERS data (FYERS_ENABLED=1 and FYERS_INDEX_VECTOR != 0)
 import mt5_client as mt5c
@@ -1943,6 +1944,7 @@ async def fyers_status(admin: dict = Depends(get_current_admin)):
     """FYERS health for the owner: login state (no token values), live-feed state and prices, and the
     day's request budget (the free plan allows 5,000 data calls a day)."""
     return {"auth": await fyers_auth.status(db), "feed": fyers_live.snapshot() if fyers_live else None,
+            "markets_feed": fyers_markets_feed.snapshot() if fyers_markets_feed else None,
             "index_vector": fyers_vector_runner.snapshot() if fyers_vector_runner else None,
             "budget": fyers_budget.budget.snapshot()}
 
@@ -2102,13 +2104,20 @@ async def on_startup():
     # login has been done (definedge.ws_credentials() returns None until
     # then), not a hard dependency for the rest of startup.
     definedge_stream.start()
-    global fyers_live, fyers_vector_runner, fyers_exitline
+    global fyers_live, fyers_vector_runner, fyers_exitline, fyers_markets_feed
     if fyers_auth.enabled():
         # FYERS live prices: one quotes request every FYERS_FEED_INTERVAL s (15 by default), only while the
         # NSE session is open, within the free plan's request budget (see fyers_feed.py).
         fyers_live = FyersFeed(FyersClient(db), _is_market_open)
         fyers_live.add(list(FYERS_INDEX_SYMBOLS.values()))     # NIFTY, BANKNIFTY, FINNIFTY, INDIA VIX
         fyers_live.start()
+        if os.environ.get("FYERS_MARKETS", "1").strip().lower() not in ("0", "false", "no", "off"):
+            # Markets tab live index prices from FYERS (a second, slower feed that gives up first when the
+            # day's request allowance runs low; see fyers_feed.py / market_dashboard_stream.py).
+            _markets_feed = FyersFeed(FyersClient(db), _is_market_open, interval=30, slow_after=3000, stop_after=3800)
+            market_dashboard_stream.attach_fyers(_markets_feed)
+            _markets_feed.start()
+            fyers_markets_feed = _markets_feed
         if os.environ.get("FYERS_EXITLINE", "1").strip().lower() not in ("0", "false", "no", "off"):
             # Exitline (levels + chart + live price for any NSE stock/future/option) from FYERS data (see fyers_exitline.py).
             from types import SimpleNamespace
@@ -2356,6 +2365,8 @@ app.add_middleware(
 async def shutdown_db_client():
     if fyers_vector_runner is not None:
         await fyers_vector_runner.stop()
+    if fyers_markets_feed is not None:
+        await fyers_markets_feed.stop()
     if fyers_live is not None:
         await fyers_live.stop()
     await index_vector_stream.stop()
