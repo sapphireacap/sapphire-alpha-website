@@ -54,6 +54,7 @@ class FyersFeed:
         self._now = now or (lambda: datetime.now(IST))
         self._sleep = sleep
         self.symbols: list = []
+        self.pinned: set = set()                  # symbols other modules (Exitline) follow; the Index Vector runner must not evict them
         self.latest: dict = {}                    # symbol -> {"ltp", "at"}
         self.bars: dict = {}                      # symbol -> deque of completed 1-minute bars
         self._open_bar: dict = {}                 # symbol -> in-progress bar

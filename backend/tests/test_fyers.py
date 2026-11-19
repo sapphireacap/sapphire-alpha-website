@@ -61,7 +61,7 @@ class FakeDb:
 @pytest.fixture(autouse=True)
 def env(monkeypatch):
     for k, v in {"FYERS_ENABLED": "1", "FYERS_APP_ID": "ABCD1234E5-100", "FYERS_SECRET_ID": "sekret", "FYERS_REDIRECT_URI": "https://x.test/cb",
-                 "FYERS_CLIENT_ID": "XA12345", "FYERS_PIN": "1234", "FYERS_TOTP_SECRET": "JBSWY3DPEHPK3PXP"}.items():
+                 "FYERS_CLIENT_ID": "XA12345", "FYERS_PIN": "1234", "FYERS_TOTP_SECRET": "JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP"}.items():
         monkeypatch.setenv(k, v)
     monkeypatch.setattr(fyers_auth, "_last_failure", {"at": 0.0, "message": ""})
     monkeypatch.setattr(fyers_client, "_paused_until", 0.0)
@@ -288,7 +288,7 @@ def test_errors_never_contain_secrets(monkeypatch):
     mock_http(monkeypatch, _login_handler([], fail_at="/verify_pin_v2"))
     with pytest.raises(fyers_auth.FyersAuthError) as e:
         run(fyers_auth.get_access_token(FakeDb()))
-    for secret in ("sekret", "1234", "JBSWY3DPEHPK3PXP", fyers_auth.app_id_hash()):
+    for secret in ("sekret", "1234", "JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP", fyers_auth.app_id_hash()):
         assert secret not in str(e.value)
 
 

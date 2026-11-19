@@ -162,6 +162,7 @@ class FyersVectorRunner:
         needed = set(keep)
         for syms in self._needed.values():
             needed.update(syms)
+        needed.update(getattr(self.feed, "pinned", ()))
         missing = [s for s in sorted(needed) if s not in self.feed.symbols]
         room = 50 - len(self.feed.symbols)
         if len(missing) > room:                       # make room by dropping symbols no longer needed

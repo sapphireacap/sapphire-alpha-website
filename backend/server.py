@@ -71,8 +71,10 @@ from fyers_client import FyersClient, INDEX_SYMBOLS as FYERS_INDEX_SYMBOLS
 from fyers_feed import FyersFeed
 from fyers_series import SeriesStore as FyersSeriesStore
 from fyers_vector import FyersVectorRunner, FyersVectorService
+from fyers_exitline import ExitlineData as FyersExitlineData, MasterStore as FyersExitlineMaster
 
 fyers_live = None   # the FYERS price feed; created at startup only when FYERS_ENABLED=1
+fyers_exitline = None   # Exitline on FYERS data (FYERS_ENABLED=1 and FYERS_EXITLINE != 0): object with .master and .data
 fyers_vector_runner = None   # Index Vector on FYERS data (FYERS_ENABLED=1 and FYERS_INDEX_VECTOR != 0)
 import mt5_client as mt5c
 if "journal" not in DISABLED_FEATURES:
@@ -2100,13 +2102,17 @@ async def on_startup():
     # login has been done (definedge.ws_credentials() returns None until
     # then), not a hard dependency for the rest of startup.
     definedge_stream.start()
-    global fyers_live, fyers_vector_runner
+    global fyers_live, fyers_vector_runner, fyers_exitline
     if fyers_auth.enabled():
         # FYERS live prices: one quotes request every FYERS_FEED_INTERVAL s (15 by default), only while the
         # NSE session is open, within the free plan's request budget (see fyers_feed.py).
         fyers_live = FyersFeed(FyersClient(db), _is_market_open)
         fyers_live.add(list(FYERS_INDEX_SYMBOLS.values()))     # NIFTY, BANKNIFTY, FINNIFTY, INDIA VIX
         fyers_live.start()
+        if os.environ.get("FYERS_EXITLINE", "1").strip().lower() not in ("0", "false", "no", "off"):
+            # Exitline (levels + chart + live price for any NSE stock/future/option) from FYERS data (see fyers_exitline.py).
+            from types import SimpleNamespace
+            fyers_exitline = SimpleNamespace(master=FyersExitlineMaster(db), data=FyersExitlineData(FyersClient(db), fyers_live))
         if os.environ.get("FYERS_INDEX_VECTOR", "1").strip().lower() not in ("0", "false", "no", "off"):
             # Index Vector computed from FYERS data once a minute during the session (see fyers_vector.py).
             # The Definedge/Dhan paths stay paused; this writes the same index_signal documents the page reads.
@@ -2273,7 +2279,7 @@ async def on_startup():
 ipo_router = create_ipo_router(db, get_current_admin, CRON_SECRET)
 blackbox_options_router = create_blackbox_options_router(db, definedge, get_current_admin, get_current_user_optional, CRON_SECRET)
 blackbox_equity_router = create_blackbox_equity_router(db, definedge, get_current_admin, get_current_user_optional, CRON_SECRET)
-exitline_router = create_exitline_router(db, definedge)
+exitline_router = create_exitline_router(db, definedge, lambda: fyers_exitline)
 pnf_router = create_pnf_router(db, definedge, get_current_pnf_subscriber, get_current_pnf_subscriber_ws, dhan_stream, definedge_stream)
 renko_router = create_renko_router(db, definedge, get_current_pnf_subscriber)
 relative_strength_router = create_relative_strength_router(db, definedge, get_current_user)

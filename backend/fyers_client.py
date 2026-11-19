@@ -108,11 +108,13 @@ class FyersClient:
                         "volume": float(v or 0)})
         return out
 
-    async def daily_history(self, symbol: str, years: int = 5) -> list:
-        """Daily bars {date 'YYYY-MM-DD', open, high, low, close, volume}. The free plan holds 5 years."""
+    async def daily_history(self, symbol: str, years: int = 5, days: int = None) -> list:
+        """Daily bars {date 'YYYY-MM-DD', open, high, low, close, volume}. The free plan holds 5 years.
+        `days` (instead of `years`) asks for a shorter window; up to ~360 days is a single request."""
         to = datetime.now(IST)
         out = []
-        for t, o, h, l, c, v in await self.history(symbol, "D", to - timedelta(days=int(365.25 * min(years, 5))), to):
+        span = timedelta(days=days) if days else timedelta(days=int(365.25 * min(years, 5)))
+        for t, o, h, l, c, v in await self.history(symbol, "D", to - span, to):
             out.append({"date": datetime.fromtimestamp(t, tz=IST).date().isoformat(), "open": float(o), "high": float(h),
                         "low": float(l), "close": float(c), "volume": float(v or 0)})
         return out

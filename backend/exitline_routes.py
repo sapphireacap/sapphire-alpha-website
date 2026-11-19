@@ -13,7 +13,11 @@ from typing import Optional
 
 from fastapi import APIRouter, HTTPException
 
+import fyers_auth
 from definedge_service import DefinedgeError
+from fyers_budget import FyersBudgetError
+from fyers_client import FyersError
+from fyers_exitline import ExitlineError
 from exitline import (
     build_exitline_response, list_symbols, list_expiries, list_strikes,
     resolve_instrument, VALID_INTERVALS,
@@ -35,8 +39,18 @@ def _public_error(e: DefinedgeError) -> str:
     return msg  # instrument-specific messages (not found / no prior-day data) don't name any source
 
 
-def create_exitline_router(db, definedge) -> APIRouter:
+_UNAVAILABLE = "Levels are temporarily unavailable — please try again shortly."
+
+
+def create_exitline_router(db, definedge, fyers=lambda: None) -> APIRouter:
+    """`fyers()` returns the FYERS-backed Exitline service (or None when FYERS is not enabled, in which
+    case the original broker-session path below is used unchanged)."""
     router = APIRouter(prefix="/exitline", tags=["exitline"])
+
+    def _fyers_failure(e: Exception) -> HTTPException:
+        if isinstance(e, ExitlineError):
+            return HTTPException(status_code=404 if "not found" in str(e).lower() else 502, detail=str(e))
+        return HTTPException(status_code=502, detail=_UNAVAILABLE)   # never name the upstream source
 
     def _check_segment(segment: str) -> str:
         segment = segment.strip().upper()
@@ -51,6 +65,16 @@ def create_exitline_router(db, definedge) -> APIRouter:
         three so the frontend doesn't need three separate calls wired to
         subtly different loading states."""
         segment = _check_segment(segment)
+        svc = fyers()
+        if svc is not None:
+            try:
+                if symbol and segment in ("FUT", "OPT"):
+                    expiries = await svc.master.list_expiries(segment, symbol)
+                    strikes = await svc.master.list_strikes(symbol, expiry) if (segment == "OPT" and expiry) else []
+                    return {"symbols": [], "expiries": expiries, "strikes": strikes}
+                return {"symbols": await svc.master.list_symbols(segment, query), "expiries": [], "strikes": []}
+            except (ExitlineError, FyersError, FyersBudgetError, fyers_auth.FyersAuthError) as e:
+                raise _fyers_failure(e)
         try:
             master = await definedge._get_all_master()
         except DefinedgeError as e:
@@ -75,6 +99,17 @@ def create_exitline_router(db, definedge) -> APIRouter:
         if interval not in VALID_INTERVALS:
             raise HTTPException(status_code=400, detail=f"interval must be one of {VALID_INTERVALS}")
 
+        svc = fyers()
+        if svc is not None:
+            try:
+                resolved = await svc.master.resolve(segment, symbol, expiry, strike, option_type)
+                if not resolved:
+                    raise ExitlineError("Instrument not found — check the symbol, expiry, strike, and option type.")
+                meta = {"segment": segment, "symbol": symbol.strip().upper(), "expiry": expiry, "strike": strike,
+                        "option_type": option_type.strip().upper() if option_type else None}
+                return await svc.data.build(resolved, meta, interval)
+            except (ExitlineError, FyersError, FyersBudgetError, fyers_auth.FyersAuthError) as e:
+                raise _fyers_failure(e)
         try:
             return await build_exitline_response(db, definedge, segment, symbol, expiry, strike, option_type, interval)
         except DefinedgeError as e:
@@ -96,6 +131,17 @@ def create_exitline_router(db, definedge) -> APIRouter:
         {"ltp": null} rather than an error on any hiccup — the caller keeps
         showing its last known price instead of blanking."""
         segment = _check_segment(segment)
+        svc = fyers()
+        if svc is not None:
+            try:
+                resolved = await svc.master.resolve(segment, symbol, expiry, strike, option_type)
+                if not resolved:
+                    raise HTTPException(status_code=404, detail="Instrument not found.")
+                return {"ltp": await svc.data.live_price(resolved["symbol"])}
+            except HTTPException:
+                raise
+            except Exception:  # noqa: BLE001 -- a hiccup keeps the caller's last price instead of blanking it
+                return {"ltp": None}
         try:
             master = await definedge._get_all_master()
         except DefinedgeError as e:
